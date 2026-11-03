@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
+import { useToast } from '../../context/ToastContext.js';
 import {
   ChefHat,
   Clock,
@@ -15,6 +16,7 @@ import { PrepStatus, PrepStation } from '@pos/shared';
 
 export const KitchenDisplay: React.FC = () => {
   const { user } = useAuth();
+  const { success, error } = useToast();
   const [tickets, setTickets] = useState<any[]>([]);
   const [stationFilter, setStationFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
@@ -35,16 +37,17 @@ export const KitchenDisplay: React.FC = () => {
 
   useEffect(() => {
     fetchTickets();
-    const interval = setInterval(fetchTickets, 5000);
+    const interval = setInterval(fetchTickets, 4000);
     return () => clearInterval(interval);
   }, [stationFilter]);
 
   const updateTicketStatus = async (ticketId: string, nextStatus: PrepStatus) => {
     try {
       await api.put(`/kds/tickets/${ticketId}/status`, { status: nextStatus });
+      success(`Ticket status updated to ${nextStatus}`);
       fetchTickets();
     } catch (err: any) {
-      alert(err.message || 'Failed to update ticket status');
+      error(err.message || 'Failed to update ticket status');
     }
   };
 
@@ -214,21 +217,31 @@ export const KitchenDisplay: React.FC = () => {
                     )}
 
                     {isPreparing && (
-                      <button
-                        onClick={() => updateTicketStatus(t.id, PrepStatus.READY)}
-                        className="w-full flex items-center justify-center space-x-1.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-xl text-xs transition-colors shadow-lg"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        <span>Mark Ready for Pickup</span>
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => updateTicketStatus(t.id, PrepStatus.READY)}
+                          className="flex items-center justify-center space-x-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-colors"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          <span>Mark Ready</span>
+                        </button>
+                        <button
+                          onClick={() => updateTicketStatus(t.id, PrepStatus.SERVED)}
+                          className="flex items-center justify-center space-x-1 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-extrabold rounded-xl text-xs transition-colors shadow-md"
+                        >
+                          <Check className="w-4 h-4" />
+                          <span>Mark Served</span>
+                        </button>
+                      </div>
                     )}
 
                     {isReady && (
                       <button
                         onClick={() => updateTicketStatus(t.id, PrepStatus.SERVED)}
-                        className="w-full flex items-center justify-center space-x-1.5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs transition-colors"
+                        className="w-full flex items-center justify-center space-x-1.5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-extrabold rounded-xl text-xs transition-colors shadow-lg"
                       >
-                        <span>Mark Served / Complete</span>
+                        <Check className="w-4 h-4" />
+                        <span>Mark Served → Send to Unpaid Bills</span>
                       </button>
                     )}
                   </div>

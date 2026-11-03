@@ -1,11 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { query } from '../db/connection.js';
 import { authenticate, requireTenant, requirePermission, requireEntitlement } from '../middleware/auth.js';
+import { emitSyncEvent } from '../services/syncService.js';
 import {
   UpdateKOTStatusSchema,
   Permission,
   FeatureKey,
   PrepStatus,
+  OrderStatus,
 } from '@pos/shared';
 
 export async function kdsRoutes(fastify: FastifyInstance) {
@@ -98,6 +100,7 @@ export async function kdsRoutes(fastify: FastifyInstance) {
     );
 
     if (rows.length === 0) return reply.status(404).send({ error: 'Ticket not found' });
+    const ticket = rows[0];
 
     // Update all ticket items status to match
     await query(
@@ -105,6 +108,43 @@ export async function kdsRoutes(fastify: FastifyInstance) {
       [status, id, tenantId],
       { tenantId }
     );
+
+    // Synchronize parent order status if linked
+    if (ticket.order_id) {
+      let orderNextStatus: string | null = null;
+      if (status === PrepStatus.SERVED) {
+        orderNextStatus = 'SERVED';
+      } else if (status === PrepStatus.READY) {
+        orderNextStatus = 'READY';
+      } else if (status === PrepStatus.PREPARING) {
+        orderNextStatus = 'PREPARING';
+      } else if (status === PrepStatus.ACCEPTED) {
+        orderNextStatus = 'ACCEPTED';
+      }
+
+      if (orderNextStatus) {
+        await query(
+          'UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3',
+          [orderNextStatus, ticket.order_id, tenantId],
+          { tenantId }
+        );
+      }
+
+      // Real-time multi-device sync notification
+      await emitSyncEvent(query, {
+        tenantId,
+        branchId: ticket.branch_id,
+        eventType: 'ORDER_STATUS_CHANGED',
+        entityId: ticket.order_id,
+        payload: {
+          orderId: ticket.order_id,
+          orderNumber: ticket.order_number,
+          tableNumber: ticket.table_number,
+          status: orderNextStatus || status,
+          kotStatus: status,
+        },
+      });
+    }
 
     return reply.send({ ticket: rows[0] });
   });

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { query } from '../db/connection.js';
+import { query, withTransaction } from '../db/connection.js';
 import { authenticate, requireTenant, requirePermission } from '../middleware/auth.js';
 import {
   CreateOrderSchema,
@@ -11,6 +11,8 @@ import {
   TableStatus,
 } from '@pos/shared';
 import { createOrder, completeOrderCheckout, processOrderRefund } from '../services/orderService.js';
+import { deductInventoryForOrder } from '../services/inventoryService.js';
+import { emitSyncEvent } from '../services/syncService.js';
 import { logAuditEvent } from '../services/auditService.js';
 
 export async function orderRoutes(fastify: FastifyInstance) {
@@ -70,27 +72,40 @@ export async function orderRoutes(fastify: FastifyInstance) {
       items,
     });
 
+    // Multi-device sync event
+    if (result && result.order) {
+      await emitSyncEvent(query, {
+        tenantId,
+        branchId,
+        eventType: 'ORDER_CREATED',
+        entityId: result.order.id,
+        payload: {
+          orderNumber: result.order.order_number,
+          orderType,
+          tableId,
+          status: result.order.status,
+        },
+      });
+    }
+
     return reply.status(201).send(result);
   });
 
   /**
-   * List Orders
+   * Dedicated Live Active Orders Endpoint (Operations Hub)
    */
-  fastify.get('/api/orders', async (req, reply) => {
+  fastify.get('/api/orders/active', async (req, reply) => {
     const tenantId = req.user!.tenantId!;
-    const { branchId, status, date, limit = 50, offset = 0 } = req.query as {
-      branchId?: string;
-      status?: string;
-      date?: string;
-      limit?: number;
-      offset?: number;
-    };
+    const { branchId } = req.query as { branchId?: string };
 
     let sql = `
       SELECT o.*,
-             (SELECT COUNT(*)::int FROM order_items WHERE order_id = o.id) as item_count
+             EXTRACT(EPOCH FROM (NOW() - o.created_at)) / 60 as elapsed_minutes,
+             b.name as branch_name
       FROM orders o
+      JOIN branches b ON b.id = o.branch_id
       WHERE o.tenant_id = $1
+        AND o.status IN ('PENDING', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'OUT_FOR_DELIVERY', 'ON_HOLD')
     `;
     const params: any[] = [tenantId];
 
@@ -98,20 +113,254 @@ export async function orderRoutes(fastify: FastifyInstance) {
       params.push(branchId);
       sql += ` AND o.branch_id = $${params.length}`;
     }
+
+    sql += ` ORDER BY o.created_at ASC`;
+
+    const { rows: orders } = await query(sql, params, { tenantId });
+
+    if (orders.length > 0) {
+      const orderIds = orders.map((o) => o.id);
+      const { rows: items } = await query(
+        `SELECT * FROM order_items WHERE order_id = ANY($1) AND tenant_id = $2 ORDER BY id ASC`,
+        [orderIds, tenantId],
+        { tenantId }
+      );
+
+      const itemsByOrder: Record<string, any[]> = {};
+      for (const item of items) {
+        if (!itemsByOrder[item.order_id]) itemsByOrder[item.order_id] = [];
+        itemsByOrder[item.order_id].push(item);
+      }
+
+      for (const ord of orders) {
+        ord.items = itemsByOrder[ord.id] || [];
+      }
+    }
+
+    return reply.send({ orders });
+  });
+
+  /**
+   * Filtered & Paginated All Orders History
+   */
+  fastify.get('/api/orders', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const {
+      branchId,
+      status,
+      orderType,
+      startDate,
+      endDate,
+      search,
+      page = '1',
+      limit = '20',
+    } = req.query as {
+      branchId?: string;
+      status?: string;
+      orderType?: string;
+      startDate?: string;
+      endDate?: string;
+      search?: string;
+      page?: string;
+      limit?: string;
+    };
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    let whereClause = `WHERE o.tenant_id = $1`;
+    const params: any[] = [tenantId];
+
+    if (branchId) {
+      params.push(branchId);
+      whereClause += ` AND o.branch_id = $${params.length}`;
+    }
     if (status) {
       params.push(status);
-      sql += ` AND o.status = $${params.length}`;
+      whereClause += ` AND o.status = $${params.length}`;
     }
-    if (date) {
-      params.push(date);
-      sql += ` AND DATE(o.created_at) = $${params.length}`;
+    if (orderType) {
+      params.push(orderType);
+      whereClause += ` AND o.order_type = $${params.length}`;
+    }
+    if (startDate) {
+      params.push(startDate);
+      whereClause += ` AND o.created_at >= $${params.length}::timestamptz`;
+    }
+    if (endDate) {
+      params.push(endDate);
+      whereClause += ` AND o.created_at <= $${params.length}::timestamptz`;
+    }
+    if (search) {
+      params.push(`%${search}%`);
+      whereClause += ` AND (o.order_number ILIKE $${params.length} OR o.customer_name ILIKE $${params.length} OR o.customer_phone ILIKE $${params.length} OR o.table_number ILIKE $${params.length})`;
     }
 
-    sql += ` ORDER BY o.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(limit, offset);
+    // Total Count
+    const countRes = await query(
+      `SELECT COUNT(*)::int as total FROM orders o ${whereClause}`,
+      params,
+      { tenantId }
+    );
+    const total = countRes.rows[0]?.total || 0;
 
-    const { rows } = await query(sql, params, { tenantId });
-    return reply.send({ orders: rows });
+    // Fetch Orders
+    let dataSql = `
+      SELECT o.*,
+             b.name as branch_name,
+             (SELECT COUNT(*)::int FROM order_items WHERE order_id = o.id) as item_count,
+             (SELECT COALESCE(SUM(cogs), 0)::numeric FROM order_items WHERE order_id = o.id) as total_cogs
+      FROM orders o
+      JOIN branches b ON b.id = o.branch_id
+      ${whereClause}
+      ORDER BY o.created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
+    const dataParams = [...params, limitNum, offset];
+
+    const { rows: orders } = await query(dataSql, dataParams, { tenantId });
+
+    if (orders.length > 0) {
+      const orderIds = orders.map((o) => o.id);
+      const { rows: items } = await query(
+        `SELECT * FROM order_items WHERE order_id = ANY($1) AND tenant_id = $2 ORDER BY id ASC`,
+        [orderIds, tenantId],
+        { tenantId }
+      );
+
+      const itemsByOrder: Record<string, any[]> = {};
+      for (const item of items) {
+        if (!itemsByOrder[item.order_id]) itemsByOrder[item.order_id] = [];
+        itemsByOrder[item.order_id].push(item);
+      }
+
+      for (const ord of orders) {
+        ord.items = itemsByOrder[ord.id] || [];
+      }
+    }
+
+    return reply.send({
+      orders,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
+  });
+
+  /**
+   * Fast Order Status Transition (Active Orders Action)
+   */
+  fastify.patch('/api/orders/:id/status', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    const { status, cancelReason } = req.body as { status: OrderStatus; cancelReason?: string };
+
+    if (!status) {
+      return reply.status(400).send({ error: 'Status is required' });
+    }
+
+    const { rows: orderRows } = await query(
+      'SELECT * FROM orders WHERE id = $1 AND tenant_id = $2',
+      [id, tenantId],
+      { tenantId }
+    );
+
+    if (orderRows.length === 0) {
+      return reply.status(404).send({ error: 'Order not found' });
+    }
+
+    const order = orderRows[0];
+
+    // Status transition updates
+    const updates: string[] = ['status = $1', 'updated_at = CURRENT_TIMESTAMP'];
+    const values: any[] = [status];
+    let vIdx = 2;
+
+    if (status === OrderStatus.COMPLETED) {
+      updates.push(`completed_at = CURRENT_TIMESTAMP`);
+    }
+
+    if (status === OrderStatus.CANCELLED) {
+      updates.push(`cancel_reason = $${vIdx++}`);
+      values.push(cancelReason || 'Cancelled by staff');
+      updates.push(`cancelled_by_user_id = $${vIdx++}`);
+      values.push(req.user!.id);
+    }
+
+    values.push(id, tenantId);
+    await query(
+      `
+      UPDATE orders
+      SET ${updates.join(', ')}
+      WHERE id = $${vIdx++} AND tenant_id = $${vIdx++}
+      `,
+      values,
+      { tenantId }
+    );
+
+    // If completed or cancelled, handle table freeing & inventory deduction
+    if (status === OrderStatus.COMPLETED) {
+      if (order.table_id) {
+        await query(
+          'UPDATE restaurant_tables SET status = $1, current_order_id = NULL WHERE id = $2 AND tenant_id = $3',
+          [TableStatus.AVAILABLE, order.table_id, tenantId],
+          { tenantId }
+        );
+      }
+
+      // Deduct FIFO inventory if not already deducted
+      await withTransaction(async (client) => {
+        await deductInventoryForOrder(client, tenantId, order.branch_id, id, req.user!.id);
+      }, { tenantId });
+    } else if (status === OrderStatus.CANCELLED) {
+      if (order.table_id) {
+        await query(
+          'UPDATE restaurant_tables SET status = $1, current_order_id = NULL WHERE id = $2 AND tenant_id = $3',
+          [TableStatus.AVAILABLE, order.table_id, tenantId],
+          { tenantId }
+        );
+      }
+      await query(
+        'UPDATE kitchen_tickets SET status = $1 WHERE order_id = $2 AND tenant_id = $3',
+        [OrderStatus.CANCELLED, id, tenantId],
+        { tenantId }
+      );
+    }
+
+    // Emit real-time multi-device sync event
+    await emitSyncEvent(query, {
+      tenantId,
+      branchId: order.branch_id,
+      eventType: 'ORDER_STATUS_CHANGED',
+      entityId: id,
+      payload: {
+        orderId: id,
+        orderNumber: order.order_number,
+        newStatus: status,
+        oldStatus: order.status,
+      },
+    });
+
+    await logAuditEvent({
+      tenantId,
+      branchId: order.branch_id,
+      actorId: req.user!.id,
+      actorRole: req.user!.role,
+      action: 'ORDER_STATUS_CHANGED',
+      resourceType: 'ORDER',
+      resourceId: id,
+      metadata: { orderNumber: order.order_number, oldStatus: order.status, newStatus: status },
+    });
+
+    return reply.send({
+      message: `Order status updated to ${status}`,
+      orderId: id,
+      status,
+    });
   });
 
   /**
@@ -145,6 +394,22 @@ export async function orderRoutes(fastify: FastifyInstance) {
       { tenantId }
     );
     order.payments = payments;
+
+    const { rows: consumptions } = await query(
+      `
+      SELECT c.*, b.received_at as batch_date, i.name as ingredient_name, i.unit as ingredient_unit
+      FROM order_item_batch_consumptions c
+      LEFT JOIN inventory_batches b ON b.id = c.batch_id
+      LEFT JOIN ingredients i ON i.id = c.ingredient_id
+      WHERE (c.reference_id = $1 OR c.order_id = $1) AND c.tenant_id = $2
+      ORDER BY c.created_at ASC
+      `,
+      [id, tenantId],
+      { tenantId }
+    );
+    order.batchConsumptions = consumptions;
+    order.totalCogs = items.reduce((sum, item) => sum + (Number(item.cogs) || 0), 0);
+    order.grossProfit = Number(order.grand_total) - order.totalCogs;
 
     return reply.send({ order });
   });

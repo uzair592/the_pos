@@ -11,6 +11,7 @@ import {
   SubscriptionPaymentMethod,
   SubscriptionPaymentStatus,
 } from '@pos/shared';
+import { generateTenantBackup, restoreTenantBackup, getBackupHistory } from '../services/backupService.js';
 import { logAuditEvent } from '../services/auditService.js';
 
 export async function platformRoutes(fastify: FastifyInstance) {
@@ -363,6 +364,131 @@ export async function platformRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * Super Admin: List Restaurant Users for Credential Management
+   */
+  fastify.get('/api/platform/tenants/:tenantId/users', async (req, reply) => {
+    const { tenantId } = req.params as { tenantId: string };
+
+    const { rows } = await query(
+      `
+      SELECT u.id, u.tenant_id, u.branch_id, u.email, u.full_name, u.role, u.is_active,
+             u.token_version, u.created_at, u.updated_at, b.name as branch_name
+      FROM users u
+      LEFT JOIN branches b ON b.id = u.branch_id
+      WHERE u.tenant_id = $1
+      ORDER BY u.created_at ASC
+      `,
+      [tenantId],
+      { isSuperAdmin: true }
+    );
+
+    return reply.send({ users: rows });
+  });
+
+  /**
+   * Super Admin: Update Restaurant User Credentials (Email / Password)
+   */
+  fastify.patch('/api/platform/tenants/:tenantId/users/:userId/credentials', async (req, reply) => {
+    const { tenantId, userId } = req.params as { tenantId: string; userId: string };
+    const { email, password, fullName, isActive } = req.body as {
+      email?: string;
+      password?: string;
+      fullName?: string;
+      isActive?: boolean;
+    };
+
+    // 1. Verify user belongs to tenant
+    const { rows: existingRows } = await query(
+      'SELECT id, email, token_version FROM users WHERE id = $1 AND tenant_id = $2',
+      [userId, tenantId],
+      { isSuperAdmin: true }
+    );
+
+    if (existingRows.length === 0) {
+      return reply.status(404).send({ error: 'Restaurant user not found' });
+    }
+
+    const updates: string[] = [];
+    const values: any[] = [];
+    let pIdx = 1;
+
+    // Check email uniqueness if changing email
+    if (email) {
+      const cleanEmail = email.toLowerCase().trim();
+      const { rows: emailCheck } = await query(
+        'SELECT id FROM users WHERE tenant_id = $1 AND email = $2 AND id != $3',
+        [tenantId, cleanEmail, userId],
+        { isSuperAdmin: true }
+      );
+      if (emailCheck.length > 0) {
+        return reply.status(400).send({ error: 'A user with this email address already exists for this restaurant' });
+      }
+      updates.push(`email = $${pIdx++}`);
+      values.push(cleanEmail);
+    }
+
+    if (fullName) {
+      updates.push(`full_name = $${pIdx++}`);
+      values.push(fullName.trim());
+    }
+
+    if (isActive !== undefined) {
+      updates.push(`is_active = $${pIdx++}`);
+      values.push(isActive);
+    }
+
+    let passwordChanged = false;
+    if (password) {
+      if (password.length < 8) {
+        return reply.status(400).send({ error: 'Password must be at least 8 characters long' });
+      }
+      const passwordHash = await bcrypt.hash(password, 10);
+      updates.push(`password_hash = $${pIdx++}`);
+      values.push(passwordHash);
+
+      // Invalidate existing sessions by incrementing token_version
+      updates.push(`token_version = COALESCE(token_version, 1) + 1`);
+      passwordChanged = true;
+    }
+
+    if (updates.length === 0) {
+      return reply.status(400).send({ error: 'No fields provided to update' });
+    }
+
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+
+    values.push(userId, tenantId);
+    const sql = `
+      UPDATE users
+      SET ${updates.join(', ')}
+      WHERE id = $${pIdx++} AND tenant_id = $${pIdx++}
+      RETURNING id, tenant_id, branch_id, email, full_name, role, is_active, token_version, updated_at
+    `;
+
+    const { rows: updatedRows } = await query(sql, values, { isSuperAdmin: true });
+
+    await logAuditEvent({
+      actorId: req.user!.id,
+      actorRole: SystemRole.SUPER_ADMIN,
+      action: 'UPDATE_TENANT_USER_CREDENTIALS',
+      resourceType: 'USER',
+      resourceId: userId,
+      metadata: {
+        tenantId,
+        updatedEmail: email || null,
+        passwordChanged,
+        isActive,
+      },
+    });
+
+    return reply.send({
+      message: 'User credentials updated successfully',
+      user: updatedRows[0],
+      passwordChanged,
+    });
+  });
+
+  /**
    * Change Subscription Plan
    */
   fastify.put('/api/platform/tenants/:id/plan', async (req, reply) => {
@@ -520,5 +646,27 @@ export async function platformRoutes(fastify: FastifyInstance) {
       { isSuperAdmin: true }
     );
     return reply.send({ payments: rows });
+  });
+
+  /**
+   * Super Admin: Generate Backup for any Restaurant
+   */
+  fastify.post('/api/platform/backups/generate/:tenantId', async (req, reply) => {
+    const { tenantId } = req.params as { tenantId: string };
+    try {
+      const result = await generateTenantBackup(tenantId, req.user!.id, req.user!.fullName);
+      return reply.send(result);
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message || 'Failed to generate backup' });
+    }
+  });
+
+  /**
+   * Super Admin: View Platform Backup History
+   */
+  fastify.get('/api/platform/backups', async (req, reply) => {
+    const { tenantId } = req.query as { tenantId?: string };
+    const history = await getBackupHistory(tenantId || null);
+    return reply.send({ backups: history });
   });
 }

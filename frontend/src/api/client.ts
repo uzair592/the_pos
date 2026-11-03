@@ -63,6 +63,13 @@ export const api = {
       headers,
     }),
 
+  patch: <T = any>(endpoint: string, body?: any, headers?: Record<string, string>) =>
+    request<T>(endpoint, {
+      method: 'PATCH',
+      body: body ? JSON.stringify(body) : undefined,
+      headers,
+    }),
+
   delete: <T = any>(endpoint: string, headers?: Record<string, string>) =>
     request<T>(endpoint, { method: 'DELETE', headers }),
 };

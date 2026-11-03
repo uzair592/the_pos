@@ -2,8 +2,169 @@ import pg from 'pg';
 import { query } from '../db/connection.js';
 import { StockMovementType, StockUnit } from '@pos/shared';
 
+export interface CreateBatchParams {
+  tenantId: string;
+  branchId: string;
+  ingredientId: string;
+  purchaseItemId?: string | null;
+  quantityReceived: number;
+  unitCost: number;
+  receivedAt?: Date | string;
+}
+
 /**
- * Deduct inventory for an order based on recipes
+ * Create a new inventory batch / stock lot
+ */
+export async function createInventoryBatch(
+  client: pg.PoolClient,
+  params: CreateBatchParams
+) {
+  const {
+    tenantId,
+    branchId,
+    ingredientId,
+    purchaseItemId = null,
+    quantityReceived,
+    unitCost,
+    receivedAt = new Date(),
+  } = params;
+
+  const res = await client.query(
+    `
+    INSERT INTO inventory_batches (
+      tenant_id, branch_id, ingredient_id, purchase_item_id,
+      quantity_received, quantity_remaining, unit_cost, received_at, status
+    ) VALUES ($1, $2, $3, $4, $5, $5, $6, $7, 'ACTIVE')
+    RETURNING *;
+    `,
+    [tenantId, branchId, ingredientId, purchaseItemId, quantityReceived, unitCost, receivedAt]
+  );
+
+  return res.rows[0];
+}
+
+/**
+ * Strict FIFO Consumption for a specific ingredient
+ */
+export async function consumeIngredientFIFO(
+  client: pg.PoolClient,
+  params: {
+    tenantId: string;
+    branchId: string;
+    ingredientId: string;
+    qtyNeeded: number;
+    orderId: string;
+    orderItemId: string;
+  }
+): Promise<{ totalCost: number; consumptions: Array<{ batchId: string; quantity: number; unitCost: number; totalCost: number }> }> {
+  const { tenantId, branchId, ingredientId, qtyNeeded, orderId, orderItemId } = params;
+
+  // 1. Fetch active batches ordered oldest first (FIFO) with row lock
+  const batchesRes = await client.query(
+    `
+    SELECT id, quantity_remaining, unit_cost, received_at
+    FROM inventory_batches
+    WHERE tenant_id = $1 AND branch_id = $2 AND ingredient_id = $3
+      AND status = 'ACTIVE' AND quantity_remaining > 0
+    ORDER BY received_at ASC, created_at ASC
+    FOR UPDATE
+    `,
+    [tenantId, branchId, ingredientId]
+  );
+
+  let remaining = qtyNeeded;
+  let totalCost = 0;
+  const consumptions: Array<{ batchId: string; quantity: number; unitCost: number; totalCost: number }> = [];
+
+  for (const batch of batchesRes.rows) {
+    if (remaining <= 0) break;
+
+    const available = Number(batch.quantity_remaining);
+    const take = Math.min(available, remaining);
+    const unitCost = Number(batch.unit_cost);
+    const cost = take * unitCost;
+
+    totalCost += cost;
+    remaining -= take;
+
+    const newRemaining = available - take;
+    const newStatus = newRemaining <= 0 ? 'EXHAUSTED' : 'ACTIVE';
+
+    // Update batch quantity and status
+    await client.query(
+      `
+      UPDATE inventory_batches
+      SET quantity_remaining = $1, status = $2
+      WHERE id = $3
+      `,
+      [newRemaining, newStatus, batch.id]
+    );
+
+    // Record consumption link
+    await client.query(
+      `
+      INSERT INTO order_item_batch_consumptions (
+        tenant_id, branch_id, order_id, order_item_id, batch_id,
+        ingredient_id, quantity, unit_cost, total_cost, reference_type, reference_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ORDER', $10)
+      `,
+      [tenantId, branchId, orderId, orderItemId, batch.id, ingredientId, take, unitCost, cost, orderId]
+    );
+
+    consumptions.push({
+      batchId: batch.id,
+      quantity: take,
+      unitCost,
+      totalCost: cost,
+    });
+  }
+
+  // If there wasn't enough batch stock, handle fallback at ingredient baseline cost
+  if (remaining > 0) {
+    const ingRes = await client.query(
+      'SELECT cost_per_unit, name FROM ingredients WHERE id = $1 AND tenant_id = $2',
+      [ingredientId, tenantId]
+    );
+    const baseCost = ingRes.rows.length > 0 ? Number(ingRes.rows[0].cost_per_unit) : 0;
+    const fallbackCost = remaining * baseCost;
+    totalCost += fallbackCost;
+
+    // Create a shortfall or negative batch entry so FIFO records remain intact
+    const autoBatchRes = await client.query(
+      `
+      INSERT INTO inventory_batches (
+        tenant_id, branch_id, ingredient_id, purchase_item_id,
+        quantity_received, quantity_remaining, unit_cost, received_at, status
+      ) VALUES ($1, $2, $3, NULL, $4, 0, $5, CURRENT_TIMESTAMP, 'EXHAUSTED')
+      RETURNING id
+      `,
+      [tenantId, branchId, ingredientId, remaining, baseCost]
+    );
+
+    const autoBatchId = autoBatchRes.rows[0].id;
+    await client.query(
+      `
+      INSERT INTO order_item_batch_consumptions (
+        tenant_id, branch_id, order_id, order_item_id, batch_id,
+        ingredient_id, quantity, unit_cost, total_cost, reference_type, reference_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ORDER', $10)
+      `,
+      [tenantId, branchId, orderId, orderItemId, autoBatchId, ingredientId, remaining, baseCost, fallbackCost, orderId]
+    );
+
+    consumptions.push({
+      batchId: autoBatchId,
+      quantity: remaining,
+      unitCost: baseCost,
+      totalCost: fallbackCost,
+    });
+  }
+
+  return { totalCost, consumptions };
+}
+
+/**
+ * Deduct inventory for an order based on recipes using strict FIFO
  */
 export async function deductInventoryForOrder(
   client: pg.PoolClient,
@@ -12,10 +173,10 @@ export async function deductInventoryForOrder(
   orderId: string,
   userId: string
 ): Promise<{ success: boolean; deductedCount: number; message?: string }> {
-  // 1. Idempotency check: Have we already deducted stock for this order?
+  // 1. Idempotency check: Have we already deducted FIFO stock for this order?
   const existingMovements = await client.query(
     `
-    SELECT id FROM stock_movements
+    SELECT id FROM order_item_batch_consumptions
     WHERE tenant_id = $1 AND reference_type = 'ORDER' AND reference_id = $2
     LIMIT 1
     `,
@@ -74,10 +235,24 @@ export async function deductInventoryForOrder(
       [recipe.id, tenantId]
     );
 
+    let itemTotalCOGS = 0;
+
     for (const ing of ingredientsResult.rows) {
       const deductionQty = Number(ing.quantity) * itemMultiplier;
 
-      // 5. Fetch current branch stock
+      // 5. Consume from FIFO batches
+      const { totalCost: ingredientCOGS } = await consumeIngredientFIFO(client, {
+        tenantId,
+        branchId,
+        ingredientId: ing.ingredient_id,
+        qtyNeeded: deductionQty,
+        orderId,
+        orderItemId: item.id,
+      });
+
+      itemTotalCOGS += ingredientCOGS;
+
+      // 6. Update current stock in branch_stocks
       const stockResult = await client.query(
         `
         SELECT current_stock, cost_per_unit
@@ -92,7 +267,6 @@ export async function deductInventoryForOrder(
       let costPerUnit = 0;
 
       if (stockResult.rows.length === 0) {
-        // Initialize branch stock row if missing
         await client.query(
           `
           INSERT INTO branch_stocks (tenant_id, branch_id, ingredient_id, current_stock, cost_per_unit)
@@ -107,9 +281,8 @@ export async function deductInventoryForOrder(
       }
 
       const newStock = currentStock - deductionQty;
-      const totalCost = deductionQty * costPerUnit;
+      const unitCost = deductionQty > 0 ? ingredientCOGS / deductionQty : costPerUnit;
 
-      // Update branch stock
       await client.query(
         `
         UPDATE branch_stocks
@@ -136,16 +309,16 @@ export async function deductInventoryForOrder(
           -deductionQty,
           currentStock,
           newStock,
-          costPerUnit,
-          totalCost,
+          unitCost,
+          ingredientCOGS,
           'ORDER',
           orderId,
-          `Sale deduction for order item`,
+          `FIFO sale deduction for order item`,
           userId,
         ]
       );
 
-      // Check low stock alert
+      // Low stock notification
       if (newStock <= Number(ing.min_stock_alert)) {
         await client.query(
           `
@@ -163,13 +336,23 @@ export async function deductInventoryForOrder(
 
       totalDeductions++;
     }
+
+    // 7. Save exact item COGS to order_items
+    await client.query(
+      `
+      UPDATE order_items
+      SET cogs = $1, cost_price = $1
+      WHERE id = $2
+      `,
+      [itemTotalCOGS, item.id]
+    );
   }
 
   return { success: true, deductedCount: totalDeductions };
 }
 
 /**
- * Restock inventory for refunded items
+ * Restock inventory for refunded items by restoring FIFO batches or creating restock lots
  */
 export async function restockInventoryForRefund(
   client: pg.PoolClient,
@@ -199,76 +382,103 @@ export async function restockInventoryForRefund(
   for (const item of itemsResult.rows) {
     if (!item.track_inventory) continue;
 
-    const recipeResult = await client.query(
+    // Look for previous consumptions
+    const consumptionsRes = await client.query(
       `
-      SELECT r.id, r.yield_count
-      FROM recipes r
-      WHERE r.tenant_id = $1 AND r.product_id = $2
-        AND (r.variant_id = $3 OR (r.variant_id IS NULL AND $3 IS NULL) OR r.variant_id IS NULL)
-      LIMIT 1
+      SELECT c.id, c.batch_id, c.ingredient_id, c.quantity, c.unit_cost, c.total_cost
+      FROM order_item_batch_consumptions c
+      WHERE c.order_item_id = $1 AND c.tenant_id = $2
       `,
-      [tenantId, item.product_id, item.variant_id || null]
+      [item.id, tenantId]
     );
 
-    if (recipeResult.rows.length === 0) continue;
+    if (consumptionsRes.rows.length > 0) {
+      for (const cons of consumptionsRes.rows) {
+        const qtyToReturn = Number(cons.quantity);
+        const unitCost = Number(cons.unit_cost);
 
-    const recipe = recipeResult.rows[0];
-    const itemMultiplier = item.quantity / (Number(recipe.yield_count) || 1);
-
-    const ingResult = await client.query(
-      `SELECT ingredient_id, quantity FROM recipe_ingredients WHERE recipe_id = $1 AND tenant_id = $2`,
-      [recipe.id, tenantId]
-    );
-
-    for (const ing of ingResult.rows) {
-      const restockQty = Number(ing.quantity) * itemMultiplier;
-
-      const stockRes = await client.query(
-        `SELECT current_stock, cost_per_unit FROM branch_stocks WHERE tenant_id = $1 AND branch_id = $2 AND ingredient_id = $3 FOR UPDATE`,
-        [tenantId, branchId, ing.ingredient_id]
-      );
-
-      if (stockRes.rows.length > 0) {
-        const currentStock = Number(stockRes.rows[0].current_stock);
-        const costPerUnit = Number(stockRes.rows[0].cost_per_unit);
-        const newStock = currentStock + restockQty;
-
-        await client.query(
-          `UPDATE branch_stocks SET current_stock = $1, last_updated = CURRENT_TIMESTAMP WHERE tenant_id = $2 AND branch_id = $3 AND ingredient_id = $4`,
-          [newStock, tenantId, branchId, ing.ingredient_id]
-        );
-
-        await client.query(
+        // Try restoring to original batch first
+        const batchRes = await client.query(
           `
-          INSERT INTO stock_movements (
-            tenant_id, branch_id, ingredient_id, movement_type,
-            quantity, stock_before, stock_after, unit_cost, total_cost,
-            reference_type, reference_id, reason, recorded_by_user_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          SELECT id, quantity_remaining, quantity_received
+          FROM inventory_batches
+          WHERE id = $1 AND tenant_id = $2
+          FOR UPDATE
           `,
-          [
-            tenantId,
-            branchId,
-            ing.ingredient_id,
-            StockMovementType.REFUND_RESTOCK,
-            restockQty,
-            currentStock,
-            newStock,
-            costPerUnit,
-            restockQty * costPerUnit,
-            'ORDER',
-            refundId,
-            `Restock from refund ${refundId}`,
-            userId,
-          ]
+          [cons.batch_id, tenantId]
         );
+
+        if (batchRes.rows.length > 0) {
+          const b = batchRes.rows[0];
+          const newRemaining = Number(b.quantity_remaining) + qtyToReturn;
+          await client.query(
+            `
+            UPDATE inventory_batches
+            SET quantity_remaining = $1, status = 'ACTIVE'
+            WHERE id = $2
+            `,
+            [newRemaining, b.id]
+          );
+        } else {
+          // Create restock batch if original was deleted
+          await client.query(
+            `
+            INSERT INTO inventory_batches (
+              tenant_id, branch_id, ingredient_id, purchase_item_id,
+              quantity_received, quantity_remaining, unit_cost, received_at, status
+            ) VALUES ($1, $2, $3, NULL, $4, $4, $5, CURRENT_TIMESTAMP, 'ACTIVE')
+            `,
+            [tenantId, branchId, cons.ingredient_id, qtyToReturn, unitCost]
+          );
+        }
+
+        // Restore branch stock
+        const stockRes = await client.query(
+          `SELECT current_stock, cost_per_unit FROM branch_stocks WHERE tenant_id = $1 AND branch_id = $2 AND ingredient_id = $3 FOR UPDATE`,
+          [tenantId, branchId, cons.ingredient_id]
+        );
+
+        if (stockRes.rows.length > 0) {
+          const currentStock = Number(stockRes.rows[0].current_stock);
+          const newStock = currentStock + qtyToReturn;
+
+          await client.query(
+            `UPDATE branch_stocks SET current_stock = $1, last_updated = CURRENT_TIMESTAMP WHERE tenant_id = $2 AND branch_id = $3 AND ingredient_id = $4`,
+            [newStock, tenantId, branchId, cons.ingredient_id]
+          );
+
+          await client.query(
+            `
+            INSERT INTO stock_movements (
+              tenant_id, branch_id, ingredient_id, movement_type,
+              quantity, stock_before, stock_after, unit_cost, total_cost,
+              reference_type, reference_id, reason, recorded_by_user_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            `,
+            [
+              tenantId,
+              branchId,
+              cons.ingredient_id,
+              StockMovementType.REFUND_RESTOCK,
+              qtyToReturn,
+              currentStock,
+              newStock,
+              unitCost,
+              qtyToReturn * unitCost,
+              'ORDER',
+              refundId,
+              `Restock from refund ${refundId}`,
+              userId,
+            ]
+          );
+        }
       }
     }
   }
 }
 
 /**
- * Receive a purchase invoice and update inventory using weighted average cost
+ * Receive a purchase invoice and create FIFO inventory batches
  */
 export async function receivePurchaseInvoice(
   client: pg.PoolClient,
@@ -301,7 +511,18 @@ export async function receivePurchaseInvoice(
     const qty = Number(item.quantity);
     const unitPrice = Number(item.unit_price);
 
-    // Get current stock
+    // 1. Create a distinct FIFO batch
+    await client.query(
+      `
+      INSERT INTO inventory_batches (
+        tenant_id, branch_id, ingredient_id, purchase_item_id,
+        quantity_received, quantity_remaining, unit_cost, received_at, status
+      ) VALUES ($1, $2, $3, $4, $5, $5, $6, CURRENT_TIMESTAMP, 'ACTIVE')
+      `,
+      [tenantId, invoice.branch_id, item.ingredient_id, item.id, qty, unitPrice]
+    );
+
+    // 2. Get current stock
     const stockRes = await client.query(
       `SELECT current_stock, cost_per_unit FROM branch_stocks WHERE tenant_id = $1 AND branch_id = $2 AND ingredient_id = $3 FOR UPDATE`,
       [tenantId, invoice.branch_id, item.ingredient_id]
@@ -316,10 +537,9 @@ export async function receivePurchaseInvoice(
     }
 
     const newStock = currentStock + qty;
-    // Weighted Average Cost formula: (oldStock * oldCost + newQty * newPrice) / (oldStock + newQty)
     const newCost = newStock > 0 ? (currentStock * oldCost + qty * unitPrice) / newStock : unitPrice;
 
-    // Upsert branch stock
+    // 3. Upsert branch stock
     await client.query(
       `
       INSERT INTO branch_stocks (tenant_id, branch_id, ingredient_id, current_stock, cost_per_unit, last_updated)
@@ -332,13 +552,13 @@ export async function receivePurchaseInvoice(
       [tenantId, invoice.branch_id, item.ingredient_id, newStock, newCost]
     );
 
-    // Update master ingredient cost per unit
+    // 4. Update master ingredient cost per unit
     await client.query(
       `UPDATE ingredients SET cost_per_unit = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
       [newCost, item.ingredient_id, tenantId]
     );
 
-    // Record stock movement
+    // 5. Record stock movement
     await client.query(
       `
       INSERT INTO stock_movements (

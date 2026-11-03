@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc && node -e \"import('fs').then(fs => fs.cpSync('src/db/migrations', 'dist/db/migrations', {recursive: true}))\"",
     "start": "node dist/server.js",
-    "test": "vitest run",
+    "test": "vitest run --fileParallelism=false",
     "test:watch": "vitest",
     "db:migrate": "tsx src/db/migrator.ts",
     "db:seed": "tsx src/db/seed.ts"

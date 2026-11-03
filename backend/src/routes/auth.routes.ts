@@ -137,7 +137,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     const { rows } = await query(
       `
       SELECT u.id, u.tenant_id, u.branch_id, u.email, u.password_hash, u.full_name,
-             u.role, u.custom_permissions, u.is_active,
+             u.role, u.custom_permissions, u.is_active, u.token_version,
              t.name as restaurant_name, t.currency, t.is_active as tenant_active, t.is_onboarded,
              b.name as branch_name
       FROM users u
@@ -196,6 +196,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         branchId: user.branch_id,
         role: user.role,
         deviceId,
+        tokenVersion: user.token_version || 1,
       },
       JWT_SECRET,
       { expiresIn: '7d' }

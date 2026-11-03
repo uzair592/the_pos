@@ -15,6 +15,7 @@ import {
   Settings,
   Monitor,
   ChefHat,
+  ShoppingBag,
 } from 'lucide-react';
 import { FeatureKey, Permission } from '@pos/shared';
 
@@ -30,10 +31,11 @@ export const Sidebar: React.FC = () => {
 
   const restaurantLinks = [
     { to: '/app', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+    { to: '/app/orders', label: 'Orders Hub', icon: ShoppingBag, permission: Permission.ORDERS_VIEW },
     { to: '/pos', label: 'POS Terminal', icon: Monitor },
     { to: '/kds', label: 'Kitchen Display', icon: ChefHat, feature: FeatureKey.KDS },
     { to: '/app/menu', label: 'Menu & Products', icon: Utensils, permission: Permission.MENU_VIEW },
-    { to: '/app/inventory', label: 'Inventory & Recipes', icon: Boxes, feature: FeatureKey.INVENTORY, permission: Permission.INVENTORY_VIEW },
+    { to: '/app/inventory', label: 'Inventory & Batches', icon: Boxes, feature: FeatureKey.INVENTORY, permission: Permission.INVENTORY_VIEW },
     { to: '/app/shifts', label: 'Shifts & Registers', icon: Clock, permission: Permission.SHIFTS_VIEW },
     { to: '/app/reports', label: 'Reports & Analytics', icon: BarChart3, permission: Permission.REPORTS_SALES },
     { to: '/app/staff', label: 'Staff & Roles', icon: Users, permission: Permission.STAFF_MANAGE },
@@ -50,9 +52,9 @@ export const Sidebar: React.FC = () => {
       });
 
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 min-h-[calc(100vh-4rem)] p-4 flex flex-col justify-between hidden md:flex shrink-0">
+    <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 min-h-[calc(100vh-4rem)] p-4 flex flex-col justify-between hidden md:flex shrink-0 transition-colors">
       <div className="space-y-1.5">
-        <div className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+        <div className="px-3 py-2 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
           {isSuperAdmin ? 'Platform Management' : 'Operations & Management'}
         </div>
 
@@ -66,8 +68,8 @@ export const Sidebar: React.FC = () => {
               className={({ isActive }) =>
                 `flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                   isActive
-                    ? 'bg-brand-50 text-brand-600 font-bold shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    ? 'bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-400 font-bold shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/60'
                 }`
               }
             >
@@ -79,9 +81,9 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {!isSuperAdmin && tenant && (
-        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 text-xs">
-          <p className="font-bold text-slate-800">{tenant.name}</p>
-          <p className="text-slate-500 text-[11px]">{tenant.currency} • {tenant.businessType}</p>
+        <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 text-xs">
+          <p className="font-bold text-slate-800 dark:text-slate-200">{tenant.name}</p>
+          <p className="text-slate-500 dark:text-slate-400 text-[11px]">{tenant.currency} • {tenant.businessType}</p>
         </div>
       )}
     </aside>

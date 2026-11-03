@@ -54,7 +54,7 @@ export async function authenticate(req: FastifyRequest, reply: FastifyReply) {
     // Restaurant user
     const { rows } = await query(
       `
-      SELECT u.id, u.tenant_id, u.branch_id, u.email, u.full_name, u.role, u.custom_permissions, u.is_active,
+      SELECT u.id, u.tenant_id, u.branch_id, u.email, u.full_name, u.role, u.custom_permissions, u.is_active, u.token_version,
              t.is_active as tenant_active, t.is_onboarded
       FROM users u
       JOIN tenants t ON t.id = u.tenant_id
@@ -66,6 +66,10 @@ export async function authenticate(req: FastifyRequest, reply: FastifyReply) {
 
     if (rows.length === 0 || !rows[0].is_active) {
       return reply.status(401).send({ error: 'Unauthorized: User account inactive or not found' });
+    }
+
+    if (decoded.tokenVersion && decoded.tokenVersion < (rows[0].token_version || 1)) {
+      return reply.status(401).send({ error: 'Unauthorized: Session revoked due to credential change' });
     }
 
     if (!rows[0].tenant_active) {
