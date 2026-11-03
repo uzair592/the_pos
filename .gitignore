@@ -50,3 +50,6 @@ temp/
 coverage/
 # Continuity decision memory — travels with the repo (runtime state stays ignored)
 SESSION_HANDOFF.md
+
+.vite/
+frontend/.vite/
