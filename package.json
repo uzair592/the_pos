@@ -1,0 +1,32 @@
+{
+  "name": "restaurant-pos-saas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-Tenant Restaurant POS SaaS Platform",
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:backend": "npm --workspace=backend run dev",
+    "dev:frontend": "npm --workspace=frontend run dev",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm --workspace=backend run test",
+    "db:migrate": "npm --workspace=backend run db:migrate",
+    "db:seed": "npm --workspace=backend run db:seed"
+  },
+  "keywords": [
+    "pos",
+    "restaurant",
+    "saas",
+    "multi-tenant",
+    "fastify",
+    "react",
+    "typescript",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "ISC"
+}
