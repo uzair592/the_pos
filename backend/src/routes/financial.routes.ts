@@ -1,0 +1,408 @@
+import { FastifyInstance } from 'fastify';
+import { query } from '../db/connection.js';
+import { authenticate, requireTenant, requirePermission } from '../middleware/auth.js';
+import {
+  OpenShiftSchema,
+  CashMovementSchema,
+  CloseShiftSchema,
+  CreateExpenseSchema,
+  Permission,
+  ShiftStatus,
+} from '@pos/shared';
+import {
+  openShift,
+  recordCashMovement,
+  closeShift,
+  generateFinancialSummary,
+} from '../services/financialService.js';
+
+export async function financialRoutes(fastify: FastifyInstance) {
+  fastify.addHook('preHandler', authenticate);
+  fastify.addHook('preHandler', requireTenant);
+
+  /**
+   * Current Shift for Cashier
+   */
+  fastify.get('/api/financial/shifts/current', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const cashierId = req.user!.id;
+
+    const { rows } = await query(
+      `
+      SELECT s.*, b.name as branch_name,
+             (SELECT COUNT(*)::int FROM orders WHERE shift_id = s.id AND status = 'COMPLETED') as order_count
+      FROM register_shifts s
+      JOIN branches b ON b.id = s.branch_id
+      WHERE s.tenant_id = $1 AND s.cashier_id = $2 AND s.status = 'OPEN'
+      LIMIT 1
+      `,
+      [tenantId, cashierId],
+      { tenantId }
+    );
+
+    return reply.send({ shift: rows[0] || null });
+  });
+
+  /**
+   * Open Shift
+   */
+  fastify.post('/api/financial/shifts/open', {
+    preHandler: [requirePermission(Permission.SHIFTS_OPEN)],
+  }, async (req, reply) => {
+    const parsed = OpenShiftSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const tenantId = req.user!.tenantId!;
+    const { branchId, registerName, openingCash } = parsed.data;
+
+    const result = await openShift({
+      tenantId,
+      branchId,
+      cashierId: req.user!.id,
+      cashierName: req.user!.fullName,
+      registerName,
+      openingCash,
+    });
+
+    if (!result.success) {
+      return reply.status(400).send({ error: result.message, shiftId: result.shiftId });
+    }
+
+    return reply.status(201).send(result);
+  });
+
+  /**
+   * Cash Movement (Cash In / Cash Out)
+   */
+  fastify.post('/api/financial/shifts/cash-movement', {
+    preHandler: [requirePermission(Permission.CASH_ADJUST)],
+  }, async (req, reply) => {
+    const parsed = CashMovementSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const tenantId = req.user!.tenantId!;
+    const branchId = req.user!.branchId!;
+    const { shiftId, movementType, amount, reason } = parsed.data;
+
+    const movement = await recordCashMovement({
+      tenantId,
+      branchId,
+      shiftId,
+      userId: req.user!.id,
+      movementType,
+      amount,
+      reason,
+    });
+
+    return reply.status(201).send({ movement });
+  });
+
+  /**
+   * Close Shift
+   */
+  fastify.post('/api/financial/shifts/close', {
+    preHandler: [requirePermission(Permission.SHIFTS_CLOSE)],
+  }, async (req, reply) => {
+    const parsed = CloseShiftSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const { shiftId } = req.query as { shiftId: string };
+    if (!shiftId) return reply.status(400).send({ error: 'Missing shiftId query parameter' });
+
+    const tenantId = req.user!.tenantId!;
+    const { actualCash, closingNotes } = parsed.data;
+
+    try {
+      const result = await closeShift({
+        tenantId,
+        shiftId,
+        userId: req.user!.id,
+        actualCash,
+        closingNotes,
+      });
+
+      return reply.send(result);
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  /**
+   * List Past Shifts
+   */
+  fastify.get('/api/financial/shifts', {
+    preHandler: [requirePermission(Permission.SHIFTS_VIEW)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, limit = 50 } = req.query as { branchId?: string; limit?: number };
+
+    let sql = `
+      SELECT s.*, u.full_name as cashier_name, b.name as branch_name
+      FROM register_shifts s
+      JOIN users u ON u.id = s.cashier_id
+      JOIN branches b ON b.id = s.branch_id
+      WHERE s.tenant_id = $1
+    `;
+    const params: any[] = [tenantId];
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND s.branch_id = $${params.length}`;
+    }
+    sql += ` ORDER BY s.opened_at DESC LIMIT $${params.length + 1}`;
+    params.push(limit);
+
+    const { rows } = await query(sql, params, { tenantId });
+    return reply.send({ shifts: rows });
+  });
+
+  /**
+   * Expenses Management
+   */
+  fastify.get('/api/financial/expenses', {
+    preHandler: [requirePermission(Permission.EXPENSES_VIEW)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+    };
+
+    let sql = `
+      SELECT e.*, ec.name as category_name, b.name as branch_name, u.full_name as recorded_by_name
+      FROM expenses e
+      JOIN expense_categories ec ON ec.id = e.category_id
+      JOIN branches b ON b.id = e.branch_id
+      LEFT JOIN users u ON u.id = e.recorded_by_user_id
+      WHERE e.tenant_id = $1
+    `;
+    const params: any[] = [tenantId];
+
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND e.branch_id = $${params.length}`;
+    }
+    if (startDate) {
+      params.push(startDate);
+      sql += ` AND e.expense_date >= $${params.length}`;
+    }
+    if (endDate) {
+      params.push(endDate);
+      sql += ` AND e.expense_date <= $${params.length}`;
+    }
+
+    sql += ' ORDER BY e.expense_date DESC, e.created_at DESC';
+
+    const { rows } = await query(sql, params, { tenantId });
+    return reply.send({ expenses: rows });
+  });
+
+  fastify.post('/api/financial/expenses', {
+    preHandler: [requirePermission(Permission.EXPENSES_MANAGE)],
+  }, async (req, reply) => {
+    const parsed = CreateExpenseSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const tenantId = req.user!.tenantId!;
+    const { branchId, categoryId, amount, paymentMethod, description, expenseDate } = parsed.data;
+
+    const { rows } = await query(
+      `
+      INSERT INTO expenses (tenant_id, branch_id, category_id, amount, payment_method, description, recorded_by_user_id, expense_date)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, CURRENT_DATE))
+      RETURNING *
+      `,
+      [tenantId, branchId, categoryId, amount, paymentMethod, description, req.user!.id, expenseDate || null],
+      { tenantId }
+    );
+
+    return reply.status(201).send({ expense: rows[0] });
+  });
+
+  fastify.get('/api/financial/expenses/categories', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { rows } = await query('SELECT * FROM expense_categories WHERE tenant_id = $1 ORDER BY name ASC', [tenantId], { tenantId });
+    return reply.send({ categories: rows });
+  });
+
+  fastify.post('/api/financial/expenses/categories', {
+    preHandler: [requirePermission(Permission.EXPENSES_MANAGE)],
+  }, async (req, reply) => {
+    const { name, description } = req.body as { name: string; description?: string };
+    if (!name) return reply.status(400).send({ error: 'Name is required' });
+
+    const tenantId = req.user!.tenantId!;
+    const { rows } = await query(
+      'INSERT INTO expense_categories (tenant_id, name, description) VALUES ($1, $2, $3) RETURNING *',
+      [tenantId, name, description || null],
+      { tenantId }
+    );
+    return reply.status(201).send({ category: rows[0] });
+  });
+
+  /**
+   * Reports: Summary (Net Sales, COGS, Gross Profit, Operating Profit)
+   */
+  fastify.get('/api/financial/reports/summary', {
+    preHandler: [requirePermission(Permission.REPORTS_FINANCIAL)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+    };
+
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    const summary = await generateFinancialSummary({
+      tenantId,
+      branchId: branchId || null,
+      startDate: start,
+      endDate: end,
+    });
+
+    return reply.send({ report: summary });
+  });
+
+  /**
+   * Reports: Sales by Product
+   */
+  fastify.get('/api/financial/reports/sales-by-product', {
+    preHandler: [requirePermission(Permission.REPORTS_SALES)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+    };
+
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    let sql = `
+      SELECT
+        oi.product_id,
+        oi.product_name,
+        SUM(oi.quantity)::int as total_quantity,
+        SUM(oi.total_price)::numeric as total_sales,
+        SUM(oi.quantity * oi.cost_price)::numeric as total_cost,
+        (SUM(oi.total_price) - SUM(oi.quantity * oi.cost_price))::numeric as gross_profit
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE oi.tenant_id = $1 AND o.status = 'COMPLETED'
+        AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+    `;
+    const params: any[] = [tenantId, start, end];
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND o.branch_id = $${params.length}`;
+    }
+    sql += ` GROUP BY oi.product_id, oi.product_name ORDER BY total_sales DESC`;
+
+    const { rows } = await query(sql, params, { tenantId });
+    return reply.send({ products: rows });
+  });
+
+  /**
+   * Reports: Sales by Category
+   */
+  fastify.get('/api/financial/reports/sales-by-category', {
+    preHandler: [requirePermission(Permission.REPORTS_SALES)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+    };
+
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    let sql = `
+      SELECT
+        c.id as category_id,
+        c.name as category_name,
+        SUM(oi.quantity)::int as total_quantity,
+        SUM(oi.total_price)::numeric as total_sales
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      JOIN products p ON p.id = oi.product_id
+      JOIN categories c ON c.id = p.category_id
+      WHERE oi.tenant_id = $1 AND o.status = 'COMPLETED'
+        AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+    `;
+    const params: any[] = [tenantId, start, end];
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND o.branch_id = $${params.length}`;
+    }
+    sql += ` GROUP BY c.id, c.name ORDER BY total_sales DESC`;
+
+    const { rows } = await query(sql, params, { tenantId });
+    return reply.send({ categories: rows });
+  });
+
+  /**
+   * Export Report to CSV
+   */
+  fastify.get('/api/financial/reports/export', {
+    preHandler: [requirePermission(Permission.REPORTS_EXPORT)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    const { rows } = await query(
+      `
+      SELECT
+        o.order_number,
+        o.created_at,
+        o.order_type,
+        o.subtotal,
+        o.total_discount,
+        o.tax_amount,
+        o.service_charge_amount,
+        o.grand_total,
+        o.cashier_name,
+        b.name as branch_name
+      FROM orders o
+      JOIN branches b ON b.id = o.branch_id
+      WHERE o.tenant_id = $1 AND o.status = 'COMPLETED'
+        AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+      ORDER BY o.created_at DESC
+      `,
+      [tenantId, start, end],
+      { tenantId }
+    );
+
+    // Generate CSV string
+    const headers = ['Order Number', 'Date', 'Type', 'Subtotal', 'Discount', 'Tax', 'Service Charge', 'Grand Total', 'Cashier', 'Branch'];
+    const csvRows = [headers.join(',')];
+
+    for (const r of rows) {
+      csvRows.push([
+        r.order_number,
+        `"${new Date(r.created_at).toISOString()}"`,
+        r.order_type,
+        r.subtotal,
+        r.total_discount,
+        r.tax_amount,
+        r.service_charge_amount,
+        r.grand_total,
+        `"${r.cashier_name || ''}"`,
+        `"${r.branch_name || ''}"`,
+      ].join(','));
+    }
+
+    const csvData = csvRows.join('\n');
+    reply.header('Content-Type', 'text/csv');
+    reply.header('Content-Disposition', `attachment; filename=sales-report-${start.split('T')[0]}.csv`);
+    return reply.send(csvData);
+  });
+}
