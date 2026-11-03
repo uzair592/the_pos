@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 export async function runMigrations() {
   const client = await pool.connect();
   try {
+    await client.query('SELECT pg_advisory_lock(7429482);');
     console.log('Running database migrations...');
 
     // Ensure migrations table exists
@@ -71,6 +72,11 @@ export async function runMigrations() {
 
     console.log('All migrations applied successfully.');
   } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock(7429482);');
+    } catch (e) {
+      // ignore
+    }
     client.release();
   }
 }

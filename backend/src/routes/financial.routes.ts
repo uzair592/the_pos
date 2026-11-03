@@ -405,4 +405,169 @@ export async function financialRoutes(fastify: FastifyInstance) {
     reply.header('Content-Disposition', `attachment; filename=sales-report-${start.split('T')[0]}.csv`);
     return reply.send(csvData);
   });
+
+  /**
+   * Dedicated Sub-Reports: Sales Detailed Report
+   */
+  fastify.get('/api/financial/reports/sales-detailed', {
+    preHandler: [requirePermission(Permission.REPORTS_SALES)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+    };
+
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    let sql = `
+      SELECT
+        o.id, o.order_number, o.created_at, o.order_type, o.subtotal, o.total_discount,
+        o.tax_amount, o.service_charge_amount, o.grand_total, o.cashier_name, o.customer_name,
+        b.name as branch_name,
+        (SELECT COUNT(*)::int FROM order_items WHERE order_id = o.id) as item_count,
+        (SELECT STRING_AGG(DISTINCT method, ', ') FROM order_payments WHERE order_id = o.id) as payment_methods
+      FROM orders o
+      JOIN branches b ON b.id = o.branch_id
+      WHERE o.tenant_id = $1 AND o.status = 'COMPLETED'
+        AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+    `;
+    const params: any[] = [tenantId, start, end];
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND o.branch_id = $${params.length}`;
+    }
+    sql += ` ORDER BY o.created_at DESC`;
+
+    const { rows } = await query(sql, params, { tenantId });
+    return reply.send({ sales: rows });
+  });
+
+  /**
+   * Dedicated Sub-Reports: Purchases Report
+   */
+  fastify.get('/api/financial/reports/purchases', {
+    preHandler: [requirePermission(Permission.REPORTS_FINANCIAL)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+    };
+
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    let sql = `
+      SELECT
+        pi.id, pi.invoice_number, pi.created_at, pi.received_at, pi.status,
+        pi.subtotal, pi.tax_amount, pi.total_amount, pi.paid_amount, pi.balance_payable,
+        s.name as supplier_name, b.name as branch_name,
+        (SELECT COUNT(*)::int FROM purchase_items WHERE purchase_id = pi.id) as item_count
+      FROM purchase_invoices pi
+      JOIN suppliers s ON s.id = pi.supplier_id
+      JOIN branches b ON b.id = pi.branch_id
+      WHERE pi.tenant_id = $1
+        AND pi.created_at >= $2::timestamptz AND pi.created_at <= $3::timestamptz
+    `;
+    const params: any[] = [tenantId, start, end];
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND pi.branch_id = $${params.length}`;
+    }
+    sql += ` ORDER BY pi.created_at DESC`;
+
+    const { rows } = await query(sql, params, { tenantId });
+    return reply.send({ purchases: rows });
+  });
+
+  /**
+   * Dedicated Sub-Reports: Expenses Detailed Report
+   */
+  fastify.get('/api/financial/reports/expenses-detailed', {
+    preHandler: [requirePermission(Permission.EXPENSES_VIEW)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+    };
+
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    let sql = `
+      SELECT
+        e.id, e.expense_date, e.amount, e.payment_method, e.description, e.created_at,
+        ec.name as category_name, b.name as branch_name, u.full_name as recorded_by_name
+      FROM expenses e
+      JOIN expense_categories ec ON ec.id = e.category_id
+      JOIN branches b ON b.id = e.branch_id
+      JOIN users u ON u.id = e.recorded_by_user_id
+      WHERE e.tenant_id = $1
+        AND e.expense_date >= $2::date AND e.expense_date <= $3::date
+    `;
+    const params: any[] = [tenantId, start.split('T')[0], end.split('T')[0]];
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND e.branch_id = $${params.length}`;
+    }
+    sql += ` ORDER BY e.expense_date DESC, e.created_at DESC`;
+
+    const { rows } = await query(sql, params, { tenantId });
+    return reply.send({ expenses: rows });
+  });
+
+  /**
+   * Dedicated Sub-Reports: Daily Gross Profit & FIFO COGS Report
+   */
+  fastify.get('/api/financial/reports/gross-profit-report', {
+    preHandler: [requirePermission(Permission.REPORTS_FINANCIAL)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+    };
+
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    let sql = `
+      SELECT
+        DATE(o.created_at) as report_date,
+        COUNT(o.id)::int as order_count,
+        COALESCE(SUM(o.subtotal - o.total_discount), 0)::numeric as net_sales,
+        COALESCE(SUM(o.grand_total), 0)::numeric as grand_total,
+        COALESCE(SUM(cogs_sub.total_cogs), 0)::numeric as fifo_cogs,
+        (COALESCE(SUM(o.subtotal - o.total_discount), 0) - COALESCE(SUM(cogs_sub.total_cogs), 0))::numeric as gross_profit,
+        CASE
+          WHEN SUM(o.subtotal - o.total_discount) > 0
+          THEN ((SUM(o.subtotal - o.total_discount) - COALESCE(SUM(cogs_sub.total_cogs), 0)) / SUM(o.subtotal - o.total_discount) * 100)::numeric(5,2)
+          ELSE 0
+        END as gross_margin_percent
+      FROM orders o
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(cogs), 0) as total_cogs
+        FROM order_items
+        WHERE order_id = o.id
+      ) cogs_sub ON true
+      WHERE o.tenant_id = $1 AND o.status = 'COMPLETED'
+        AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+    `;
+    const params: any[] = [tenantId, start, end];
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND o.branch_id = $${params.length}`;
+    }
+    sql += ` GROUP BY DATE(o.created_at) ORDER BY report_date DESC`;
+
+    const { rows } = await query(sql, params, { tenantId });
+    return reply.send({ dailyProfit: rows });
+  });
 }

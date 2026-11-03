@@ -191,11 +191,11 @@ export async function generateFinancialSummary(filters: FinancialReportFilters):
   const netSales = Math.max(0, grossSales - discounts - refunds);
   const totalCollected = netSales + taxCollected + serviceCharges;
 
-  // 3. Cost of Goods Sold (COGS) from stock movements
+  // 3. Cost of Goods Sold (COGS) from exact FIFO batch consumptions
   let cogsQuery = `
     SELECT COALESCE(SUM(total_cost), 0)::numeric as cogs
-    FROM stock_movements
-    WHERE tenant_id = $1 AND movement_type = 'SALE_CONSUMPTION'
+    FROM order_item_batch_consumptions
+    WHERE tenant_id = $1
       AND created_at >= $2::timestamptz AND created_at <= $3::timestamptz
   `;
   const cogsParams: any[] = [tenantId, startDate, endDate];
@@ -204,7 +204,24 @@ export async function generateFinancialSummary(filters: FinancialReportFilters):
     cogsParams.push(branchId);
   }
   const { rows: cogsAgg } = await query(cogsQuery, cogsParams, { tenantId });
-  const costOfGoodsSold = Number(cogsAgg[0]?.cogs || 0);
+  let costOfGoodsSold = Number(cogsAgg[0]?.cogs || 0);
+
+  // Fallback to stock movements if no FIFO batch consumptions exist yet
+  if (costOfGoodsSold === 0) {
+    let fallbackCogs = `
+      SELECT COALESCE(SUM(total_cost), 0)::numeric as cogs
+      FROM stock_movements
+      WHERE tenant_id = $1 AND movement_type = 'SALE_CONSUMPTION'
+        AND created_at >= $2::timestamptz AND created_at <= $3::timestamptz
+    `;
+    const fbParams: any[] = [tenantId, startDate, endDate];
+    if (branchId) {
+      fallbackCogs += ` AND branch_id = $4`;
+      fbParams.push(branchId);
+    }
+    const { rows: fbAgg } = await query(fallbackCogs, fbParams, { tenantId });
+    costOfGoodsSold = Number(fbAgg[0]?.cogs || 0);
+  }
 
   // Gross Profit formula: Net Sales - COGS
   const grossProfit = netSales - costOfGoodsSold;

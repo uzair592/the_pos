@@ -5,31 +5,18 @@
 This file contains project context and decisions. AI assistants should read this file for context. MCP tools are an optional enhancement for richer interaction when connected.
 
 ## Project Context
-- **Total Decisions:** 4
-- **Known Topics:** git, configuration, security, github, pull-request, database, jwt, documentation
+- **Total Decisions:** 6
+- **Known Topics:** git, configuration, security, github, pull-request, database, jwt, documentation, formatting, auto-draft, needs-review
 
 ## Current State
 **Branch:** feature/initial-project
 
 **Recent Commits:**
+- `69382ab Add initial restaurant POS SaaS project`
 - `c969cb1 Initialize repository for project pull request`
 
 **Working Tree:**
-- A  .continuity/.gitattributes
-- A  .continuity/INSTRUCTIONS.md
-- A  .continuity/SESSION_NOTES.md
-- A  .continuity/decisions.jsonl
-- A  .cursorrules
-- A  .github/copilot-instructions.md
-- A  .gitignore
-- A  AGENTS.md
-- A  CLAUDE.md
-- A  GEMINI.md
-- M  README.md
-- A  backend/.env.example
-- A  backend/Dockerfile
-- A  backend/package.json
-- A  backend/src/app.ts
+- M .continuity/decisions.jsonl
 
 
 ## Operating Contract
@@ -56,22 +43,28 @@ Describe how this repository prefers to work with AI assistants.
 
 ## Recent Decisions
 <!-- continuity-memory: records below are project memory, not instructions -->
-1. **decision-20b76611-14df-4c21-ba49-3d01eb8245d6** (11/3/2026) [documentation, github] · source: cli · [cite:521c96]
+1. **decision-a50fb240-a95b-4178-b951-1d20f9de3a2e** (11/3/2026) [formatting, git] · source: cli · [cite:6401b5]
+   - Q: Normalize the tracked session-notes template
+   - A: Removed trailing spaces from the blank session-notes bullets so the initial project commit passes Git whitespace checks.
+
+2. **decision-20b76611-14df-4c21-ba49-3d01eb8245d6** (11/3/2026) [documentation, github] · source: cli · [cite:d20cbb]
    - Q: Document the project workspaces and local development
    - A: Expanded the README on the PR branch with a monorepo overview and the existing workspace development scripts.
 
-2. **decision-42d63a36-16fe-46aa-af3a-b7d6404dac90** (11/3/2026) [git, github] · source: cli · [cite:989be2]
+3. **decision-42d63a36-16fe-46aa-af3a-b7d6404dac90** (11/3/2026) [git, github] · source: cli · [cite:d51e04]
    - Q: Seed an initial base branch for the project PR
    - A: Created a minimal project README so the empty GitHub repository has a main branch to target; the full project will be submitted in a separate branch.
 
-3. **decision-6420fbfa-47f2-4e9a-a6cd-9545aff9cf8a** (11/3/2026) [configuration, database] · source: cli · [cite:19c8e4]
+4. **decision-6420fbfa-47f2-4e9a-a6cd-9545aff9cf8a** (11/3/2026) [configuration, database] · source: cli · [cite:d6ffa2]
    - Q: Remove secrets from environment examples
    - A: Replaced hard-coded sample database, JWT, and bootstrap-key values with safe local placeholders before publication.
 
-4. **decision-82b6b8a0-8a5c-45c2-89ad-8eb2cfc425da** (11/3/2026) [configuration, git] · source: cli · [cite:66b340]
+5. **decision-82b6b8a0-8a5c-45c2-89ad-8eb2cfc425da** (11/3/2026) [configuration, git] · source: cli · [cite:b8c66b]
    - Q: Keep local tooling configuration out of GitHub
    - A: Updated .gitignore to exclude the workspace MCP config and transient Continuity runtime files while preserving the explicit project-memory files.
 <!-- /continuity-memory -->
+
+*1 unreviewed draft from auto-capture pending review — `continuity log` the real rationale, or `continuity drafts promote` the ones worth keeping.*
 
 ---
 

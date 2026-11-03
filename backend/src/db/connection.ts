@@ -31,15 +31,20 @@ export async function query<T extends pg.QueryResultRow = any>(
 ): Promise<pg.QueryResult<T>> {
   const client = await pool.connect();
   try {
-    // Set tenant context (transaction‑local when possible)
+    // Set tenant context (session‑scoped for client checkout, cleared in finally)
     if (options?.tenantId) {
-      await client.query(`SELECT set_config('app.current_tenant_id', $1, true);`, [options.tenantId]);
+      await client.query(`SET ROLE pos_rls_role;`);
+      await client.query(`SELECT set_config('app.current_tenant_id', $1, false);`, [options.tenantId]);
+      await client.query(`SELECT set_config('app.is_super_admin', 'false', false);`);
     } else if (options?.isSuperAdmin) {
-      await client.query(`SELECT set_config('app.is_super_admin', 'true', true);`);
+      await client.query(`RESET ROLE;`);
+      await client.query(`SELECT set_config('app.current_tenant_id', '00000000-0000-0000-0000-000000000000', false);`);
+      await client.query(`SELECT set_config('app.is_super_admin', 'true', false);`);
     } else {
       // Explicitly clear any previous context – fail‑closed behaviour
-      await client.query(`SELECT set_config('app.current_tenant_id', '', true);`);
-      await client.query(`SELECT set_config('app.is_super_admin', 'false', true);`);
+      await client.query(`SET ROLE pos_rls_role;`);
+      await client.query(`SELECT set_config('app.current_tenant_id', '00000000-0000-0000-0000-000000000000', false);`);
+      await client.query(`SELECT set_config('app.is_super_admin', 'false', false);`);
     }
 
     const result = await client.query<T>(text, params);
@@ -47,8 +52,9 @@ export async function query<T extends pg.QueryResultRow = any>(
   } finally {
     // Ensure the session variables are cleared before the client returns to the pool
     try {
-      await client.query(`SELECT set_config('app.current_tenant_id', '', true);`);
-      await client.query(`SELECT set_config('app.is_super_admin', 'false', true);`);
+      await client.query(`RESET ROLE;`);
+      await client.query(`SELECT set_config('app.current_tenant_id', '00000000-0000-0000-0000-000000000000', false);`);
+      await client.query(`SELECT set_config('app.is_super_admin', 'false', false);`);
     } catch (e) {
       // ignore cleanup errors – the pool will discard a broken client
     }
@@ -57,7 +63,7 @@ export async function query<T extends pg.QueryResultRow = any>(
 }
 
 /**
- * Execute multiple queries in a transaction with tenant context.
+ * Execute a callback within a managed transaction.
  */
 export async function withTransaction<T>(
   callback: (client: pg.PoolClient) => Promise<T>,
@@ -66,14 +72,16 @@ export async function withTransaction<T>(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
-    // Set tenant context for the whole transaction (local to this transaction)
     if (options?.tenantId) {
+      await client.query(`SET ROLE pos_rls_role;`);
       await client.query(`SELECT set_config('app.current_tenant_id', $1, true);`, [options.tenantId]);
+      await client.query(`SELECT set_config('app.is_super_admin', 'false', true);`);
     } else if (options?.isSuperAdmin) {
+      await client.query(`RESET ROLE;`);
       await client.query(`SELECT set_config('app.is_super_admin', 'true', true);`);
     } else {
-      await client.query(`SELECT set_config('app.current_tenant_id', '', true);`);
+      await client.query(`SET ROLE pos_rls_role;`);
+      await client.query(`SELECT set_config('app.current_tenant_id', '00000000-0000-0000-0000-000000000000', true);`);
       await client.query(`SELECT set_config('app.is_super_admin', 'false', true);`);
     }
 
@@ -84,45 +92,13 @@ export async function withTransaction<T>(
     await client.query('ROLLBACK');
     throw error;
   } finally {
-    // Clean up session variables before returning client to the pool
     try {
-      await client.query(`SELECT set_config('app.current_tenant_id', '', true);`);
+      await client.query(`RESET ROLE;`);
+      await client.query(`SELECT set_config('app.current_tenant_id', '00000000-0000-0000-0000-000000000000', true);`);
       await client.query(`SELECT set_config('app.is_super_admin', 'false', true);`);
     } catch (e) {
-      // ignore cleanup errors
+      // ignore
     }
-    client.release();
-  }
-}
-
-
-/**
- * Execute multiple queries in a transaction with tenant context.
- */
-export async function withTransaction<T>(
-  callback: (client: pg.PoolClient) => Promise<T>,
-  options?: QueryOptions
-): Promise<T> {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    if (options?.tenantId) {
-      await client.query(`SELECT set_config('app.current_tenant_id', $1, true);`, [options.tenantId]);
-    } else if (options?.isSuperAdmin) {
-      await client.query(`SELECT set_config('app.is_super_admin', 'true', true);`);
-    } else {
-      await client.query(`SELECT set_config('app.current_tenant_id', '', true);`);
-      await client.query(`SELECT set_config('app.is_super_admin', 'false', true);`);
-    }
-
-    const result = await callback(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
     client.release();
   }
 }

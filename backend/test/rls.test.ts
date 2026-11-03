@@ -20,14 +20,15 @@ beforeAll(async () => {
   // Create two tenants (restaurants) directly via INSERTs.
   tenantA = uuidv4();
   tenantB = uuidv4();
+  const time = Date.now();
 
-  await q(`INSERT INTO tenants (id, name, email, owner_name, phone) VALUES ($1, 'Tenant A', 'a@example.com', 'Owner A', '111')`, [tenantA]);
-  await q(`INSERT INTO tenants (id, name, email, owner_name, phone) VALUES ($1, 'Tenant B', 'b@example.com', 'Owner B', '222')`, [tenantB]);
+  await q(`INSERT INTO tenants (id, name, email, owner_name, phone) VALUES ($1, 'Tenant A', 'a_${time}@example.com', 'Owner A', '111')`, [tenantA]);
+  await q(`INSERT INTO tenants (id, name, email, owner_name, phone) VALUES ($1, 'Tenant B', 'b_${time}@example.com', 'Owner B', '222')`, [tenantB]);
 
   // Create a branch for each tenant.
-  const resA = await q(`INSERT INTO branches (id, tenant_id, name, code, phone, address, city) VALUES (gen_random_uuid(), $1, 'Main', 'MAIN', '111', 'Addr', 'City') RETURNING id`, [], tenantA);
+  const resA = await q(`INSERT INTO branches (id, tenant_id, name, code, phone, address, city) VALUES (gen_random_uuid(), $1, 'Main', 'MAIN', '111', 'Addr', 'City') RETURNING id`, [tenantA], tenantA);
   branchA = resA.rows[0].id;
-  const resB = await q(`INSERT INTO branches (id, tenant_id, name, code, phone, address, city) VALUES (gen_random_uuid(), $1, 'Main', 'MAIN', '222', 'Addr', 'City') RETURNING id`, [], tenantB);
+  const resB = await q(`INSERT INTO branches (id, tenant_id, name, code, phone, address, city) VALUES (gen_random_uuid(), $1, 'Main', 'MAIN', '222', 'Addr', 'City') RETURNING id`, [tenantB], tenantB);
   branchB = resB.rows[0].id;
 });
 

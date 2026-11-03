@@ -14,6 +14,7 @@ import {
   DEFAULT_ROLE_PERMISSIONS,
 } from '@pos/shared';
 import { checkBranchLimit, checkStaffLimit } from '../services/subscriptionService.js';
+import { generateTenantBackup, restoreTenantBackup, getBackupHistory } from '../services/backupService.js';
 import { logAuditEvent } from '../services/auditService.js';
 
 export async function restaurantRoutes(fastify: FastifyInstance) {
@@ -504,5 +505,40 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
 
     await query('DELETE FROM registered_devices WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
     return reply.send({ message: 'Device removed successfully' });
+  });
+
+  /**
+   * Backup & Restore Endpoints for Tenant
+   */
+  fastify.post('/api/restaurant/backups/generate', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    try {
+      const result = await generateTenantBackup(tenantId, req.user!.id, req.user!.fullName);
+      return reply.send(result);
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message || 'Failed to generate backup' });
+    }
+  });
+
+  fastify.post('/api/restaurant/backups/restore', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const backupPackage = req.body as any;
+
+    if (!backupPackage || !backupPackage.metadata || !backupPackage.data) {
+      return reply.status(400).send({ error: 'Invalid backup package payload' });
+    }
+
+    try {
+      const result = await restoreTenantBackup(tenantId, backupPackage, req.user!.id);
+      return reply.send(result);
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message || 'Failed to restore backup' });
+    }
+  });
+
+  fastify.get('/api/restaurant/backups', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const history = await getBackupHistory(tenantId);
+    return reply.send({ backups: history });
   });
 }

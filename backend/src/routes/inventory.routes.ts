@@ -57,6 +57,45 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * List FIFO Batches per Ingredient / Branch
+   */
+  fastify.get('/api/inventory/batches', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { ingredientId, branchId, status } = req.query as {
+      ingredientId?: string;
+      branchId?: string;
+      status?: string;
+    };
+
+    let sql = `
+      SELECT b.*, i.name as ingredient_name, i.unit as ingredient_unit, br.name as branch_name
+      FROM inventory_batches b
+      JOIN ingredients i ON i.id = b.ingredient_id
+      JOIN branches br ON br.id = b.branch_id
+      WHERE b.tenant_id = $1
+    `;
+    const params: any[] = [tenantId];
+
+    if (ingredientId) {
+      params.push(ingredientId);
+      sql += ` AND b.ingredient_id = $${params.length}`;
+    }
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND b.branch_id = $${params.length}`;
+    }
+    if (status) {
+      params.push(status);
+      sql += ` AND b.status = $${params.length}`;
+    }
+
+    sql += ' ORDER BY b.received_at DESC, b.created_at DESC';
+
+    const { rows } = await query(sql, params, { tenantId });
+    return reply.send({ batches: rows });
+  });
+
+  /**
    * Create Ingredient
    */
   fastify.post('/api/inventory/ingredients', {
@@ -94,6 +133,15 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
           );
 
           if (qty > 0) {
+            await client.query(
+              `
+              INSERT INTO inventory_batches (
+                tenant_id, branch_id, ingredient_id, quantity_received, quantity_remaining, unit_cost, received_at, status
+              ) VALUES ($1, $2, $3, $4, $4, $5, CURRENT_TIMESTAMP, 'ACTIVE')
+              `,
+              [tenantId, branchId, ingredient.id, qty, costPerUnit]
+            );
+
             await client.query(
               `
               INSERT INTO stock_movements (
@@ -251,9 +299,46 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       if (movementType === StockMovementType.ADJUSTMENT_ADD) {
         qtyDelta = quantity;
         newStock += quantity;
+
+        // Add FIFO batch for positive stock addition
+        await client.query(
+          `
+          INSERT INTO inventory_batches (
+            tenant_id, branch_id, ingredient_id, quantity_received, quantity_remaining, unit_cost, received_at, status
+          ) VALUES ($1, $2, $3, $4, $4, $5, CURRENT_TIMESTAMP, 'ACTIVE')
+          `,
+          [tenantId, branchId, ingredientId, quantity, costPerUnit]
+        );
       } else {
         qtyDelta = -quantity;
         newStock -= quantity;
+
+        // Deduct from oldest active batches
+        let remainingToDeduct = quantity;
+        const bRes = await client.query(
+          `
+          SELECT id, quantity_remaining
+          FROM inventory_batches
+          WHERE tenant_id = $1 AND branch_id = $2 AND ingredient_id = $3
+            AND status = 'ACTIVE' AND quantity_remaining > 0
+          ORDER BY received_at ASC, created_at ASC
+          FOR UPDATE
+          `,
+          [tenantId, branchId, ingredientId]
+        );
+
+        for (const b of bRes.rows) {
+          if (remainingToDeduct <= 0) break;
+          const avail = Number(b.quantity_remaining);
+          const take = Math.min(avail, remainingToDeduct);
+          const newRem = avail - take;
+          remainingToDeduct -= take;
+
+          await client.query(
+            `UPDATE inventory_batches SET quantity_remaining = $1, status = $2 WHERE id = $3`,
+            [newRem, newRem <= 0 ? 'EXHAUSTED' : 'ACTIVE', b.id]
+          );
+        }
       }
 
       await client.query(
