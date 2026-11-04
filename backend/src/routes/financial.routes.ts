@@ -605,6 +605,9 @@ export async function financialRoutes(fastify: FastifyInstance) {
         COALESCE(exp_data.total_expenses, 0)::numeric as total_expenses,
         (COALESCE(orders_data.net_sales, 0) - COALESCE(orders_data.fifo_cogs, 0) - COALESCE(exp_data.total_expenses, 0))::numeric as net_profit,
         COALESCE(stock_data.inventory_valuation, 0)::numeric as inventory_valuation,
+        COALESCE(active_data.active_orders_count, 0)::int as active_orders_count,
+        COALESCE(active_data.served_unpaid_count, 0)::int as served_unpaid_count,
+        COALESCE(active_data.unpaid_orders_amount, 0)::numeric as unpaid_orders_amount,
         COALESCE(tbl_data.active_tables, 0)::int as active_tables,
         COALESCE(tbl_data.occupied_tables, 0)::int as occupied_tables,
         COALESCE(dev_data.active_devices, 0)::int as active_devices
@@ -646,6 +649,15 @@ export async function financialRoutes(fastify: FastifyInstance) {
         FROM registered_devices rd
         WHERE rd.tenant_id = $1 AND rd.branch_id = b.id AND rd.is_active = true
       ) dev_data ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(o.id) as active_orders_count,
+          COUNT(o.id) FILTER (WHERE o.status = 'SERVED') as served_unpaid_count,
+          COALESCE(SUM(o.grand_total), 0) as unpaid_orders_amount
+        FROM orders o
+        WHERE o.tenant_id = $1 AND o.branch_id = b.id
+          AND o.status IN ('PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'ON_HOLD')
+      ) active_data ON true
       WHERE b.tenant_id = $1 AND b.is_active = true
       ORDER BY b.is_main_branch DESC, b.name ASC
       `,
@@ -663,6 +675,9 @@ export async function financialRoutes(fastify: FastifyInstance) {
       totalExpenses: branchRows.reduce((acc: number, r: any) => acc + Number(r.total_expenses || 0), 0),
       netProfit: branchRows.reduce((acc: number, r: any) => acc + Number(r.net_profit || 0), 0),
       inventoryValuation: branchRows.reduce((acc: number, r: any) => acc + Number(r.inventory_valuation || 0), 0),
+      activeOrdersCount: branchRows.reduce((acc: number, r: any) => acc + Number(r.active_orders_count || 0), 0),
+      unpaidOrdersAmount: branchRows.reduce((acc: number, r: any) => acc + Number(r.unpaid_orders_amount || 0), 0),
+      servedUnpaidCount: branchRows.reduce((acc: number, r: any) => acc + Number(r.served_unpaid_count || 0), 0),
       activeTables: branchRows.reduce((acc: number, r: any) => acc + Number(r.active_tables || 0), 0),
       occupiedTables: branchRows.reduce((acc: number, r: any) => acc + Number(r.occupied_tables || 0), 0),
       activeDevices: branchRows.reduce((acc: number, r: any) => acc + Number(r.active_devices || 0), 0),
@@ -672,17 +687,20 @@ export async function financialRoutes(fastify: FastifyInstance) {
     const { rows: topProducts } = await query(
       `
       SELECT
-        p.id, p.name, p.category,
+        oi.product_id as id,
+        oi.product_name as name,
+        COALESCE(c.name, 'General') as category,
         SUM(oi.quantity)::int as total_quantity_sold,
-        SUM(oi.subtotal)::numeric as total_revenue,
-        SUM(oi.cogs)::numeric as total_cogs,
-        (SUM(oi.subtotal) - SUM(oi.cogs))::numeric as product_gross_profit
+        SUM(oi.total_price)::numeric as total_revenue,
+        COALESCE(SUM(oi.cogs), 0)::numeric as total_cogs,
+        (SUM(oi.total_price) - COALESCE(SUM(oi.cogs), 0))::numeric as product_gross_profit
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
-      JOIN menu_items p ON p.id = oi.menu_item_id
+      LEFT JOIN products p ON p.id = oi.product_id
+      LEFT JOIN categories c ON c.id = p.category_id
       WHERE o.tenant_id = $1 AND o.status = 'COMPLETED'
         AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
-      GROUP BY p.id, p.name, p.category
+      GROUP BY oi.product_id, oi.product_name, c.name
       ORDER BY total_revenue DESC
       LIMIT 6
       `,

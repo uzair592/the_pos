@@ -716,6 +716,31 @@ describe('Multi-Device Real-Time Order & KDS Flow and Complete CRUD Verification
     expect(servedEvt.payload.tableNumber).toBe('T-10');
   });
 
+  it('Multi-Device Step 2b (Dashboard Real-Time Visibility): Dashboard financial summary and head office metrics reflect Served Unpaid order', async () => {
+    // 1. Branch Financial Summary endpoint includes served unpaid orders count & amount
+    const today = new Date().toISOString().split('T')[0];
+    const summaryRes = await app.inject({
+      method: 'GET',
+      url: `/api/financial/reports/summary?branchId=${branchId}&startDate=${today}T00:00:00Z&endDate=${today}T23:59:59Z`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(summaryRes.statusCode).toBe(200);
+    const summaryReport = JSON.parse(summaryRes.payload).report;
+    expect(summaryReport.servedUnpaidCount).toBeGreaterThanOrEqual(1);
+    expect(Number(summaryReport.unpaidAmount)).toBeGreaterThan(2500);
+
+    // 2. Head Office Consolidated Summary endpoint includes served unpaid count and active pipeline amount
+    const hoRes = await app.inject({
+      method: 'GET',
+      url: `/api/financial/reports/head-office-summary?startDate=${today}T00:00:00Z&endDate=${today}T23:59:59Z`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(hoRes.statusCode).toBe(200);
+    const hoBody = JSON.parse(hoRes.payload);
+    expect(hoBody.consolidated.servedUnpaidCount).toBeGreaterThanOrEqual(1);
+    expect(Number(hoBody.consolidated.unpaidOrdersAmount)).toBeGreaterThan(2500);
+  });
+
   it('Multi-Device Step 3 (POS Cashier Register): Cashier sees Served Unpaid Order, collects payment and prints bill', async () => {
     // 1. Open shift for Cashier if not already open
     const openShiftRes = await app.inject({

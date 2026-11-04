@@ -111,4 +111,7 @@ export interface FinancialSummaryReport {
   operatingProfit: number; // grossProfit - totalExpenses
   operatingMarginPercent: number;
   paymentBreakdown: Record<PaymentMethod, number>;
+  activeOrdersCount?: number;
+  servedUnpaidCount?: number;
+  unpaidAmount?: number;
 }

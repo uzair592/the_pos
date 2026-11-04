@@ -173,6 +173,26 @@ export async function generateFinancialSummary(filters: FinancialReportFilters):
   const taxCollected = Number(o.tax_collected || 0);
   const serviceCharges = Number(o.service_charges || 0);
 
+  // 1b. Active & Unpaid Orders aggregation (Live operations pipeline)
+  let activeQuery = `
+    SELECT
+      COUNT(*)::int as active_orders_count,
+      COUNT(*) FILTER (WHERE status = 'SERVED')::int as served_unpaid_count,
+      COALESCE(SUM(grand_total), 0)::numeric as unpaid_amount
+    FROM orders
+    WHERE tenant_id = $1
+      AND status IN ('PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'ON_HOLD')
+  `;
+  const activeParams: any[] = [tenantId];
+  if (branchId) {
+    activeQuery += ` AND branch_id = $2`;
+    activeParams.push(branchId);
+  }
+  const { rows: activeAgg } = await query(activeQuery, activeParams, { tenantId });
+  const activeOrdersCount = Number(activeAgg[0]?.active_orders_count || 0);
+  const servedUnpaidCount = Number(activeAgg[0]?.served_unpaid_count || 0);
+  const unpaidAmount = Number(activeAgg[0]?.unpaid_amount || 0);
+
   // 2. Refunds aggregation
   let refundQuery = `
     SELECT COALESCE(SUM(total_refund_amount), 0)::numeric as refunds
@@ -294,5 +314,8 @@ export async function generateFinancialSummary(filters: FinancialReportFilters):
     operatingProfit,
     operatingMarginPercent: Math.round(operatingMarginPercent * 100) / 100,
     paymentBreakdown,
+    activeOrdersCount,
+    servedUnpaidCount,
+    unpaidAmount,
   };
 }
