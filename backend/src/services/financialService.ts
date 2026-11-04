@@ -154,6 +154,7 @@ export async function generateFinancialSummary(filters: FinancialReportFilters):
       COALESCE(SUM(total_discount), 0)::numeric as discounts,
       COALESCE(SUM(tax_amount), 0)::numeric as tax_collected,
       COALESCE(SUM(service_charge_amount), 0)::numeric as service_charges,
+      COALESCE(SUM(delivery_fee), 0)::numeric as delivery_fees,
       COALESCE(SUM(grand_total), 0)::numeric as grand_total_sum
     FROM orders
     WHERE tenant_id = $1 AND status = 'COMPLETED'
@@ -339,6 +340,7 @@ export interface DaybookData {
     totalTax: number;
     totalDiscounts: number;
     totalDeliveryFees: number;
+    totalServiceCharges?: number;
     totalGrandTotal: number;
     completedOrdersCount: number;
     activeOrdersCount: number;
@@ -495,7 +497,8 @@ export async function getDaybookData(filters: DaybookFilters): Promise<DaybookDa
       COUNT(CASE WHEN o.status IN ('PENDING', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'OUT_FOR_DELIVERY') THEN 1 END)::int as active_count,
       COUNT(CASE WHEN o.status = 'CANCELLED' THEN 1 END)::int as cancelled_count,
       COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.subtotal ELSE 0 END), 0)::numeric as total_gross_sales,
-      COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN (o.grand_total - o.tax_amount - o.delivery_fee) ELSE 0 END), 0)::numeric as total_net_sales,
+      COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN (o.subtotal - o.total_discount) ELSE 0 END), 0)::numeric as total_net_sales,
+      COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.service_charge_amount ELSE 0 END), 0)::numeric as total_service_charges,
       COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.tax_amount ELSE 0 END), 0)::numeric as total_tax,
       COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.total_discount ELSE 0 END), 0)::numeric as total_discounts,
       COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.delivery_fee ELSE 0 END), 0)::numeric as total_delivery_fees,
@@ -819,6 +822,7 @@ export async function getDaybookData(filters: DaybookFilters): Promise<DaybookDa
   const totalTax = Number(oSum.total_tax || 0);
   const totalDiscounts = Number(oSum.total_discounts || 0);
   const totalDeliveryFees = Number(oSum.total_delivery_fees || 0);
+  const totalServiceCharges = Number(oSum.total_service_charges || 0);
   const totalGrandTotal = Number(oSum.total_grand_total || 0);
   const completedOrdersCount = Number(oSum.completed_count || 0);
   const activeOrdersCount = Number(oSum.active_count || 0);
@@ -868,6 +872,7 @@ export async function getDaybookData(filters: DaybookFilters): Promise<DaybookDa
       totalTax,
       totalDiscounts,
       totalDeliveryFees,
+      totalServiceCharges,
       totalGrandTotal,
       completedOrdersCount,
       activeOrdersCount,

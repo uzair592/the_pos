@@ -14,6 +14,11 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 30: Comprehensive Restaurant Owner QA/QC Simulation and Daybook Reconciliation Bug Fix:
+  1. Built live 38-step QA and QC simulation runner (backend/test/qa_simulation_suite.ts) testing all operational workflows against the live server: multi-role authentication (Owner, Manager, Cashier, Waiter, Kitchen), Menu Catalog & Subcategories, raw inventory ingredients, Addons / Modifiers, Recipe creation and FIFO lot consumption, Inward Purchases and receiving, Cash & Bank two-way transfers, Dine-In KDS multi-station workflow, Takeaway with customer info and Bank Transfer settlement, Delivery with Rider dispatch and delivery fees, End-of-day Cash Deposit, security role barriers (403), input validation (400), and 3-dots CRUD duplication.
+  2. Diagnosed and fixed Daybook Net Sales anomaly: in backend/src/services/financialService.ts getDaybookData, total_net_sales was subtracting only tax and delivery fee from grand_total without deducting service charges, causing Daybook to report higher Net Sales than Dashboard and Bill-Wise P&L when service charges were enabled. Updated to (o.subtotal - o.total_discount) matching Dashboard and Reports.
+  3. Fixed delivery_fee query selection: added COALESCE(SUM(delivery_fee), 0)::numeric as delivery_fees to generateFinancialSummary orderQuery.
+  4. All 38 simulation checks passed with 100% mathematical reconciliation, and all 47 backend integration tests passed.
 - Decision 29 (commit f8baa97): Cross-Software Data Consistency & Reconciliation Audit:
   1. Root cause diagnosed: Identified a 19-hour date boundary discrepancy between Dashboard and Financial Reports. In Pakistan (UTC+5), local midnight of Nov 5 converted to 2026-11-04T19:00:00.000Z, while Financial Reports used UTC new Date().toISOString().split('T')[0] appending T00:00:00Z, querying yesterday's data.
   2. Built unified frontend/src/utils/dateUtils.ts providing getLocalYMD(), getLocalDayRangeISO(), and getTodayRangeISO() ensuring 100% identical start-of-day (00:00:00.000) and end-of-day (23:59:59.999) timestamps across Dashboard, Reports, Daybook, and Orders Hub.
