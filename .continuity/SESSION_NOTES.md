@@ -14,6 +14,26 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 29 (commit f8baa97): Cross-Software Data Consistency & Reconciliation Audit:
+  1. Root cause diagnosed: Identified a 19-hour date boundary discrepancy between Dashboard and Financial Reports. In Pakistan (UTC+5), local midnight of Nov 5 converted to 2026-11-04T19:00:00.000Z, while Financial Reports used UTC new Date().toISOString().split('T')[0] appending T00:00:00Z, querying yesterday's data.
+  2. Built unified frontend/src/utils/dateUtils.ts providing getLocalYMD(), getLocalDayRangeISO(), and getTodayRangeISO() ensuring 100% identical start-of-day (00:00:00.000) and end-of-day (23:59:59.999) timestamps across Dashboard, Reports, Daybook, and Orders Hub.
+  3. Unified branch parameter scoping: Ensured branchParam (currentBranchId || branches[0]?.id) is consistently passed to all financial report tabs (Overview, Sales, FIFO COGS, Purchases, Expenses, Bill-Wise P&L) and CSV exports.
+  4. Fixed delivery_fee omission in generateFinancialSummary: Included delivery_fee in orders aggregation so totalCollected reconciles with grand_total and payments.
+  5. Corrected COGS calculation in sales-by-product to avoid double-multiplying quantity on line item COGS (oi.cogs is already line total).
+  6. Added 1-click Quick Date Presets (Today, Yesterday, 7 Days, This Month) to Financial Reports for seamless navigation.
+- Decision 28 (commit 04a6162): Implemented Bill-Wise Profit and Loss Report:
+  1. Built backend endpoints GET /api/financial/reports/bill-profit-loss and GET /api/financial/reports/bill-profit-loss/export.
+  2. Added dedicated BILL_PROFIT_LOSS tab in FinancialReports.tsx with 6 executive KPI cards, channel filters (Dine-in, Takeaway, Delivery), search, multi-field sorting, and interactive itemized cost & profit modal.
+  3. Added landscape PDF export in frontend/src/utils/pdfExport.ts (exportBillWiseProfitLossPdf).
+  4. Added automated integration test M8 in backend/test/fifo_and_features.test.ts.
+- Decision 27 (commit 99e875e): Implemented Cash & Bank Management and POS Payment Integration:
+  1. Created migration 009_create_cash_and_bank.sql for bank_accounts and cash_bank_transfers.
+  2. Implemented two-way fund transfers (Cash to Bank deposit, Bank to Cash replenishment, Bank to Bank transfer) with atomic balance updates.
+  3. Integrated bank account selection in POS Terminal checkout modal for Bank/Card payments.
+  4. Added Cash & Bank UI dashboard at /app/cash-and-bank with ledger and printable statements.
+- Decision 26 (commit dedf2fa): Streamlined POS System to Single Restaurant Branch Mode:
+  1. Locked AuthContext directly to the primary restaurant branch.
+  2. Removed BranchSelector and multi-branch comparative matrices from all operational terminals while preserving database schema for future scaling.
 - Decision 25: Implemented 3-Dots Action Menu (Kebab Menu) with Delete, Preview, and Multi-CRUD Operations:
   1. Built reusable ActionMenu component in frontend/src/components/common/ActionMenu.tsx featuring 3-dots trigger (MoreVertical), smart viewport boundary collision detection (auto-flips upward if near bottom), click-outside and Escape key handling, and semantic action styles (default, danger, warning, success).
   2. Menu Catalog CRUD Upgrades (MenuCatalog.tsx):
