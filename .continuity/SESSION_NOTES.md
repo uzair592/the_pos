@@ -11,9 +11,24 @@
 - Pass all 43 integration tests and push clean code to GitHub repository `https://github.com/uzair592/the_pos.git`.
 
 ## Blockers
-- None. All 43 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
+- None. All 44 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 24: Streamlined POS Terminal Order Types and Added Customer & Rider Information:
+  1. Streamlined order types from 4 buttons to 3 core channels: Dine-In, Takeaway, and Delivery. Removed redundant Counter option since Takeaway covers direct over-the-counter sales.
+  2. Takeaway Customer Details: Rendered dedicated Takeaway customer information card prompting for Customer Name and Mobile Number, persisting them to the order and rendering them on Takeaway receipts and tickets.
+  3. Delivery Customer & Rider Dispatch Details:
+     - Customer Name and Customer Mobile Number.
+     - Delivery Address textarea.
+     - Editable Delivery Fee with quick presets (Free, 100, 150, 200, 250).
+     - Assigned Rider Details: Rider Name and Rider Mobile Number with Bike indicator icon.
+  4. Backend & Database Persistence:
+     - Added migration 008_add_rider_fields_to_orders.sql adding rider_name VARCHAR(255) and rider_phone VARCHAR(50) to orders table.
+     - Updated @pos/shared CreateOrderSchema to accept riderName and riderPhone.
+     - Updated orderService.ts to insert and return rider_name and rider_phone (RETURNING *).
+     - Updated order.routes.ts /orders/:id/receipt to output riderName and riderPhone.
+  5. Multi-Template Receipts & WhatsApp: Updated ReceiptModal.tsx to display Rider Name and Phone on Standard 80mm thermal receipts, Commercial GST Tax Invoices, and WhatsApp dispatch share slips.
+  6. Added automated integration test M5 in backend/test/fifo_and_features.test.ts verifying Takeaway customer details and Delivery order creation with rider details and receipt verification. All 44 integration tests pass.
 - Decision 23: Optimized POS Terminal Layout with Vertical Categories, Subcategories, Editable Delivery Pricing, Customer Mobile/Name Section, and Resizable Billing Width:
   1. Built an ergonomic 3-column POS interface: 1) Vertical Categories & Subcategories Sidebar on the left with item counters and accordion navigation; 2) Menu Items section with default Vertical List View and Grid toggle; 3) Resizable Billing / Cart Section on the right.
   2. Implemented adjustable billing section width with an interactive draggable divider handle (supports smooth resizing from 320px to 800px) and one-click width presets: Compact (S: 340px), Standard (M: 420px), Wide (L: 540px), Expanded (XL: 680px), and an instant Expand/Shrink toggle. Persists user preference to localStorage.

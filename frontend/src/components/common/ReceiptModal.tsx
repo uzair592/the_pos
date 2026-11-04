@@ -378,6 +378,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                     <strong>Address:</strong> {receiptData.deliveryAddress}
                   </div>
                 )}
+                {receiptData.riderName && (
+                  <div className="flex justify-between pt-0.5 text-[10px] text-slate-600">
+                    <span>Rider:</span>
+                    <span className="font-semibold">{receiptData.riderName} {receiptData.riderPhone ? `(${receiptData.riderPhone})` : ''}</span>
+                  </div>
+                )}
               </div>
 
               {/* Items Table */}
@@ -863,6 +869,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                   )}
                   {receiptData.deliveryAddress && (
                     <p className="text-slate-600 text-[11px] mt-0.5">Address: {receiptData.deliveryAddress}</p>
+                  )}
+                  {receiptData.riderName && (
+                    <p className="text-slate-600 text-[11px] mt-0.5 font-medium">Rider: {receiptData.riderName} {receiptData.riderPhone ? `(${receiptData.riderPhone})` : ''}</p>
                   )}
                 </div>
 

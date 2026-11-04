@@ -42,6 +42,7 @@ import {
   Truck,
   Phone,
   MapPin,
+  Bike,
   Maximize2,
   Minimize2,
   ChevronRight,
@@ -84,6 +85,8 @@ export const PosTerminal: React.FC = () => {
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [riderName, setRiderName] = useState('');
+  const [riderPhone, setRiderPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [deliveryFee, setDeliveryFee] = useState<number>(0);
   const [billDiscountPercent, setBillDiscountPercent] = useState(0);
@@ -499,6 +502,8 @@ export const PosTerminal: React.FC = () => {
         customerPhone: customerPhone || undefined,
         deliveryAddress: orderType === OrderType.DELIVERY ? deliveryAddress || undefined : undefined,
         deliveryFee: orderType === OrderType.DELIVERY ? Number(deliveryFee || 0) : 0,
+        riderName: orderType === OrderType.DELIVERY ? riderName || undefined : undefined,
+        riderPhone: orderType === OrderType.DELIVERY ? riderPhone || undefined : undefined,
         billDiscountPercent,
         billDiscountAmount,
         shiftId: currentShift?.id || null,
@@ -523,6 +528,8 @@ export const PosTerminal: React.FC = () => {
       setSelectedTable(null);
       setCustomerName('');
       setCustomerPhone('');
+      setRiderName('');
+      setRiderPhone('');
       setDeliveryAddress('');
       setDeliveryFee(0);
       setBillDiscountPercent(0);
@@ -550,6 +557,8 @@ export const PosTerminal: React.FC = () => {
       selectedTable,
       customerName,
       customerPhone,
+      riderName,
+      riderPhone,
       deliveryAddress,
       deliveryFee,
       billDiscountPercent,
@@ -561,6 +570,10 @@ export const PosTerminal: React.FC = () => {
     setSelectedTable(null);
     setCustomerName('');
     setCustomerPhone('');
+    setRiderName('');
+    setRiderPhone('');
+    setDeliveryAddress('');
+    setDeliveryFee(0);
     success(`Order placed on hold (${orderToHold.id})`);
   };
 
@@ -570,6 +583,8 @@ export const PosTerminal: React.FC = () => {
     setSelectedTable(held.selectedTable);
     setCustomerName(held.customerName);
     setCustomerPhone(held.customerPhone);
+    setRiderName(held.riderName || '');
+    setRiderPhone(held.riderPhone || '');
     setDeliveryAddress(held.deliveryAddress || '');
     setDeliveryFee(Number(held.deliveryFee || 0));
     setBillDiscountPercent(held.billDiscountPercent);
@@ -638,6 +653,8 @@ export const PosTerminal: React.FC = () => {
           customerPhone: customerPhone || undefined,
           deliveryAddress: orderType === OrderType.DELIVERY ? deliveryAddress || undefined : undefined,
           deliveryFee: orderType === OrderType.DELIVERY ? Number(deliveryFee || 0) : 0,
+          riderName: orderType === OrderType.DELIVERY ? riderName || undefined : undefined,
+          riderPhone: orderType === OrderType.DELIVERY ? riderPhone || undefined : undefined,
           billDiscountPercent,
           billDiscountAmount,
           shiftId: currentShift?.id || null,
@@ -677,6 +694,8 @@ export const PosTerminal: React.FC = () => {
       setSelectedTable(null);
       setCustomerName('');
       setCustomerPhone('');
+      setRiderName('');
+      setRiderPhone('');
       setDeliveryAddress('');
       setDeliveryFee(0);
       setBillDiscountPercent(0);
@@ -1299,10 +1318,9 @@ export const PosTerminal: React.FC = () => {
             </div>
 
             {/* Order Type Selector */}
-            <div className="grid grid-cols-4 gap-1 text-xs font-bold">
+            <div className="grid grid-cols-3 gap-1.5 text-xs font-bold">
               {[
                 { type: OrderType.DINE_IN, label: 'Dine-In' },
-                { type: OrderType.COUNTER, label: 'Counter' },
                 { type: OrderType.TAKEAWAY, label: 'Takeaway' },
                 { type: OrderType.DELIVERY, label: 'Delivery' },
               ].map((ot) => (
@@ -1338,13 +1356,56 @@ export const PosTerminal: React.FC = () => {
               </div>
             )}
 
-            {/* DELIVERY CUSTOMER & EDITABLE DELIVERY FEE SECTION */}
+            {/* TAKEAWAY CUSTOMER DETAILS SECTION */}
+            {orderType === OrderType.TAKEAWAY && (
+              <div className="p-3 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 rounded-2xl space-y-2.5 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 text-blue-800 dark:text-blue-300 font-extrabold text-xs">
+                    <ShoppingBag className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>Takeaway Customer Details</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-200 dark:bg-blue-900 text-blue-900 dark:text-blue-200">
+                    Takeaway Slip
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
+                      <User className="w-3 h-3 text-slate-400" /> Customer Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Bilal Ahmed"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
+                      <Phone className="w-3 h-3 text-slate-400" /> Mobile Number
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="e.g. 0300-1234567"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* DELIVERY CUSTOMER, RIDER & EDITABLE DELIVERY FEE SECTION */}
             {orderType === OrderType.DELIVERY && (
               <div className="p-3 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-2xl space-y-2.5 animate-in fade-in">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-1.5 text-amber-800 dark:text-amber-300 font-extrabold text-xs">
                     <Truck className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                    <span>Delivery Order Information</span>
+                    <span>Delivery Order & Dispatch</span>
                   </div>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
                     Required for Dispatch
@@ -1367,7 +1428,7 @@ export const PosTerminal: React.FC = () => {
 
                   <div>
                     <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
-                      <Phone className="w-3 h-3 text-slate-400" /> Mobile Number *
+                      <Phone className="w-3 h-3 text-slate-400" /> Customer Mobile *
                     </label>
                     <input
                       type="tel"
@@ -1390,6 +1451,40 @@ export const PosTerminal: React.FC = () => {
                     onChange={(e) => setDeliveryAddress(e.target.value)}
                     className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium resize-none"
                   />
+                </div>
+
+                {/* Rider Details */}
+                <div className="pt-2 border-t border-amber-200/80 dark:border-amber-900/60">
+                  <div className="flex items-center space-x-1.5 text-slate-800 dark:text-slate-200 font-bold text-[11px] mb-1.5">
+                    <Bike className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>Assigned Rider Details</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-0.5">
+                        Rider Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Tariq Mahmood"
+                        value={riderName}
+                        onChange={(e) => setRiderName(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-0.5">
+                        Rider Mobile Number
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="e.g. 0321-9876543"
+                        value={riderPhone}
+                        onChange={(e) => setRiderPhone(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Editable Delivery Price / Fee */}

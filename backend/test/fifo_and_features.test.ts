@@ -416,4 +416,67 @@ describe('FIFO Inventory, Credential Management, Orders Hub & Backup System Test
     const products = JSON.parse(productsRes.payload).products;
     expect(products.length).toBeGreaterThan(0);
   });
+
+  it('M5: Takeaway Customer Info & Delivery Dispatch with Customer & Rider Details', async () => {
+    // 1. Create Takeaway order with customer info
+    const takeawayRes = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        branchId,
+        orderType: 'TAKEAWAY',
+        customerName: 'Bilal Ahmed',
+        customerPhone: '+923001234567',
+        items: [{ productId, quantity: 1, unitPrice: 850, modifiers: [] }],
+        idempotencyKey: `test-takeaway-${Date.now()}`,
+      },
+    });
+    expect(takeawayRes.statusCode).toBe(201);
+    const takeawayOrder = JSON.parse(takeawayRes.payload).order;
+    expect(takeawayOrder.customer_name).toBe('Bilal Ahmed');
+    expect(takeawayOrder.customer_phone).toBe('+923001234567');
+
+    // 2. Create Delivery order with Customer, Address, Fee, and Assigned Rider
+    const deliveryRes = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        branchId,
+        orderType: 'DELIVERY',
+        customerName: 'Ali Khan',
+        customerPhone: '+923009876543',
+        deliveryAddress: 'House 42, Street 5, F-7/2, Islamabad',
+        deliveryFee: 150,
+        riderName: 'Tariq Mahmood',
+        riderPhone: '+923215551234',
+        items: [{ productId, quantity: 2, unitPrice: 850, modifiers: [] }],
+        idempotencyKey: `test-delivery-${Date.now()}`,
+      },
+    });
+    expect(deliveryRes.statusCode).toBe(201);
+    const deliveryOrder = JSON.parse(deliveryRes.payload).order;
+    expect(deliveryOrder.customer_name).toBe('Ali Khan');
+    expect(deliveryOrder.customer_phone).toBe('+923009876543');
+    expect(deliveryOrder.delivery_address).toBe('House 42, Street 5, F-7/2, Islamabad');
+    expect(Number(deliveryOrder.delivery_fee)).toBe(150);
+    expect(deliveryOrder.rider_name).toBe('Tariq Mahmood');
+    expect(deliveryOrder.rider_phone).toBe('+923215551234');
+
+    // 3. Verify receipt endpoint returns rider and delivery details for thermal & dispatch printing
+    const receiptRes = await app.inject({
+      method: 'GET',
+      url: `/api/orders/${deliveryOrder.id}/receipt`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(receiptRes.statusCode).toBe(200);
+    const receipt = JSON.parse(receiptRes.payload).receipt;
+    expect(receipt.customerName).toBe('Ali Khan');
+    expect(receipt.customerPhone).toBe('+923009876543');
+    expect(receipt.riderName).toBe('Tariq Mahmood');
+    expect(receipt.riderPhone).toBe('+923215551234');
+    expect(receipt.deliveryAddress).toBe('House 42, Street 5, F-7/2, Islamabad');
+    expect(Number(receipt.deliveryFee)).toBe(150);
+  });
 });

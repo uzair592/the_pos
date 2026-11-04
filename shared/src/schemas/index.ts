@@ -226,6 +226,8 @@ export const CreateOrderSchema = z.object({
   customerPhone: z.string().optional(),
   deliveryAddress: z.string().optional(),
   deliveryFee: z.number().min(0).default(0),
+  riderName: z.string().optional(),
+  riderPhone: z.string().optional(),
   billDiscountPercent: z.number().min(0).max(100).default(0),
   billDiscountAmount: z.number().min(0).default(0),
   waiterId: z.string().uuid().nullable().optional(),

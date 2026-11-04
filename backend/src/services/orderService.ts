@@ -25,6 +25,8 @@ export interface CreateOrderParams {
   customerPhone?: string;
   deliveryAddress?: string;
   deliveryFee?: number;
+  riderName?: string;
+  riderPhone?: string;
   billDiscountPercent?: number;
   billDiscountAmount?: number;
   waiterId?: string | null;
@@ -64,6 +66,8 @@ export async function createOrder(params: CreateOrderParams) {
       customerPhone,
       deliveryAddress,
       deliveryFee = 0,
+      riderName,
+      riderPhone,
       billDiscountPercent = 0,
       billDiscountAmount = 0,
       waiterId,
@@ -76,7 +80,7 @@ export async function createOrder(params: CreateOrderParams) {
     // 1. Idempotency Check
     if (idempotencyKey) {
       const existing = await client.query(
-        'SELECT id, order_number, grand_total, status FROM orders WHERE tenant_id = $1 AND idempotency_key = $2',
+        'SELECT * FROM orders WHERE tenant_id = $1 AND idempotency_key = $2',
         [tenantId, idempotencyKey]
       );
       if (existing.rows.length > 0) {
@@ -213,7 +217,7 @@ export async function createOrder(params: CreateOrderParams) {
       INSERT INTO orders (
         tenant_id, branch_id, order_number, order_type, status, payment_status,
         table_id, table_number, floor_name, cover_count,
-        customer_id, customer_name, customer_phone, delivery_address, delivery_fee,
+        customer_id, customer_name, customer_phone, delivery_address, delivery_fee, rider_name, rider_phone,
         subtotal, item_discounts_total, bill_discount_percent, bill_discount_amount, total_discount,
         tax_percent, tax_amount, service_charge_percent, service_charge_amount,
         grand_total, paid_amount, balance_due,
@@ -221,17 +225,17 @@ export async function createOrder(params: CreateOrderParams) {
       ) VALUES (
         $1, $2, $3, $4, $5, $6,
         $7, $8, $9, $10,
-        $11, $12, $13, $14, $15,
-        $16, $17, $18, $19, $20,
-        $21, $22, $23, $24,
-        $25, $26, $27,
-        $28, $29, $30, $31, $32, $33
-      ) RETURNING id, order_number, grand_total, status, payment_status
+        $11, $12, $13, $14, $15, $16, $17,
+        $18, $19, $20, $21, $22,
+        $23, $24, $25, $26,
+        $27, $28, $29,
+        $30, $31, $32, $33, $34, $35
+      ) RETURNING *
       `,
       [
         tenantId, branchId, orderNumber, orderType, OrderStatus.CONFIRMED, PaymentStatus.PENDING,
         tableId || null, tableNumber, floorName, coverCount,
-        customerId || null, customerName || null, customerPhone || null, deliveryAddress || null, deliveryFee,
+        customerId || null, customerName || null, customerPhone || null, deliveryAddress || null, deliveryFee, riderName || null, riderPhone || null,
         subtotal, itemDiscountsTotal, billDiscountPercent, billDiscountAmount, totalDiscount,
         taxPercent, taxAmount, servicePercent, serviceChargeAmount,
         grandTotal, 0, grandTotal,
