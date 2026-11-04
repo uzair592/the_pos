@@ -18,6 +18,7 @@ import {
   ChefHat,
   ShoppingBag,
   BookOpen,
+  Landmark,
 } from 'lucide-react';
 import { FeatureKey, Permission } from '@pos/shared';
 
@@ -35,6 +36,7 @@ export const Sidebar: React.FC = () => {
     { to: '/hub', label: 'Workspace Hub', icon: LayoutGrid },
     { to: '/app', label: 'Dashboard', icon: LayoutDashboard, exact: true },
     { to: '/app/daybook', label: 'Daily Daybook', icon: BookOpen, permission: Permission.REPORTS_SALES },
+    { to: '/app/cash-and-bank', label: 'Cash & Bank', icon: Landmark, permission: Permission.REPORTS_FINANCIAL },
     { to: '/app/orders', label: 'Orders Hub', icon: ShoppingBag, permission: Permission.ORDERS_VIEW },
     { to: '/pos', label: 'POS Terminal', icon: Monitor },
     { to: '/kds', label: 'Kitchen Display', icon: ChefHat, feature: FeatureKey.KDS },

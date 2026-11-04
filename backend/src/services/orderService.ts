@@ -373,13 +373,37 @@ export async function completeOrderCheckout(params: CompleteCheckoutParams) {
 
     // 2. Record Payments
     for (const pay of payments) {
+      let bankAccountId: string | null = (pay as any).bankAccountId || null;
+      if (!bankAccountId && [PaymentMethod.BANK_TRANSFER, PaymentMethod.CARD, PaymentMethod.DIGITAL_WALLET].includes(pay.method)) {
+        const defBank = await client.query(
+          `SELECT id FROM bank_accounts WHERE tenant_id = $1 AND is_active = true ORDER BY is_default DESC, created_at ASC LIMIT 1`,
+          [tenantId]
+        );
+        if (defBank.rows.length > 0) {
+          bankAccountId = defBank.rows[0].id;
+        }
+      }
+
       await client.query(
         `
-        INSERT INTO order_payments (tenant_id, order_id, amount, method, reference, change_amount, recorded_by_user_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO order_payments (tenant_id, order_id, amount, method, reference, change_amount, bank_account_id, recorded_by_user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `,
-        [tenantId, orderId, pay.amount, pay.method, pay.reference || null, changeGiven, userId]
+        [tenantId, orderId, pay.amount, pay.method, pay.reference || null, changeGiven, bankAccountId, userId]
       );
+
+      // If deposited to bank account, increment bank account current balance
+      if (bankAccountId) {
+        await client.query(
+          `
+          UPDATE bank_accounts
+          SET current_balance = current_balance + $1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2 AND tenant_id = $3
+          `,
+          [pay.amount, bankAccountId, tenantId]
+        );
+      }
 
       // If attached to a shift, update shift cash sales
       if (order.shift_id && pay.method === PaymentMethod.CASH) {

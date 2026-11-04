@@ -21,6 +21,7 @@ import { PlatformPayments } from './pages/platform/PlatformPayments.js';
 import { OnboardingWizard } from './pages/restaurant/OnboardingWizard.js';
 import { RestaurantDashboard } from './pages/restaurant/RestaurantDashboard.js';
 import { Daybook } from './pages/restaurant/Daybook.js';
+import { CashAndBank } from './pages/financial/CashAndBank.js';
 import { OrdersHub } from './pages/orders/OrdersHub.js';
 import { MenuCatalog } from './pages/restaurant/MenuCatalog.js';
 import { InventoryManagement } from './pages/restaurant/InventoryManagement.js';
@@ -298,6 +299,7 @@ export const App: React.FC = () => {
               <Route path="/app" element={<RestaurantLayout />}>
                 <Route index element={<RestaurantDashboard />} />
                 <Route path="daybook" element={<Daybook />} />
+                <Route path="cash-and-bank" element={<CashAndBank />} />
                 <Route path="orders" element={<OrdersHub />} />
                 <Route path="menu" element={<MenuCatalog />} />
                 <Route path="inventory" element={<InventoryManagement />} />

@@ -241,6 +241,7 @@ export const PaymentInputSchema = z.object({
   amount: z.number().positive(),
   method: z.nativeEnum(PaymentMethod),
   reference: z.string().optional(),
+  bankAccountId: z.string().uuid().optional(),
 });
 
 export const CompleteOrderCheckoutSchema = z.object({
@@ -345,6 +346,7 @@ export const CreateExpenseSchema = z.object({
   categoryId: z.string().uuid(),
   amount: z.number().positive(),
   paymentMethod: z.nativeEnum(PaymentMethod),
+  bankAccountId: z.string().uuid().optional(),
   description: z.string().min(2),
   expenseDate: z.string().optional(),
 });
@@ -365,4 +367,35 @@ export const CreateCustomerSchema = z.object({
   address: z.string().optional(),
   notes: z.string().optional(),
   creditLimit: z.number().min(0).default(0),
+});
+
+// Cash & Bank Schemas
+export const CreateBankAccountSchema = z.object({
+  accountName: z.string().min(2),
+  bankName: z.string().min(2),
+  accountNumber: z.string().optional(),
+  iban: z.string().optional(),
+  branchCode: z.string().optional(),
+  openingBalance: z.number().min(0).default(0),
+  isDefault: z.boolean().default(false),
+});
+
+export const UpdateBankAccountSchema = z.object({
+  accountName: z.string().min(2).optional(),
+  bankName: z.string().min(2).optional(),
+  accountNumber: z.string().optional(),
+  iban: z.string().optional(),
+  branchCode: z.string().optional(),
+  isDefault: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const CreateCashBankTransferSchema = z.object({
+  transferType: z.enum(['CASH_TO_BANK', 'BANK_TO_CASH', 'BANK_TO_BANK']),
+  fromBankAccountId: z.string().uuid().optional(),
+  toBankAccountId: z.string().uuid().optional(),
+  amount: z.number().positive(),
+  transferDate: z.string().optional(),
+  referenceNumber: z.string().optional(),
+  notes: z.string().optional(),
 });

@@ -578,4 +578,214 @@ describe('FIFO Inventory, Credential Management, Orders Hub & Backup System Test
     expect(allBranchesData.branchName).toContain('All Branches');
     expect(allBranchesData.expenses.some((e: any) => e.id === recordedExpense.id)).toBe(true);
   });
+
+  it('M7: Cash & Bank Accounts, POS Bank Payment Attribution, and Fund Transfers (Cash <-> Bank)', async () => {
+    // 1. Fetch bank accounts (auto-seeded default account should be present)
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/bank-accounts',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(listRes.statusCode).toBe(200);
+    const listData = JSON.parse(listRes.payload);
+    const accounts = listData.bankAccounts || listData.accounts;
+    expect(accounts.length).toBeGreaterThanOrEqual(1);
+    const defaultAccount = accounts.find((a: any) => a.isDefault) || accounts[0];
+    expect(defaultAccount).toBeDefined();
+    const defaultInitialBalance = Number(defaultAccount.currentBalance);
+
+    // 2. Create a second bank account
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/financial/bank-accounts',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        accountName: 'HBL Operating Account',
+        bankName: 'Habib Bank Limited',
+        accountNumber: 'PK12HABB00001234567890',
+        branchName: 'DHA Phase 5 Branch',
+        openingBalance: 15000,
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const createData = JSON.parse(createRes.payload);
+    const hblAccount = createData.bankAccount || createData.account;
+    expect(hblAccount.accountName).toBe('HBL Operating Account');
+    expect(Number(hblAccount.currentBalance)).toBe(15000);
+
+    // 3. Create an order and checkout using BANK_TRANSFER linked to HBL account
+    const orderRes = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        branchId,
+        orderType: 'DINE_IN',
+        items: [
+          {
+            productId,
+            productName: 'Signature Steak',
+            quantity: 1,
+            unitPrice: 1500,
+          },
+        ],
+      },
+    });
+    expect(orderRes.statusCode).toBe(201);
+    const order = JSON.parse(orderRes.payload).order;
+    const orderId = order.id;
+    const orderGrandTotal = Number(order.grand_total);
+
+    // Checkout order paying orderGrandTotal via Bank Transfer to HBL
+    const checkoutRes = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/checkout`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        payments: [
+          {
+            method: 'BANK_TRANSFER',
+            amount: orderGrandTotal,
+            bankAccountId: hblAccount.id,
+            reference: 'TXN-BANK-9988',
+          },
+        ],
+      },
+    });
+    expect(checkoutRes.statusCode).toBe(200);
+
+    // Verify HBL account balance increased by orderGrandTotal
+    const checkHblRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/bank-accounts',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    const refreshedData = JSON.parse(checkHblRes.payload);
+    const refreshedAccounts = refreshedData.bankAccounts || refreshedData.accounts;
+    const refreshedHbl = refreshedAccounts.find((a: any) => a.id === hblAccount.id);
+    expect(Number(refreshedHbl.currentBalance)).toBe(15000 + orderGrandTotal);
+
+    // 4. Record Cash to Bank Transfer (Deposit from Cash Drawer into HBL)
+    const depositRes = await app.inject({
+      method: 'POST',
+      url: '/api/financial/cash-bank/transfers',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        branchId,
+        transferType: 'CASH_TO_BANK',
+        toBankAccountId: hblAccount.id,
+        amount: 3000,
+        referenceNumber: 'SLIP-DEP-4451',
+        notes: 'Excess evening cash deposit to HBL',
+      },
+    });
+    expect(depositRes.statusCode).toBe(201);
+    const depositTransfer = JSON.parse(depositRes.payload).transfer;
+    expect(depositTransfer.transferType).toBe('CASH_TO_BANK');
+    expect(Number(depositTransfer.amount)).toBe(3000);
+
+    // Check HBL balance increased by 3000
+    const afterDepRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/bank-accounts',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    const afterDepData = JSON.parse(afterDepRes.payload);
+    const afterDepHbl = (afterDepData.bankAccounts || afterDepData.accounts).find((a: any) => a.id === hblAccount.id);
+    expect(Number(afterDepHbl.currentBalance)).toBe(15000 + orderGrandTotal + 3000);
+
+    // 5. Record Bank to Cash Transfer (Withdraw cash from HBL to replenish drawer)
+    const withdrawRes = await app.inject({
+      method: 'POST',
+      url: '/api/financial/cash-bank/transfers',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        branchId,
+        transferType: 'BANK_TO_CASH',
+        fromBankAccountId: hblAccount.id,
+        amount: 1500,
+        referenceNumber: 'ATM-WITHDRAW-1102',
+        notes: 'ATM cash replenishment for petty cash drawer',
+      },
+    });
+    expect(withdrawRes.statusCode).toBe(201);
+
+    // Check HBL balance decreased by 1500
+    const afterWithRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/bank-accounts',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    const afterWithData = JSON.parse(afterWithRes.payload);
+    const afterWithHbl = (afterWithData.bankAccounts || afterWithData.accounts).find((a: any) => a.id === hblAccount.id);
+    expect(Number(afterWithHbl.currentBalance)).toBe(15000 + orderGrandTotal + 3000 - 1500);
+
+    // 6. Record Bank to Bank Transfer (From HBL to Default Account)
+    const b2bRes = await app.inject({
+      method: 'POST',
+      url: '/api/financial/cash-bank/transfers',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        branchId,
+        transferType: 'BANK_TO_BANK',
+        fromBankAccountId: hblAccount.id,
+        toBankAccountId: defaultAccount.id,
+        amount: 2700,
+        referenceNumber: 'ONLINE-IBFT-7762',
+        notes: 'Interbank fund transfer',
+      },
+    });
+    expect(b2bRes.statusCode).toBe(201);
+
+    // Check HBL decreased by 2700
+    // Check Default account increased by 2700
+    const afterB2bRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/bank-accounts',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    const finalData = JSON.parse(afterB2bRes.payload);
+    const finalAccounts = finalData.bankAccounts || finalData.accounts;
+    const finalHbl = finalAccounts.find((a: any) => a.id === hblAccount.id);
+    const finalDefault = finalAccounts.find((a: any) => a.id === defaultAccount.id);
+    expect(Number(finalHbl.currentBalance)).toBe(15000 + orderGrandTotal + 3000 - 1500 - 2700);
+    expect(Number(finalDefault.currentBalance)).toBe(defaultInitialBalance + 2700);
+
+    // 7. Verify Cash & Bank Summary
+    const summaryRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/cash-bank/summary',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(summaryRes.statusCode).toBe(200);
+    const { summary } = JSON.parse(summaryRes.payload);
+    expect(summary).toBeDefined();
+    expect(typeof summary.totalCashInHand).toBe('number');
+    expect(typeof summary.totalBankBalance).toBe('number');
+    expect(summary.totalLiquidFunds).toBe(summary.totalCashInHand + summary.totalBankBalance);
+    expect(summary.bankAccounts.length).toBeGreaterThanOrEqual(2);
+
+    // 8. Verify Cash & Bank Transfers list
+    const transfersRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/cash-bank/transfers',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(transfersRes.statusCode).toBe(200);
+    const { transfers } = JSON.parse(transfersRes.payload);
+    expect(transfers.length).toBeGreaterThanOrEqual(3);
+    expect(transfers.some((t: any) => t.referenceNumber === 'SLIP-DEP-4451')).toBe(true);
+    expect(transfers.some((t: any) => t.referenceNumber === 'ATM-WITHDRAW-1102')).toBe(true);
+    expect(transfers.some((t: any) => t.referenceNumber === 'ONLINE-IBFT-7762')).toBe(true);
+
+    // 9. Verify Cash & Bank Unified Ledger
+    const ledgerRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/cash-bank/ledger',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(ledgerRes.statusCode).toBe(200);
+    const { ledger } = JSON.parse(ledgerRes.payload);
+    expect(ledger.length).toBeGreaterThanOrEqual(3);
+  });
 });

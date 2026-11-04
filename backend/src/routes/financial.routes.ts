@@ -8,6 +8,9 @@ import {
   CreateExpenseSchema,
   Permission,
   ShiftStatus,
+  CreateBankAccountSchema,
+  UpdateBankAccountSchema,
+  CreateCashBankTransferSchema,
 } from '@pos/shared';
 import {
   openShift,
@@ -16,6 +19,15 @@ import {
   generateFinancialSummary,
   getDaybookData,
 } from '../services/financialService.js';
+import {
+  getBankAccounts,
+  createBankAccount,
+  updateBankAccount,
+  getCashBankSummary,
+  getCashBankTransfers,
+  createCashBankTransfer,
+  getCashBankLedger,
+} from '../services/cashBankService.js';
 
 export async function financialRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticate);
@@ -206,17 +218,26 @@ export async function financialRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
 
     const tenantId = req.user!.tenantId!;
-    const { branchId, categoryId, amount, paymentMethod, description, expenseDate } = parsed.data;
+    const { branchId, categoryId, amount, paymentMethod, description, expenseDate, bankAccountId } = parsed.data as any;
 
     const { rows } = await query(
       `
-      INSERT INTO expenses (tenant_id, branch_id, category_id, amount, payment_method, description, recorded_by_user_id, expense_date)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, CURRENT_DATE))
+      INSERT INTO expenses (tenant_id, branch_id, category_id, amount, payment_method, description, recorded_by_user_id, expense_date, bank_account_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, CURRENT_DATE), $9)
       RETURNING *
       `,
-      [tenantId, branchId, categoryId, amount, paymentMethod, description, req.user!.id, expenseDate || null],
+      [tenantId, branchId, categoryId, amount, paymentMethod, description, req.user!.id, expenseDate || null, bankAccountId || null],
       { tenantId }
     );
+
+    // If paid via bank, deduct from bank account balance
+    if (bankAccountId && paymentMethod !== 'CASH') {
+      await query(
+        `UPDATE bank_accounts SET current_balance = current_balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+        [amount, bankAccountId, tenantId],
+        { tenantId }
+      );
+    }
 
     return reply.status(201).send({ expense: rows[0] });
   });
@@ -754,6 +775,114 @@ export async function financialRoutes(fastify: FastifyInstance) {
     });
 
     return reply.send({ daybook });
+  });
+
+  // =========================================================================
+  // CASH & BANK MANAGEMENT ENDPOINTS
+  // =========================================================================
+
+  /**
+   * List all Bank Accounts for Tenant
+   */
+  fastify.get('/api/financial/bank-accounts', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const accounts = await getBankAccounts(tenantId);
+    return reply.send({ bankAccounts: accounts, accounts });
+  });
+
+  /**
+   * Create New Bank Account
+   */
+  fastify.post('/api/financial/bank-accounts', {
+    preHandler: [requirePermission(Permission.EXPENSES_MANAGE)],
+  }, async (req, reply) => {
+    const parsed = CreateBankAccountSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const tenantId = req.user!.tenantId!;
+    const account = await createBankAccount({
+      tenantId,
+      ...parsed.data,
+    });
+    return reply.status(201).send({ bankAccount: account, account });
+  });
+
+  /**
+   * Update Bank Account
+   */
+  fastify.put('/api/financial/bank-accounts/:id', {
+    preHandler: [requirePermission(Permission.EXPENSES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const parsed = UpdateBankAccountSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const tenantId = req.user!.tenantId!;
+    const account = await updateBankAccount({
+      tenantId,
+      id,
+      ...parsed.data,
+    });
+    return reply.send({ bankAccount: account, account });
+  });
+
+  /**
+   * Cash and Bank Financial Summary
+   */
+  fastify.get('/api/financial/cash-bank/summary', {
+    preHandler: [requirePermission(Permission.REPORTS_FINANCIAL)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { date } = req.query as { date?: string };
+    const summary = await getCashBankSummary(tenantId, date);
+    return reply.send({ summary });
+  });
+
+  /**
+   * Cash and Bank Transfers Log
+   */
+  fastify.get('/api/financial/cash-bank/transfers', {
+    preHandler: [requirePermission(Permission.REPORTS_FINANCIAL)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { startDate, endDate, transferType } = req.query as { startDate?: string; endDate?: string; transferType?: string };
+    const transfers = await getCashBankTransfers(tenantId, { startDate, endDate, transferType });
+    return reply.send({ transfers });
+  });
+
+  /**
+   * Execute Cash ⇄ Bank Transfer
+   */
+  fastify.post('/api/financial/cash-bank/transfers', {
+    preHandler: [requirePermission(Permission.CASH_ADJUST)],
+  }, async (req, reply) => {
+    const parsed = CreateCashBankTransferSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const tenantId = req.user!.tenantId!;
+    try {
+      const transfer = await createCashBankTransfer({
+        tenantId,
+        ...parsed.data,
+        transferType: parsed.data.transferType as any,
+        userId: req.user!.id,
+      });
+      return reply.status(201).send({ transfer });
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  /**
+   * Unified Cash & Bank Ledger Statement
+   */
+  fastify.get('/api/financial/cash-bank/ledger', {
+    preHandler: [requirePermission(Permission.REPORTS_FINANCIAL)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { accountId, startDate, endDate } = req.query as { accountId?: string; startDate?: string; endDate?: string };
+    const ledger = await getCashBankLedger(tenantId, { accountId, startDate, endDate });
+    return reply.send({ ledger });
   });
 
 }

@@ -115,3 +115,55 @@ export interface FinancialSummaryReport {
   servedUnpaidCount?: number;
   unpaidAmount?: number;
 }
+
+export enum CashBankTransferType {
+  CASH_TO_BANK = 'CASH_TO_BANK', // Cash Deposit
+  BANK_TO_CASH = 'BANK_TO_CASH', // Cash Withdrawal
+  BANK_TO_BANK = 'BANK_TO_BANK', // Account to Account
+}
+
+export interface BankAccount {
+  id: string;
+  tenantId: string;
+  accountName: string;
+  bankName: string;
+  accountNumber?: string | null;
+  iban?: string | null;
+  branchCode?: string | null;
+  openingBalance: number;
+  currentBalance: number;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CashBankTransfer {
+  id: string;
+  tenantId: string;
+  transferType: CashBankTransferType;
+  fromBankAccountId?: string | null;
+  toBankAccountId?: string | null;
+  fromAccountName?: string;
+  toAccountName?: string;
+  amount: number;
+  transferDate: string;
+  referenceNumber?: string | null;
+  notes?: string | null;
+  recordedByUserId?: string | null;
+  recordedByName?: string | null;
+  createdAt: string;
+}
+
+export interface CashBankSummary {
+  totalCashInHand: number;
+  totalBankBalance: number;
+  totalLiquidFunds: number;
+  todayCashSales: number;
+  todayBankSales: number;
+  todayCashDepositedToBank: number;
+  todayBankWithdrawnToCash: number;
+  todayCashExpenses: number;
+  todayBankExpenses: number;
+  bankAccounts: BankAccount[];
+}
