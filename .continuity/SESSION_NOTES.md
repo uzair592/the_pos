@@ -14,6 +14,20 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 32 (commit 0307922): Modernized Menu and Product Center for High-Volume Restaurant POS Workflows:
+  1. Complete Redesign of Menu Catalog (MenuCatalog.tsx):
+     - Added Executive KPI Stats Cards: Total Products, Available in POS (In-Stock), 86'd / Out of Stock, and Catalog-Wide Average Gross Margin %.
+     - Dual View Modes: Table / Data Rows View and Modern POS Product Card Grid View with Food Avatars, Dish Badges, Margin Progress Bars, and Kebab Actions.
+     - Advanced Filtering & Search: Instant text search (English/Urdu/SKU/Barcode), Horizontal Category Pill Selector with count badges, Nested Subcategory Pills strip, Station Filter (Kitchen, BBQ, Drinks, Desserts, Packaging), and Stock Status Filter (In-Stock, Out-of-Stock, With Recipe, No Recipe).
+  2. Consolidated 3-Vertical-Dots Action Menu (ActionMenu):
+     - Replaced scattered raw action buttons with a sleek 3-dots kebab dropdown on every product row and grid card.
+     - Houses full CRUD and Print options: Preview details & margin breakdown, Edit product, Recipe & ingredients builder, Print barcode label / shelf price tag (50x30mm / 80mm format), Print kitchen recipe specification SOP sheet, Duplicate item (1-click cloning), Quick toggle availability (In stock vs 86'd), Delete product.
+  3. Professional POS Print Modals:
+     - Barcode / Shelf Price Tag Modal: Formatted for 50x30mm shelf tags and 80mm sticker rolls with code lines, retail price in Rs., SKU, category, and date.
+     - Kitchen Recipe Spec SOP Modal: Standard operating procedure sheet with portion size, prep time, ingredient breakdown with batch lot costs, retail price, gross margin %, and kitchen supervisor signature lines.
+     - Customer Dining Menu Print Modal: Full restaurant menu export grouped by categories and subcategories with Urdu subtitles, prices, and addons.
+  4. CSV Export: 1-click catalog export containing SKU, Name, Category, Retail Price, Cost Price, Margin %, and Active status.
+  5. Verified TypeScript compiles with 0 errors (npm --workspace=frontend run build), all 47 backend integration tests pass (npm --workspace=backend run test), and 38/38 QA simulation checks pass (npx tsx backend/test/qa_simulation_suite.ts).
 - Decision 30: Comprehensive Restaurant Owner QA/QC Simulation and Daybook Reconciliation Bug Fix:
   1. Built live 38-step QA and QC simulation runner (backend/test/qa_simulation_suite.ts) testing all operational workflows against the live server: multi-role authentication (Owner, Manager, Cashier, Waiter, Kitchen), Menu Catalog & Subcategories, raw inventory ingredients, Addons / Modifiers, Recipe creation and FIFO lot consumption, Inward Purchases and receiving, Cash & Bank two-way transfers, Dine-In KDS multi-station workflow, Takeaway with customer info and Bank Transfer settlement, Delivery with Rider dispatch and delivery fees, End-of-day Cash Deposit, security role barriers (403), input validation (400), and 3-dots CRUD duplication.
   2. Diagnosed and fixed Daybook Net Sales anomaly: in backend/src/services/financialService.ts getDaybookData, total_net_sales was subtracting only tax and delivery fee from grand_total without deducting service charges, causing Daybook to report higher Net Sales than Dashboard and Bill-Wise P&L when service charges were enabled. Updated to (o.subtotal - o.total_discount) matching Dashboard and Reports.
