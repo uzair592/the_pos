@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
@@ -489,13 +490,13 @@ export const PosTerminal: React.FC = () => {
       {/* Top POS Action Header */}
       <header className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between border-b border-slate-800 shrink-0">
         <div className="flex items-center space-x-3">
-          <a
-            href="/app"
+          <Link
+            to="/hub"
             className="flex items-center space-x-1 text-slate-400 hover:text-white text-xs font-semibold px-2.5 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Dashboard</span>
-          </a>
+            <span>Workspace Hub</span>
+          </Link>
           <span className="font-extrabold text-sm tracking-tight text-white">
             {tenant?.name || 'Restaurant POS'}
           </span>

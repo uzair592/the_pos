@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
@@ -56,13 +57,13 @@ export const KitchenDisplay: React.FC = () => {
       {/* KDS Header */}
       <header className="bg-slate-950 px-6 py-3 border-b border-slate-800 flex items-center justify-between shrink-0">
         <div className="flex items-center space-x-4">
-          <a
-            href="/app"
+          <Link
+            to="/hub"
             className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-300 hover:text-white transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Dashboard</span>
-          </a>
+            <span>Workspace Hub</span>
+          </Link>
           <div className="flex items-center space-x-2">
             <ChefHat className="w-6 h-6 text-brand-500" />
             <h1 className="text-lg font-black tracking-tight">Kitchen Order Display (KDS)</h1>

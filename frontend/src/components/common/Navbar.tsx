@@ -7,6 +7,7 @@ import {
   Store,
   Monitor,
   ChefHat,
+  LayoutGrid,
   LogOut,
   User,
   ShieldCheck,
@@ -53,6 +54,16 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center space-x-3">
             {!isSuperAdmin && (
               <>
+                {/* Workspace Hub Launcher */}
+                <Link
+                  to="/hub"
+                  className="flex items-center space-x-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors"
+                  title="Workspace Hub Launcher"
+                >
+                  <LayoutGrid className="w-4 h-4 text-blue-500" />
+                  <span className="hidden md:inline">Workspace Hub</span>
+                </Link>
+
                 {/* Fast POS Button */}
                 <Link
                   to="/pos"

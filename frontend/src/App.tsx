@@ -9,6 +9,7 @@ import { Sidebar } from './components/common/Sidebar.js';
 // Auth Pages
 import { Login } from './pages/auth/Login.js';
 import { PlatformLogin } from './pages/platform/PlatformLogin.js';
+import { WorkspaceHub } from './pages/hub/WorkspaceHub.js';
 
 // Platform Super Admin Pages
 import { PlatformDashboard } from './pages/platform/PlatformDashboard.js';
@@ -100,6 +101,10 @@ export const App: React.FC = () => {
               {/* Public Authentication */}
               <Route path="/login" element={<Login />} />
               <Route path="/platform-admin/login" element={<PlatformLogin />} />
+
+              {/* Workspace Hub / Module Launcher */}
+              <Route path="/hub" element={<WorkspaceHub />} />
+              <Route path="/workspace" element={<WorkspaceHub />} />
 
               {/* Super Admin Protected Area */}
               <Route path="/platform-admin" element={<SuperAdminLayout />}>

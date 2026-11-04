@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.js';
 import {
   LayoutDashboard,
+  LayoutGrid,
   Building2,
   CreditCard,
   DollarSign,
@@ -30,6 +31,7 @@ export const Sidebar: React.FC = () => {
   ];
 
   const restaurantLinks = [
+    { to: '/hub', label: 'Workspace Hub', icon: LayoutGrid },
     { to: '/app', label: 'Dashboard', icon: LayoutDashboard, exact: true },
     { to: '/app/orders', label: 'Orders Hub', icon: ShoppingBag, permission: Permission.ORDERS_VIEW },
     { to: '/pos', label: 'POS Terminal', icon: Monitor },
