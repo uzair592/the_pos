@@ -39,10 +39,11 @@ export interface CreateOrderParams {
     notes?: string;
     itemDiscount?: number;
     modifiers?: Array<{
-      groupId: string;
-      groupName: string;
-      optionId: string;
-      optionName: string;
+      groupId?: string;
+      groupName?: string;
+      optionId?: string;
+      optionName?: string;
+      name?: string;
       unitPrice: number;
     }>;
   }>;
@@ -294,7 +295,7 @@ export async function createOrder(params: CreateOrderParams) {
         try {
           const parsedMods = JSON.parse(sItem.modifiers);
           if (Array.isArray(parsedMods) && parsedMods.length > 0) {
-            modSummary = parsedMods.map((m: any) => m.optionName).join(', ');
+            modSummary = parsedMods.map((m: any) => m.name || m.optionName).filter(Boolean).join(', ');
           }
         } catch (_) {}
 

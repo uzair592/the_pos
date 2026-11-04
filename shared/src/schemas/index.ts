@@ -198,11 +198,12 @@ export const CreateProductSchema = z.object({
 
 // Orders & POS Checkout
 export const SelectedModifierSchema = z.object({
-  groupId: z.string().uuid(),
-  groupName: z.string(),
-  optionId: z.string().uuid(),
-  optionName: z.string(),
-  unitPrice: z.number().min(0),
+  groupId: z.string().optional(),
+  groupName: z.string().optional(),
+  optionId: z.string().optional(),
+  optionName: z.string().optional(),
+  name: z.string().optional(),
+  unitPrice: z.number().min(0).default(0),
 });
 
 export const OrderItemInputSchema = z.object({
