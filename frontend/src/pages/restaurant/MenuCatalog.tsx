@@ -3,6 +3,7 @@ import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
+import { ActionMenu } from '../../components/common/ActionMenu.js';
 import {
   Utensils,
   Plus,
@@ -24,6 +25,9 @@ import {
   FolderTree,
   Sliders,
   Sparkles,
+  Copy,
+  Power,
+  Package,
 } from 'lucide-react';
 import { PrepStation } from '@pos/shared';
 
@@ -50,6 +54,7 @@ export const MenuCatalog: React.FC = () => {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [viewingRecipeProduct, setViewingRecipeProduct] = useState<any | null>(null);
+  const [previewProduct, setPreviewProduct] = useState<any | null>(null);
 
   // Category Form (Supports Sub-Categories via parentId)
   const [categoryForm, setCategoryForm] = useState({
@@ -444,6 +449,46 @@ export const MenuCatalog: React.FC = () => {
     }
   };
 
+  // Duplicate Product
+  const handleDuplicateProduct = (prod: any) => {
+    setEditingProduct(null);
+    setProductForm({
+      name: `${prod.name} (Copy)`,
+      nameUrdu: prod.name_urdu ? `${prod.name_urdu} (کاپی)` : '',
+      categoryId: prod.category_id,
+      sku: `PROD-${Date.now().toString().slice(-4)}`,
+      barcode: '',
+      basePrice: Number(prod.base_price),
+      costPrice: Number(prod.cost_price || 0),
+      station: prod.station || PrepStation.KITCHEN,
+      trackInventory: prod.track_inventory !== false,
+      modifierGroupIds: prod.modifierGroups ? prod.modifierGroups.map((mg: any) => mg.id) : [],
+      recipe: {
+        yieldCount: prod.recipe?.yieldCount || 1,
+        ingredients:
+          prod.recipe?.ingredients?.map((ri: any) => ({
+            ingredientId: ri.ingredientId,
+            quantity: ri.quantity,
+            unit: ri.unit,
+          })) || [],
+      },
+    });
+    setIsProductModalOpen(true);
+    success(`Duplicating "${prod.name}". Adjust any fields and click Save.`);
+  };
+
+  // Toggle Availability
+  const handleToggleAvailability = async (prod: any) => {
+    try {
+      const newStatus = prod.is_available === false;
+      await api.put(`/menu/products/${prod.id}`, { isAvailable: newStatus });
+      success(`"${prod.name}" marked as ${newStatus ? 'In Stock (Available)' : 'Out of Stock (Unavailable)'}`);
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to update product availability');
+    }
+  };
+
   const handleDeleteProduct = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete/archive this product?')) return;
     try {
@@ -692,31 +737,45 @@ export const MenuCatalog: React.FC = () => {
                               <span className="text-slate-400 text-[10px]">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
-                            {hasRecipe && (
-                              <button
-                                onClick={() => setViewingRecipeProduct(p)}
-                                className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg font-bold text-[11px] transition-colors inline-flex items-center space-x-1"
-                                title="View Recipe Ingredients"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>Recipe</span>
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleOpenEditProduct(p)}
-                              className="p-1.5 text-slate-400 hover:text-brand-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                              title="Edit Product"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteProduct(p.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                              title="Delete Product"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            <ActionMenu
+                              items={[
+                                {
+                                  label: 'Preview Details',
+                                  icon: Eye,
+                                  onClick: () => setPreviewProduct(p),
+                                },
+                                {
+                                  label: 'Edit Product',
+                                  icon: Edit2,
+                                  onClick: () => handleOpenEditProduct(p),
+                                },
+                                {
+                                  label: 'Duplicate Item',
+                                  icon: Copy,
+                                  onClick: () => handleDuplicateProduct(p),
+                                },
+                                hasRecipe && {
+                                  label: 'Recipe Ingredients',
+                                  icon: ChefHat,
+                                  onClick: () => setViewingRecipeProduct(p),
+                                },
+                                {
+                                  label: p.is_available === false ? 'Mark In Stock' : 'Mark Out of Stock',
+                                  icon: Power,
+                                  variant: p.is_available === false ? 'success' : 'warning',
+                                  divider: true,
+                                  onClick: () => handleToggleAvailability(p),
+                                },
+                                {
+                                  label: 'Delete Product',
+                                  icon: Trash2,
+                                  variant: 'danger',
+                                  divider: true,
+                                  onClick: () => handleDeleteProduct(p.id),
+                                },
+                              ]}
+                            />
                           </td>
                         </tr>
                       );
@@ -796,21 +855,37 @@ export const MenuCatalog: React.FC = () => {
                     <td className="px-4 py-3 text-center font-mono text-slate-500">
                       {c.sort_order || 0}
                     </td>
-                    <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
-                      <button
-                        onClick={() => handleOpenEditCategory(c)}
-                        className="p-1.5 text-slate-400 hover:text-brand-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                        title="Edit Category"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteCategory(c.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                        title="Delete Category"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <ActionMenu
+                        items={[
+                          {
+                            label: 'Edit Category',
+                            icon: Edit2,
+                            onClick: () => handleOpenEditCategory(c),
+                          },
+                          !c.parent_id && {
+                            label: 'Add Sub-Category',
+                            icon: Plus,
+                            onClick: () => {
+                              setEditingCategory(null);
+                              setCategoryForm({
+                                name: '',
+                                nameUrdu: '',
+                                sortOrder: (c.subCategories?.length || 0) + 1,
+                                parentId: c.id,
+                              });
+                              setIsCategoryModalOpen(true);
+                            },
+                          },
+                          {
+                            label: 'Delete Category',
+                            icon: Trash2,
+                            variant: 'danger',
+                            divider: true,
+                            onClick: () => handleDeleteCategory(c.id),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -906,21 +981,22 @@ export const MenuCatalog: React.FC = () => {
                             ))}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
-                          <button
-                            onClick={() => handleOpenEditModifier(mg)}
-                            className="p-1.5 text-slate-400 hover:text-brand-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                            title="Edit Addon Group"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteModifierGroup(mg.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                            title="Delete Addon Group"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <ActionMenu
+                            items={[
+                              {
+                                label: 'Edit Addon Group',
+                                icon: Edit2,
+                                onClick: () => handleOpenEditModifier(mg),
+                              },
+                              {
+                                label: 'Delete Addon Group',
+                                icon: Trash2,
+                                variant: 'danger',
+                                onClick: () => handleDeleteModifierGroup(mg.id),
+                              },
+                            ]}
+                          />
                         </td>
                       </tr>
                     );
@@ -1574,6 +1650,196 @@ export const MenuCatalog: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* ======================================================== */}
+      {/* PRODUCT PREVIEW MODAL */}
+      {/* ======================================================== */}
+      {previewProduct && (
+        <Modal
+          isOpen={!!previewProduct}
+          onClose={() => setPreviewProduct(null)}
+          title="Product Preview & Performance Details"
+          maxWidth="2xl"
+        >
+          <div className="space-y-5 text-xs">
+            {/* Header info */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                    {previewProduct.name}
+                  </h3>
+                  {previewProduct.name_urdu && (
+                    <span className="text-xs text-slate-500 font-arabic">
+                      ({previewProduct.name_urdu})
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center space-x-2 mt-1">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                    Category: {previewProduct.category_name}
+                  </span>
+                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800">
+                    Station: {previewProduct.station || 'KITCHEN'}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <span
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold border ${
+                    previewProduct.is_available !== false
+                      ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                      : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${previewProduct.is_available !== false ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  <span>{previewProduct.is_available !== false ? 'In Stock (Available)' : 'Out of Stock (Unavailable)'}</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Financial Metrics Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-xl">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Retail Price</span>
+                <span className="text-base font-black text-slate-900 dark:text-white">
+                  {currencySymbol} {Number(previewProduct.base_price).toLocaleString()}
+                </span>
+              </div>
+              <div className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-xl">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Cost Price</span>
+                <span className="text-base font-black text-slate-700 dark:text-slate-300">
+                  {currencySymbol} {Number(previewProduct.cost_price || 0).toLocaleString()}
+                </span>
+              </div>
+              <div className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-xl">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Gross Profit</span>
+                <span className="text-base font-black text-emerald-600 dark:text-emerald-400">
+                  {currencySymbol} {Math.max(0, Number(previewProduct.base_price) - Number(previewProduct.cost_price || 0)).toLocaleString()}
+                </span>
+              </div>
+              <div className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-xl">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Gross Margin</span>
+                {(() => {
+                  const base = Number(previewProduct.base_price) || 0;
+                  const cost = Number(previewProduct.cost_price || 0);
+                  const margin = base > 0 ? Math.round(((base - cost) / base) * 100) : 0;
+                  return (
+                    <span className={`text-base font-black ${
+                      margin >= 50 ? 'text-emerald-600 dark:text-emerald-400' : margin >= 25 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
+                    }`}>
+                      {margin}%
+                    </span>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Product Meta */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-slate-50/70 dark:bg-slate-800/30 rounded-xl border border-slate-200/80 dark:border-slate-800 text-[11px]">
+              <div>
+                <span className="text-slate-500 block">SKU Code:</span>
+                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{previewProduct.sku}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">Barcode:</span>
+                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{previewProduct.barcode || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">Inventory Tracking:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{previewProduct.track_inventory ? 'Tracked via FIFO' : 'Untracked'}</span>
+              </div>
+            </div>
+
+            {/* Addons attached */}
+            {previewProduct.modifierGroups && previewProduct.modifierGroups.length > 0 && (
+              <div className="space-y-2">
+                <span className="font-bold text-slate-700 dark:text-slate-300 block">Available Addon Groups</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {previewProduct.modifierGroups.map((mg: any) => (
+                    <span key={mg.id} className="px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                      {mg.name} ({mg.options?.length || 0} options)
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recipe Details if configured */}
+            {previewProduct.recipe && previewProduct.recipe.ingredients && previewProduct.recipe.ingredients.length > 0 && (
+              <div className="space-y-2">
+                <span className="font-bold text-slate-700 dark:text-slate-300 block">Recipe Ingredients Breakdown</span>
+                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-slate-100 dark:bg-slate-800/80 font-bold text-slate-700 dark:text-slate-300">
+                      <tr>
+                        <th className="px-3 py-1.5">Ingredient</th>
+                        <th className="px-3 py-1.5 text-center">Quantity</th>
+                        <th className="px-3 py-1.5 text-right">Unit Cost</th>
+                        <th className="px-3 py-1.5 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {previewProduct.recipe.ingredients.map((ri: any, idx: number) => {
+                        const ing = ingredients.find((i) => i.id === ri.ingredientId);
+                        const ingCost = Number(ing?.costPerUnit || ing?.cost_per_unit || 0);
+                        const totalRow = ingCost * Number(ri.quantity || 0);
+                        return (
+                          <tr key={idx}>
+                            <td className="px-3 py-1.5 font-medium">{ing?.name || 'Raw Ingredient'}</td>
+                            <td className="px-3 py-1.5 text-center font-bold">{ri.quantity} {ri.unit}</td>
+                            <td className="px-3 py-1.5 text-right text-slate-500">{currencySymbol} {ingCost.toFixed(2)}</td>
+                            <td className="px-3 py-1.5 text-right font-bold text-slate-800 dark:text-slate-200">{currencySymbol} {totalRow.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+              <div className="flex space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = previewProduct;
+                    setPreviewProduct(null);
+                    handleOpenEditProduct(p);
+                  }}
+                  className="px-3.5 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold flex items-center space-x-1.5 transition-colors"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edit Product</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = previewProduct;
+                    setPreviewProduct(null);
+                    setViewingRecipeProduct(p);
+                  }}
+                  className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center space-x-1.5 transition-colors"
+                >
+                  <ChefHat className="w-3.5 h-3.5" />
+                  <span>Manage Recipe</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPreviewProduct(null)}
+                className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl font-bold transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

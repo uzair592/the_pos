@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
+import { ActionMenu } from '../../components/common/ActionMenu.js';
 import {
   Users,
   Plus,
@@ -441,41 +442,28 @@ export const StaffManagement: React.FC = () => {
                         </span>
                       </td>
 
-                      <td className="px-5 py-3.5 text-right space-x-1.5 whitespace-nowrap">
-                        {/* Edit Employee Button */}
-                        <button
-                          onClick={() => handleOpenEdit(u)}
-                          className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-brand-500 hover:text-white dark:hover:bg-brand-600 text-slate-700 dark:text-slate-200 rounded-lg font-bold text-[11px] transition-all inline-flex items-center space-x-1 border border-slate-200 dark:border-slate-700"
-                          title="Edit Employee & Credentials"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                          <span>Edit</span>
-                        </button>
-
-                        {/* Reset Password Button */}
-                        <button
-                          onClick={() => handleOpenPasswordReset(u)}
-                          className="px-2.5 py-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 text-amber-700 dark:text-amber-300 rounded-lg font-bold text-[11px] transition-all inline-flex items-center space-x-1 border border-amber-300 dark:border-amber-800"
-                          title="Quick Reset Password"
-                        >
-                          <KeyRound className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Password</span>
-                        </button>
-
-                        {/* Toggle Active Status */}
-                        {!isOwner && (
-                          <button
-                            onClick={() => handleToggleStatus(u)}
-                            className={`p-1.5 rounded-lg border transition-all ${
-                              u.is_active !== false
-                                ? 'text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 border-transparent hover:border-rose-300'
-                                : 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 border-transparent hover:border-emerald-300'
-                            }`}
-                            title={u.is_active !== false ? 'Deactivate Employee' : 'Activate Employee'}
-                          >
-                            <Power className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                        <ActionMenu
+                          items={[
+                            {
+                              label: 'Edit Employee',
+                              icon: Edit2,
+                              onClick: () => handleOpenEdit(u),
+                            },
+                            {
+                              label: 'Reset Password',
+                              icon: KeyRound,
+                              onClick: () => handleOpenPasswordReset(u),
+                            },
+                            !isOwner && {
+                              label: u.is_active !== false ? 'Deactivate Account' : 'Activate Account',
+                              icon: Power,
+                              variant: u.is_active !== false ? 'warning' : 'success',
+                              divider: true,
+                              onClick: () => handleToggleStatus(u),
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   );

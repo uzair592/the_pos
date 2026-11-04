@@ -14,6 +14,19 @@
 - None. All 44 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 25: Implemented 3-Dots Action Menu (Kebab Menu) with Delete, Preview, and Multi-CRUD Operations:
+  1. Built reusable ActionMenu component in frontend/src/components/common/ActionMenu.tsx featuring 3-dots trigger (MoreVertical), smart viewport boundary collision detection (auto-flips upward if near bottom), click-outside and Escape key handling, and semantic action styles (default, danger, warning, success).
+  2. Menu Catalog CRUD Upgrades (MenuCatalog.tsx):
+     - Products Table: Integrated 3-dots ActionMenu on each item row: Preview Details, Edit Product, Duplicate Item, Recipe Ingredients, In-Stock/Out-of-Stock Status Toggle, and Delete Product.
+     - Built comprehensive Product Preview Modal displaying item financials (retail price, cost price, calculated recipe cost, gross profit, margin %), station, SKU/barcode, inventory tracking, attached addon groups, recipe ingredient table with costs, and 1-click Edit/Recipe buttons.
+     - Added 1-click product duplication (handleDuplicateProduct) and availability toggle (handleToggleAvailability via PUT /api/menu/products/:id).
+     - Categories Table: Integrated 3-dots ActionMenu with Edit Category, Add Sub-Category, and Delete Category.
+     - Addon Groups Table: Integrated 3-dots ActionMenu with Edit Addon Group and Delete Addon Group.
+  3. Orders Hub CRUD Upgrades (OrdersHub.tsx):
+     - In All Orders History Table: Replaced raw buttons with 3-dots ActionMenu on every order row with Preview Order Breakdown, Print / Reprint Receipt (5-templates), Take Payment / Settle (for unpaid orders), Cancel Order (for active orders), and Delete Order Record.
+     - Added backend DELETE /api/orders/:id route in backend/src/routes/order.routes.ts to safely delete order records with table status release and cascade cleanup.
+  4. Staff & Roles Management CRUD (StaffManagement.tsx): Upgraded row action buttons with 3-dots ActionMenu for Edit Employee, Reset Password, and Activate/Deactivate Account.
+  5. Zero test regressions: all 44 automated backend integration tests pass and builds succeed with 0 errors.
 - Decision 24: Streamlined POS Terminal Order Types and Added Customer & Rider Information:
   1. Streamlined order types from 4 buttons to 3 core channels: Dine-In, Takeaway, and Delivery. Removed redundant Counter option since Takeaway covers direct over-the-counter sales.
   2. Takeaway Customer Details: Rendered dedicated Takeaway customer information card prompting for Customer Name and Mobile Number, persisting them to the order and rendering them on Takeaway receipts and tickets.

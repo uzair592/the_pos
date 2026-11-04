@@ -653,6 +653,51 @@ export async function orderRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * Delete Order (Admin / Manager)
+   */
+  fastify.delete('/api/orders/:id', {
+    preHandler: [requirePermission(Permission.ORDERS_CANCEL)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    const { rows: orderRows } = await query(
+      'SELECT id, order_number, table_id FROM orders WHERE id = $1 AND tenant_id = $2',
+      [id, tenantId],
+      { tenantId }
+    );
+    if (orderRows.length === 0) return reply.status(404).send({ error: 'Order not found' });
+    const order = orderRows[0];
+
+    // Free table if assigned
+    if (order.table_id) {
+      await query(
+        'UPDATE restaurant_tables SET status = $1, current_order_id = NULL WHERE id = $2 AND tenant_id = $3',
+        [TableStatus.AVAILABLE, order.table_id, tenantId],
+        { tenantId }
+      );
+    }
+
+    // Delete associated records with foreign keys
+    await query('DELETE FROM order_refunds WHERE order_id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+    await query('DELETE FROM kitchen_tickets WHERE order_id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+    await query('DELETE FROM orders WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+
+    await logAuditEvent({
+      tenantId,
+      branchId: req.user!.branchId,
+      actorId: req.user!.id,
+      actorRole: req.user!.role,
+      action: 'ORDER_DELETED',
+      resourceType: 'ORDER',
+      resourceId: id,
+      metadata: { orderNumber: order.order_number },
+    });
+
+    return reply.send({ message: `Order #${order.order_number} deleted successfully` });
+  });
+
+  /**
    * Printable Receipt Payload
    */
   fastify.get('/api/orders/:id/receipt', async (req, reply) => {

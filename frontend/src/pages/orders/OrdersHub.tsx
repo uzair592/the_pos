@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ChevronLeft,
   Printer,
+  Trash2,
   RotateCcw,
   Eye,
   UtensilsCrossed,
@@ -55,6 +56,7 @@ const formatDisplayDate = (ymd: string): string => {
 };
 
 import { ReceiptModal } from '../../components/common/ReceiptModal.js';
+import { ActionMenu } from '../../components/common/ActionMenu.js';
 
 export const OrdersHub: React.FC = () => {
   const { user, tenant, currentBranchId, branches } = useAuth();
@@ -275,6 +277,32 @@ export const OrdersHub: React.FC = () => {
       toastError(err.message || 'Failed to settle payment');
     } finally {
       setSettleSubmitting(false);
+    }
+  };
+
+  // Cancel Order action
+  const handleCancelOrder = async (orderId: string, orderNumber: string) => {
+    if (!window.confirm(`Are you sure you want to cancel Order #${orderNumber}?`)) return;
+    try {
+      await api.post(`/orders/${orderId}/cancel`, { reason: 'Cancelled via Orders Hub' });
+      success(`Order #${orderNumber} cancelled successfully`);
+      fetchActiveOrders(true);
+      fetchHistoryOrders();
+    } catch (err: any) {
+      toastError(err.message || 'Failed to cancel order');
+    }
+  };
+
+  // Delete Order action
+  const handleDeleteOrder = async (orderId: string, orderNumber: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete Order #${orderNumber}? This action cannot be undone.`)) return;
+    try {
+      await api.delete(`/orders/${orderId}`);
+      success(`Order #${orderNumber} deleted successfully`);
+      fetchActiveOrders(true);
+      fetchHistoryOrders();
+    } catch (err: any) {
+      toastError(err.message || 'Failed to delete order');
     }
   };
 
@@ -988,21 +1016,45 @@ export const OrdersHub: React.FC = () => {
                             {ord.status.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="px-5 py-3.5 text-right space-x-2">
-                          <button
-                            onClick={() => openOrderDetails(ord.id)}
-                            className="p-1.5 text-slate-500 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/40 rounded-lg transition-colors"
-                            title="View Full Order Breakdown"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setReceiptOrder(ord)}
-                            className="p-1.5 text-slate-500 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg transition-colors"
-                            title="Reprint Receipt"
-                          >
-                            <Printer className="w-4 h-4" />
-                          </button>
+                        <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                          <ActionMenu
+                            items={[
+                              {
+                                label: 'Preview Order Breakdown',
+                                icon: Eye,
+                                onClick: () => openOrderDetails(ord.id),
+                              },
+                              {
+                                label: 'Print / Reprint Receipt',
+                                icon: Printer,
+                                onClick: () => setReceiptOrder(ord),
+                              },
+                              ord.payment_status === 'PENDING' && ord.status !== 'CANCELLED' && {
+                                label: 'Take Payment / Settle',
+                                icon: DollarSign,
+                                variant: 'success',
+                                onClick: () => {
+                                  setSettleOrder(ord);
+                                  setSettleCashTendered(Number(ord.grand_total));
+                                  setSettlePaymentMethod(PaymentMethod.CASH);
+                                },
+                              },
+                              ord.status !== 'COMPLETED' && ord.status !== 'CANCELLED' && {
+                                label: 'Cancel Order',
+                                icon: X,
+                                variant: 'warning',
+                                divider: true,
+                                onClick: () => handleCancelOrder(ord.id, ord.order_number),
+                              },
+                              {
+                                label: 'Delete Order Record',
+                                icon: Trash2,
+                                variant: 'danger',
+                                divider: true,
+                                onClick: () => handleDeleteOrder(ord.id, ord.order_number),
+                              },
+                            ]}
+                          />
                         </td>
                       </tr>
                     ))
