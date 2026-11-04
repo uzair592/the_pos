@@ -198,9 +198,14 @@ export async function orderRoutes(fastify: FastifyInstance) {
       whereClause += ` AND (o.order_number ILIKE $${params.length} OR o.customer_name ILIKE $${params.length} OR o.customer_phone ILIKE $${params.length} OR o.table_number ILIKE $${params.length})`;
     }
 
-    // Total Count
+    // Total Count and Period Financial Aggregates
     const countRes = await query(
-      `SELECT COUNT(*)::int as total FROM orders o ${whereClause}`,
+      `SELECT COUNT(*)::int as total,
+              COALESCE(SUM(o.grand_total), 0)::numeric as total_amount,
+              COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.grand_total ELSE 0 END), 0)::numeric as total_completed_amount,
+              COUNT(CASE WHEN o.status = 'COMPLETED' THEN 1 END)::int as completed_count,
+              COUNT(CASE WHEN o.status = 'CANCELLED' THEN 1 END)::int as cancelled_count
+       FROM orders o ${whereClause}`,
       params,
       { tenantId }
     );
@@ -248,6 +253,13 @@ export async function orderRoutes(fastify: FastifyInstance) {
         page: pageNum,
         limit: limitNum,
         totalPages: Math.ceil(total / limitNum),
+      },
+      summary: {
+        totalOrders: total,
+        totalAmount: Number(countRes.rows[0]?.total_amount || 0),
+        totalCompletedAmount: Number(countRes.rows[0]?.total_completed_amount || 0),
+        completedCount: Number(countRes.rows[0]?.completed_count || 0),
+        cancelledCount: Number(countRes.rows[0]?.cancelled_count || 0),
       },
     });
   });

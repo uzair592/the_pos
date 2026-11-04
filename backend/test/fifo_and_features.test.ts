@@ -293,6 +293,36 @@ describe('FIFO Inventory, Credential Management, Orders Hub & Backup System Test
     const history = JSON.parse(historyRes.payload).orders;
     expect(history.length).toBeGreaterThan(0);
     expect(history[0].id).toBe(testOrder.id);
+
+    // 8. Verify specific date filtering in All Orders History (Orders Hub)
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).toISOString();
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
+
+    const dateFilteredRes = await app.inject({
+      method: 'GET',
+      url: `/api/orders?startDate=${encodeURIComponent(startOfDay)}&endDate=${encodeURIComponent(endOfDay)}`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(dateFilteredRes.statusCode).toBe(200);
+    const datePayload = JSON.parse(dateFilteredRes.payload);
+    expect(datePayload.orders.some((o: any) => o.id === testOrder.id)).toBe(true);
+    expect(datePayload.summary).toBeDefined();
+    expect(datePayload.summary.totalOrders).toBeGreaterThan(0);
+    expect(datePayload.summary.totalAmount).toBeGreaterThan(0);
+
+    // Past date returns 0 matching orders
+    const pastStart = new Date(2020, 0, 1, 0, 0, 0, 0).toISOString();
+    const pastEnd = new Date(2020, 0, 1, 23, 59, 59, 999).toISOString();
+    const pastDateRes = await app.inject({
+      method: 'GET',
+      url: `/api/orders?startDate=${encodeURIComponent(pastStart)}&endDate=${encodeURIComponent(pastEnd)}`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(pastDateRes.statusCode).toBe(200);
+    const pastPayload = JSON.parse(pastDateRes.payload);
+    expect(pastPayload.orders.length).toBe(0);
+    expect(pastPayload.summary.totalOrders).toBe(0);
   });
 
   it('M3: Super Admin Updating Restaurant User Credentials & Session Revocation', async () => {

@@ -14,6 +14,13 @@
 - None. All 43 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 22: Implemented Custom Date Selector and Range Filter in Orders Hub:
+  1. Built dedicated Specific Date Calendar selector and Custom Date Range controls in OrdersHub.tsx All Orders History tab.
+  2. Supported quick 1-click day navigation: Jump to Previous Day, Jump to Next Day, and Jump to Today shortcut, with localized human-friendly date headers (e.g., "Wed, Nov 4, 2026").
+  3. Integrated branch selector filter allowing managers to audit orders across specific branches or all branches consolidated.
+  4. Enhanced backend GET /api/orders to calculate period financial aggregates (total orders, total revenue, completed sales amount, completed count, cancelled count) in a single optimized query.
+  5. Rendered live financial summary cards strip above the history orders table displaying filtered metrics for the selected date.
+  6. Added automated integration test in backend/test/fifo_and_features.test.ts verifying date boundary queries and financial summary payloads. All 43 tests pass.
 - Decision 21 (commit 2fd06aa): Resolved Branch Filtering Mismatch, Timezone Boundary Calculation, and POS Branch Association:
   1. Root cause analysis: User reported Today's Net Sales Rs. 0 and no sales on the dashboard despite orders being served. In PostgreSQL, `Lahore Karahi & Grill` had 3 completed orders with Rs. 10,100 net sales and Rs. 12,221 collections, but all were assigned to `Gulberg Main Branch` (`LHE-01`). The user session had switched or defaulted to `DHA Phase 5 Branch` (`LHE-02`), which was newly provisioned with 0 orders.
   2. POS Terminal Branch association bug: In `PosTerminal.tsx`, orders were being submitted with hardcoded `user!.branchId` instead of the active session's `currentBranchId || user?.branchId || branches[0]?.id`. Now POS accurately routes orders to the selected branch.

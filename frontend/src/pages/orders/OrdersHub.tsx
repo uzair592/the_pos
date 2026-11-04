@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ChevronRight,
+  ChevronLeft,
   Printer,
   RotateCcw,
   Eye,
@@ -23,20 +24,52 @@ import {
   RefreshCw,
   DollarSign,
   Calendar,
+  CalendarDays,
+  CalendarRange,
   Layers,
   Boxes,
   CreditCard,
   Wallet,
   Receipt,
 } from 'lucide-react';
+
+// Format date to local YYYY-MM-DD
+const formatLocalYMD = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+// Format YYYY-MM-DD to human friendly date string
+const formatDisplayDate = (ymd: string): string => {
+  if (!ymd) return '';
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  return dateObj.toLocaleDateString('en-US', {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
 import { ReceiptModal } from '../../components/common/ReceiptModal.js';
 
 export const OrdersHub: React.FC = () => {
-  const { user, tenant } = useAuth();
+  const { user, tenant, currentBranchId, branches } = useAuth();
   const { success, error: toastError } = useToast();
 
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
   const [activeStageFilter, setActiveStageFilter] = useState<'ALL' | 'UNPAID_SERVED' | 'KITCHEN' | 'DINING' | 'DELIVERY'>('ALL');
+  const [branchFilter, setBranchFilter] = useState<string>(currentBranchId || '');
+
+  // Keep branchFilter aligned with global branch switch
+  useEffect(() => {
+    if (currentBranchId) {
+      setBranchFilter(currentBranchId);
+    }
+  }, [currentBranchId]);
 
   // Active Orders state
   const [activeOrders, setActiveOrders] = useState<any[]>([]);
@@ -49,6 +82,16 @@ export const OrdersHub: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<string>('');
   const [dateRange, setDateRange] = useState<string>('TODAY');
+  const [specificDate, setSpecificDate] = useState<string>(() => formatLocalYMD(new Date()));
+  const [customStartDate, setCustomStartDate] = useState<string>(() => formatLocalYMD(new Date()));
+  const [customEndDate, setCustomEndDate] = useState<string>(() => formatLocalYMD(new Date()));
+  const [historySummary, setHistorySummary] = useState<{
+    totalOrders: number;
+    totalAmount: number;
+    totalCompletedAmount: number;
+    completedCount: number;
+    cancelledCount: number;
+  } | null>(null);
   const [page, setPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -71,32 +114,59 @@ export const OrdersHub: React.FC = () => {
   const fetchActiveOrders = useCallback(async (isBackground = false) => {
     if (!isBackground) setLoadingActive(true);
     try {
-      const data = await api.get('/orders/active');
+      const queryStr = branchFilter ? `?branchId=${branchFilter}` : '';
+      const data = await api.get(`/orders/active${queryStr}`);
       setActiveOrders(data.orders || []);
     } catch (err: any) {
       if (!isBackground) toastError(err.message || 'Failed to load active orders');
     } finally {
       if (!isBackground) setLoadingActive(false);
     }
-  }, [toastError]);
+  }, [branchFilter, toastError]);
 
-  // Fetch History Orders
+  // Fetch History Orders with Custom Specific Date and Range support
   const fetchHistoryOrders = useCallback(async () => {
     setLoadingHistory(true);
     try {
       let startDate: string | undefined;
       let endDate: string | undefined;
 
-      const now = new Date();
       if (dateRange === 'TODAY') {
-        startDate = new Date(now.setHours(0, 0, 0, 0)).toISOString();
-        endDate = new Date(now.setHours(23, 59, 59, 999)).toISOString();
+        const todayYmd = formatLocalYMD(new Date());
+        const [y, m, d] = todayYmd.split('-').map(Number);
+        startDate = new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+        endDate = new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
       } else if (dateRange === 'YESTERDAY') {
-        const yest = new Date(Date.now() - 24 * 3600 * 1000);
-        startDate = new Date(yest.setHours(0, 0, 0, 0)).toISOString();
-        endDate = new Date(yest.setHours(23, 59, 59, 999)).toISOString();
+        const yest = new Date();
+        yest.setDate(yest.getDate() - 1);
+        const yestYmd = formatLocalYMD(yest);
+        const [y, m, d] = yestYmd.split('-').map(Number);
+        startDate = new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+        endDate = new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
+      } else if (dateRange === 'SPECIFIC_DATE') {
+        if (specificDate) {
+          const [y, m, d] = specificDate.split('-').map(Number);
+          startDate = new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+          endDate = new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
+        }
+      } else if (dateRange === 'CUSTOM_RANGE') {
+        if (customStartDate) {
+          const [y, m, d] = customStartDate.split('-').map(Number);
+          startDate = new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+        }
+        if (customEndDate) {
+          const [y, m, d] = customEndDate.split('-').map(Number);
+          endDate = new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
+        }
       } else if (dateRange === '7DAYS') {
-        startDate = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+        const past = new Date();
+        past.setDate(past.getDate() - 7);
+        startDate = new Date(past.getFullYear(), past.getMonth(), past.getDate(), 0, 0, 0, 0).toISOString();
+        endDate = new Date().toISOString();
+      } else if (dateRange === '30DAYS') {
+        const past = new Date();
+        past.setDate(past.getDate() - 30);
+        startDate = new Date(past.getFullYear(), past.getMonth(), past.getDate(), 0, 0, 0, 0).toISOString();
         endDate = new Date().toISOString();
       }
 
@@ -104,6 +174,7 @@ export const OrdersHub: React.FC = () => {
         page,
         limit: 15,
       };
+      if (branchFilter) params.branchId = branchFilter;
       if (searchQuery) params.search = searchQuery;
       if (statusFilter) params.status = statusFilter;
       if (typeFilter) params.orderType = typeFilter;
@@ -115,12 +186,37 @@ export const OrdersHub: React.FC = () => {
       setHistoryOrders(data.orders || []);
       setTotalPages(data.pagination?.totalPages || 1);
       setTotalCount(data.pagination?.total || 0);
+      if (data.summary) {
+        setHistorySummary(data.summary);
+      } else {
+        setHistorySummary(null);
+      }
     } catch (err: any) {
       toastError(err.message || 'Failed to load orders history');
     } finally {
       setLoadingHistory(false);
     }
-  }, [dateRange, page, searchQuery, statusFilter, typeFilter, toastError]);
+  }, [dateRange, specificDate, customStartDate, customEndDate, branchFilter, page, searchQuery, statusFilter, typeFilter, toastError]);
+
+  // Day navigation handlers for Specific Date picker
+  const handlePrevDay = () => {
+    const [y, m, d] = specificDate.split('-').map(Number);
+    const prev = new Date(y, m - 1, d - 1);
+    setSpecificDate(formatLocalYMD(prev));
+    setPage(1);
+  };
+
+  const handleNextDay = () => {
+    const [y, m, d] = specificDate.split('-').map(Number);
+    const next = new Date(y, m - 1, d + 1);
+    setSpecificDate(formatLocalYMD(next));
+    setPage(1);
+  };
+
+  const handleJumpToday = () => {
+    setSpecificDate(formatLocalYMD(new Date()));
+    setPage(1);
+  };
 
   // Initial fetch and auto-polling for Multi-Device synchronization
   useEffect(() => {
@@ -240,8 +336,27 @@ export const OrdersHub: React.FC = () => {
           </p>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex items-center space-x-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
+        <div className="flex flex-wrap items-center gap-3">
+          {branches && branches.length > 1 && (
+            <select
+              value={branchFilter}
+              onChange={(e) => {
+                setBranchFilter(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-2 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 shadow-sm focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="">🏢 All Branches (Consolidated)</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  📍 {b.name} ({b.code})
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Navigation Tabs */}
+          <div className="flex items-center space-x-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
           <button
             onClick={() => setActiveTab('active')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -269,6 +384,7 @@ export const OrdersHub: React.FC = () => {
             <Layers className="w-4 h-4" />
             <span>All Orders History</span>
           </button>
+        </div>
         </div>
       </div>
 
@@ -538,7 +654,7 @@ export const OrdersHub: React.FC = () => {
       {activeTab === 'history' && (
         <div className="space-y-5">
           {/* Filter Bar */}
-          <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* Search */}
               <div className="relative">
@@ -589,20 +705,215 @@ export const OrdersHub: React.FC = () => {
                 <option value="COUNTER">Counter</option>
               </select>
 
-              {/* Date Filter */}
+              {/* Date Filter Dropdown */}
               <select
                 value={dateRange}
                 onChange={(e) => {
                   setDateRange(e.target.value);
                   setPage(1);
                 }}
-                className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                className="px-3 py-2 text-xs font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none"
               >
                 <option value="TODAY">Today's Orders</option>
                 <option value="YESTERDAY">Yesterday</option>
+                <option value="SPECIFIC_DATE">Specific Date (Calendar 📅)</option>
+                <option value="CUSTOM_RANGE">Custom Date Range (📆)</option>
                 <option value="7DAYS">Last 7 Days</option>
+                <option value="30DAYS">Last 30 Days</option>
                 <option value="ALL">All Time</option>
               </select>
+            </div>
+
+            {/* Quick Date Presets Row */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" /> Date:
+                </span>
+                {[
+                  { id: 'TODAY', label: "Today" },
+                  { id: 'YESTERDAY', label: "Yesterday" },
+                  { id: 'SPECIFIC_DATE', label: "Specific Date 📅" },
+                  { id: 'CUSTOM_RANGE', label: "Custom Range 📆" },
+                  { id: '7DAYS', label: "7 Days" },
+                  { id: '30DAYS', label: "30 Days" },
+                  { id: 'ALL', label: "All Time" },
+                ].map((preset) => {
+                  const isSelected = dateRange === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      onClick={() => {
+                        setDateRange(preset.id);
+                        setPage(1);
+                      }}
+                      className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all ${
+                        isSelected
+                          ? 'bg-brand-500 text-white shadow-sm ring-2 ring-brand-500/20'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={() => fetchHistoryOrders()}
+                className="flex items-center space-x-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-colors"
+              >
+                <RefreshCw className={`w-3 h-3 ${loadingHistory ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
+
+            {/* SPECIFIC DATE SELECTOR PANEL */}
+            {dateRange === 'SPECIFIC_DATE' && (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-brand-50/70 dark:bg-brand-950/40 border border-brand-200/80 dark:border-brand-900/60 rounded-2xl animate-in fade-in">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-brand-500 text-white flex items-center justify-center shadow-sm">
+                    <CalendarDays className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-brand-600 dark:text-brand-400 block">
+                      Specific Date Selected
+                    </span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white">
+                      {formatDisplayDate(specificDate)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center flex-wrap gap-2">
+                  <button
+                    onClick={handlePrevDay}
+                    title="Jump to Previous Day"
+                    className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors shadow-sm"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <span>Prev Day</span>
+                  </button>
+
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={specificDate}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setSpecificDate(e.target.value);
+                          setPage(1);
+                        }
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 border border-brand-300 dark:border-brand-700 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 shadow-sm cursor-pointer"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleNextDay}
+                    title="Jump to Next Day"
+                    className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors shadow-sm"
+                  >
+                    <span>Next Day</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  {specificDate !== formatLocalYMD(new Date()) && (
+                    <button
+                      onClick={handleJumpToday}
+                      className="px-3 py-1.5 text-xs font-black rounded-xl bg-brand-500 hover:bg-brand-600 text-white shadow-sm transition-all"
+                    >
+                      Today
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* CUSTOM RANGE SELECTOR PANEL */}
+            {dateRange === 'CUSTOM_RANGE' && (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-brand-50/70 dark:bg-brand-950/40 border border-brand-200/80 dark:border-brand-900/60 rounded-2xl animate-in fade-in">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-brand-500 text-white flex items-center justify-center shadow-sm">
+                    <CalendarRange className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-brand-600 dark:text-brand-400 block">
+                      Custom Date Range
+                    </span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white">
+                      {formatDisplayDate(customStartDate)} → {formatDisplayDate(customEndDate)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center flex-wrap gap-2">
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-xs font-bold text-slate-500">From:</span>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => {
+                        setCustomStartDate(e.target.value);
+                        setPage(1);
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 shadow-sm"
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-xs font-bold text-slate-500">To:</span>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => {
+                        setCustomEndDate(e.target.value);
+                        setPage(1);
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 shadow-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Orders Aggregate Cards Strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-sm">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                {dateRange === 'SPECIFIC_DATE' ? `Orders on ${formatDisplayDate(specificDate)}` : 'Filtered Orders'}
+              </span>
+              <span className="text-lg font-black text-slate-900 dark:text-white mt-0.5 block">
+                {historySummary?.totalOrders ?? totalCount}
+              </span>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-sm">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                Total Revenue
+              </span>
+              <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block">
+                {tenant?.currency || 'PKR'} {Number(historySummary?.totalAmount || 0).toLocaleString()}
+              </span>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-sm">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                Completed Sales
+              </span>
+              <span className="text-lg font-black text-sky-600 dark:text-sky-400 mt-0.5 block">
+                {historySummary?.completedCount ?? historyOrders.filter((o) => o.status === 'COMPLETED').length} orders
+              </span>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-sm">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                Cancelled / Refunded
+              </span>
+              <span className="text-lg font-black text-rose-600 dark:text-rose-400 mt-0.5 block">
+                {historySummary?.cancelledCount ?? historyOrders.filter((o) => ['CANCELLED', 'REFUNDED'].includes(o.status)).length} orders
+              </span>
             </div>
           </div>
 
