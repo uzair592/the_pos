@@ -14,6 +14,11 @@
 - None. All 43 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 23: Optimized POS Terminal Layout with Vertical Categories, Subcategories, Editable Delivery Pricing, Customer Mobile/Name Section, and Resizable Billing Width:
+  1. Built an ergonomic 3-column POS interface: 1) Vertical Categories & Subcategories Sidebar on the left with item counters and accordion navigation; 2) Menu Items section with default Vertical List View and Grid toggle; 3) Resizable Billing / Cart Section on the right.
+  2. Implemented adjustable billing section width with an interactive draggable divider handle (supports smooth resizing from 320px to 800px) and one-click width presets: Compact (S: 340px), Standard (M: 420px), Wide (L: 540px), Expanded (XL: 680px), and an instant Expand/Shrink toggle. Persists user preference to localStorage.
+  3. Built dedicated Delivery Order Information panel when Order Type is Delivery: Customer Name input, Mobile Number input, Delivery Address input, and editable Delivery Fee/Price with quick presets (Free, 100, 150, 200, 250).
+  4. Factored delivery fee into real-time subtotal, tax, and grand total calculations on both frontend and backend, with full receipt generation support.
 - Decision 22: Implemented Custom Date Selector and Range Filter in Orders Hub:
   1. Built dedicated Specific Date Calendar selector and Custom Date Range controls in OrdersHub.tsx All Orders History tab.
   2. Supported quick 1-click day navigation: Jump to Previous Day, Jump to Next Day, and Jump to Today shortcut, with localized human-friendly date headers (e.g., "Wed, Nov 4, 2026").

@@ -220,7 +220,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
     };
 
     let sql = `
-      SELECT p.*, c.name as category_name
+      SELECT p.*, c.name as category_name, c.parent_id as category_parent_id
       FROM products p
       JOIN categories c ON c.id = p.category_id
       WHERE p.tenant_id = $1

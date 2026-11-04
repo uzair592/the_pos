@@ -39,6 +39,16 @@ import {
   FileText,
   Tablet,
   Lock,
+  Truck,
+  Phone,
+  MapPin,
+  Maximize2,
+  Minimize2,
+  ChevronRight,
+  ChevronDown,
+  ChevronLeft,
+  LayoutList,
+  LayoutGrid,
 } from 'lucide-react';
 import { OrderType, PaymentMethod, SystemRole } from '@pos/shared';
 
@@ -74,10 +84,51 @@ export const PosTerminal: React.FC = () => {
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [deliveryFee, setDeliveryFee] = useState<number>(0);
   const [billDiscountPercent, setBillDiscountPercent] = useState(0);
   const [billDiscountAmount, setBillDiscountAmount] = useState(0);
   const [orderNotes, setOrderNotes] = useState('');
   const [isSubmittingKitchen, setIsSubmittingKitchen] = useState(false);
+  const [itemViewMode, setItemViewMode] = useState<'list' | 'grid'>('list');
+
+  // Resizable Billing Section width state
+  const [billingWidth, setBillingWidth] = useState<number>(() => {
+    const saved = localStorage.getItem('pos_billing_width');
+    return saved ? Math.max(320, Math.min(800, Number(saved))) : 420;
+  });
+  const [isDraggingResizer, setIsDraggingResizer] = useState(false);
+  const resizerStartXRef = useRef<number>(0);
+  const resizerStartWidthRef = useRef<number>(420);
+
+  const handleMouseDownResizer = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingResizer(true);
+    resizerStartXRef.current = e.clientX;
+    resizerStartWidthRef.current = billingWidth;
+  };
+
+  useEffect(() => {
+    if (!isDraggingResizer) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = resizerStartXRef.current - e.clientX;
+      const newWidth = Math.max(320, Math.min(800, resizerStartWidthRef.current + delta));
+      setBillingWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingResizer(false);
+      localStorage.setItem('pos_billing_width', String(billingWidth));
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingResizer, billingWidth]);
 
   // Held Orders
   const [heldOrders, setHeldOrders] = useState<any[]>([]);
@@ -288,17 +339,57 @@ export const PosTerminal: React.FC = () => {
   }, [info]);
 
   // Filtered Products
+  // Top-level categories (no parent_id)
+  const rootCategories = useMemo(() => categories.filter((c) => !c.parent_id), [categories]);
+
+  // Subcategories indexed by parent_id
+  const subCategoriesByParent = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    for (const c of categories) {
+      if (c.parent_id) {
+        if (!map[c.parent_id]) map[c.parent_id] = [];
+        map[c.parent_id].push(c);
+      }
+    }
+    return map;
+  }, [categories]);
+
+  // Product counts per category and parent
+  const categoryItemCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of products) {
+      if (!p.is_available) continue;
+      counts[p.category_id] = (counts[p.category_id] || 0) + 1;
+      if (p.category_parent_id) {
+        counts[p.category_parent_id] = (counts[p.category_parent_id] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
-      const matchesCat = selectedCategory === 'ALL' || p.category_id === selectedCategory;
+      let matchesCat = true;
+      if (selectedCategory !== 'ALL') {
+        if (selectedSubCategory !== 'ALL') {
+          matchesCat = p.category_id === selectedSubCategory;
+        } else {
+          matchesCat = p.category_id === selectedCategory || p.category_parent_id === selectedCategory;
+        }
+      } else if (selectedSubCategory !== 'ALL') {
+        matchesCat = p.category_id === selectedSubCategory;
+      }
+
       const matchesSearch =
         !search ||
         p.name.toLowerCase().includes(search.toLowerCase()) ||
+        (p.name_urdu && p.name_urdu.toLowerCase().includes(search.toLowerCase())) ||
         p.sku.toLowerCase().includes(search.toLowerCase()) ||
         (p.barcode && p.barcode.includes(search));
+
       return matchesCat && matchesSearch && p.is_available;
     });
-  }, [products, selectedCategory, search]);
+  }, [products, selectedCategory, selectedSubCategory, search]);
 
   // Cart Calculations
   const cartSubtotal = useMemo(() => {
@@ -333,11 +424,12 @@ export const PosTerminal: React.FC = () => {
   }, [orderType, serviceChargeRate, netTaxableAmount]);
 
   const grandTotal = useMemo(() => {
+    const delivery = orderType === OrderType.DELIVERY ? Number(deliveryFee || 0) : 0;
     if (isTaxInclusive) {
-      return Math.round(netTaxableAmount + calculatedServiceCharge);
+      return Math.round(netTaxableAmount + calculatedServiceCharge + delivery);
     }
-    return Math.round(netTaxableAmount + calculatedTax + calculatedServiceCharge);
-  }, [netTaxableAmount, calculatedTax, calculatedServiceCharge, isTaxInclusive]);
+    return Math.round(netTaxableAmount + calculatedTax + calculatedServiceCharge + delivery);
+  }, [netTaxableAmount, calculatedTax, calculatedServiceCharge, isTaxInclusive, orderType, deliveryFee]);
 
   // Add Item to Cart
   const addToCart = (product: any, variant?: any) => {
@@ -405,6 +497,8 @@ export const PosTerminal: React.FC = () => {
         customerId: null,
         customerName: customerName || undefined,
         customerPhone: customerPhone || undefined,
+        deliveryAddress: orderType === OrderType.DELIVERY ? deliveryAddress || undefined : undefined,
+        deliveryFee: orderType === OrderType.DELIVERY ? Number(deliveryFee || 0) : 0,
         billDiscountPercent,
         billDiscountAmount,
         shiftId: currentShift?.id || null,
@@ -417,17 +511,20 @@ export const PosTerminal: React.FC = () => {
           unitPrice: item.unitPrice,
           itemDiscount: item.itemDiscount,
           notes: item.notes,
+          modifiers: item.modifiers,
         })),
       });
 
       const order = createOrderRes.order;
-      success(`Order #${order.order_number} sent to Kitchen Display! Table ${selectedTable ? selectedTable.table_number : ''} is now Active.`);
+      success(`Order #${order.order_number} sent to Kitchen Display! ${selectedTable ? `Table ${selectedTable.table_number} is now Active.` : ''}`);
 
       // Reset Cart for next waiter order
       setCartItems([]);
       setSelectedTable(null);
       setCustomerName('');
       setCustomerPhone('');
+      setDeliveryAddress('');
+      setDeliveryFee(0);
       setBillDiscountPercent(0);
       setBillDiscountAmount(0);
       setOrderNotes('');
@@ -453,6 +550,8 @@ export const PosTerminal: React.FC = () => {
       selectedTable,
       customerName,
       customerPhone,
+      deliveryAddress,
+      deliveryFee,
       billDiscountPercent,
       billDiscountAmount,
       orderNotes,
@@ -471,6 +570,8 @@ export const PosTerminal: React.FC = () => {
     setSelectedTable(held.selectedTable);
     setCustomerName(held.customerName);
     setCustomerPhone(held.customerPhone);
+    setDeliveryAddress(held.deliveryAddress || '');
+    setDeliveryFee(Number(held.deliveryFee || 0));
     setBillDiscountPercent(held.billDiscountPercent);
     setBillDiscountAmount(held.billDiscountAmount);
     setOrderNotes(held.orderNotes);
@@ -535,6 +636,8 @@ export const PosTerminal: React.FC = () => {
           customerId: null,
           customerName: customerName || undefined,
           customerPhone: customerPhone || undefined,
+          deliveryAddress: orderType === OrderType.DELIVERY ? deliveryAddress || undefined : undefined,
+          deliveryFee: orderType === OrderType.DELIVERY ? Number(deliveryFee || 0) : 0,
           billDiscountPercent,
           billDiscountAmount,
           shiftId: currentShift?.id || null,
@@ -547,6 +650,7 @@ export const PosTerminal: React.FC = () => {
             unitPrice: item.unitPrice,
             itemDiscount: item.itemDiscount,
             notes: item.notes,
+            modifiers: item.modifiers,
           })),
         });
         orderIdToComplete = createOrderRes.order.id;
@@ -573,6 +677,8 @@ export const PosTerminal: React.FC = () => {
       setSelectedTable(null);
       setCustomerName('');
       setCustomerPhone('');
+      setDeliveryAddress('');
+      setDeliveryFee(0);
       setBillDiscountPercent(0);
       setBillDiscountAmount(0);
       setOrderNotes('');
@@ -721,116 +827,479 @@ export const PosTerminal: React.FC = () => {
         </div>
       </header>
 
-      {/* Main POS Interface (Split: Catalog on left, Cart on right) */}
+      {/* Main POS Interface (3-Column Layout: Vertical Categories on Left, Menu Items in Middle, Resizable Cart on Right) */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left: Product Catalog & Search */}
-        <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 overflow-hidden">
-          {/* Category Tabs & Search Bar */}
-          <div className="p-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 space-y-2 shrink-0 shadow-sm">
+        {/* ==================== 1. VERTICAL CATEGORIES & SUBCATEGORIES SIDEBAR ==================== */}
+        <div className="w-56 sm:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-hidden select-none">
+          {/* Sidebar Header */}
+          <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40">
+            <div className="flex items-center space-x-2">
+              <Layers className="w-4 h-4 text-brand-500" />
+              <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                Categories
+              </span>
+            </div>
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+              {rootCategories.length}
+            </span>
+          </div>
+
+          {/* Vertical Categories List */}
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+            {/* ALL MENU ITEMS BUTTON */}
+            <button
+              onClick={() => {
+                setSelectedCategory('ALL');
+                setSelectedSubCategory('ALL');
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+                selectedCategory === 'ALL'
+                  ? 'bg-brand-500 text-white shadow-sm ring-2 ring-brand-500/20'
+                  : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <UtensilsCrossed className="w-3.5 h-3.5" />
+                <span>All Menu Items</span>
+              </div>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
+                  selectedCategory === 'ALL'
+                    ? 'bg-white/30 text-white'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                {products.length}
+              </span>
+            </button>
+
+            {/* TOP-LEVEL CATEGORIES & ACCORDION SUBCATEGORIES */}
+            {rootCategories.map((cat) => {
+              const isCatSelected = selectedCategory === cat.id;
+              const subcats = subCategoriesByParent[cat.id] || [];
+              const hasSubcats = subcats.length > 0;
+              const count = categoryItemCounts[cat.id] || 0;
+
+              return (
+                <div key={cat.id} className="space-y-1">
+                  <button
+                    onClick={() => {
+                      if (selectedCategory === cat.id) {
+                        setSelectedSubCategory('ALL');
+                      } else {
+                        setSelectedCategory(cat.id);
+                        setSelectedSubCategory('ALL');
+                      }
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+                      isCatSelected
+                        ? 'bg-brand-500 text-white shadow-sm ring-2 ring-brand-500/20'
+                        : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="flex-1 truncate pr-1">
+                      <span className="block truncate">{cat.name}</span>
+                      {cat.name_urdu && (
+                        <span className="block text-[10px] opacity-75 font-urdu truncate" dir="rtl">
+                          {cat.name_urdu}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center space-x-1 shrink-0">
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
+                          isCatSelected
+                            ? 'bg-white/30 text-white'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {count}
+                      </span>
+                      {hasSubcats && (
+                        <ChevronRight
+                          className={`w-3.5 h-3.5 transition-transform ${isCatSelected ? 'rotate-90' : ''}`}
+                        />
+                      )}
+                    </div>
+                  </button>
+
+                  {/* VERTICAL SUBCATEGORIES (WHEN PARENT CATEGORY IS SELECTED) */}
+                  {hasSubcats && isCatSelected && (
+                    <div className="pl-3 pr-1 py-1 space-y-1 bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 animate-in fade-in">
+                      <button
+                        onClick={() => setSelectedSubCategory('ALL')}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                          selectedSubCategory === 'ALL'
+                            ? 'bg-brand-100 dark:bg-brand-950/60 text-brand-800 dark:text-brand-300 border border-brand-300 dark:border-brand-700'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>All {cat.name}</span>
+                        <span className="text-[9px] text-slate-400">({count})</span>
+                      </button>
+
+                      {subcats.map((subcat) => {
+                        const isSubSelected = selectedSubCategory === subcat.id;
+                        const subCount = categoryItemCounts[subcat.id] || 0;
+                        return (
+                          <button
+                            key={subcat.id}
+                            onClick={() => setSelectedSubCategory(subcat.id)}
+                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                              isSubSelected
+                                ? 'bg-brand-500 text-white shadow-sm'
+                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            <span className="truncate">↳ {subcat.name}</span>
+                            <span className={`text-[9px] px-1 py-0.2 rounded-full font-black ${
+                              isSubSelected ? 'bg-white/30 text-white' : 'text-slate-400'
+                            }`}>
+                              {subCount}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ==================== 2. MENU ITEMS SECTION (MIDDLE) ==================== */}
+        <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
+          {/* Top Search, Active Breadcrumb, and View Switcher */}
+          <div className="p-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 space-y-2.5 shrink-0 shadow-sm">
             <div className="flex items-center space-x-2">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search item name, SKU, or scan barcode..."
+                  placeholder="Search menu items, SKU, or scan barcode..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:ring-2 focus:ring-brand-500"
                 />
               </div>
-              <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-xl text-slate-500 dark:text-slate-400 text-xs font-semibold">
-                <Barcode className="w-4 h-4 text-slate-400" />
-                <span className="hidden sm:inline">Scanner Active</span>
+
+              {/* View Mode Toggle: List (Vertical) vs Grid */}
+              <div className="flex items-center space-x-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => setItemViewMode('list')}
+                  title="Vertical List View"
+                  className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    itemViewMode === 'list'
+                      ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <LayoutList className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Vertical List</span>
+                </button>
+                <button
+                  onClick={() => setItemViewMode('grid')}
+                  title="Grid Cards View"
+                  className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    itemViewMode === 'grid'
+                      ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Grid</span>
+                </button>
               </div>
             </div>
 
-            {/* Category Pills */}
-            <div className="flex items-center space-x-2 overflow-x-auto pb-1 text-xs">
-              <button
-                onClick={() => setSelectedCategory('ALL')}
-                className={`px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all ${
-                  selectedCategory === 'ALL'
-                    ? 'bg-brand-500 text-white shadow-sm'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                All Menu Items
-              </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all ${
-                    selectedCategory === cat.id
-                      ? 'bg-brand-500 text-white shadow-sm'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  {cat.name}
-                </button>
-              ))}
+            {/* Category / Subcategory Active Trail & Results Counter */}
+            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex items-center space-x-1.5 text-slate-500 flex-wrap">
+                <span className="font-bold text-slate-400">Category:</span>
+                <span className="font-extrabold text-slate-900 dark:text-white">
+                  {selectedCategory === 'ALL'
+                    ? 'All Categories'
+                    : categories.find((c) => c.id === selectedCategory)?.name}
+                </span>
+                {selectedSubCategory !== 'ALL' && (
+                  <>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="font-black text-brand-600 dark:text-brand-400">
+                      {categories.find((c) => c.id === selectedSubCategory)?.name}
+                    </span>
+                  </>
+                )}
+                {(selectedCategory !== 'ALL' || selectedSubCategory !== 'ALL' || search) && (
+                  <button
+                    onClick={() => {
+                      setSelectedCategory('ALL');
+                      setSelectedSubCategory('ALL');
+                      setSearch('');
+                    }}
+                    className="ml-2 text-[10px] text-rose-500 hover:underline font-bold"
+                  >
+                    Reset Filter
+                  </button>
+                )}
+              </div>
+
+              <span className="text-[11px] text-slate-400 font-semibold">
+                {filteredProducts.length} items
+              </span>
             </div>
           </div>
 
-          {/* Product Cards Grid */}
-          <div className="flex-1 p-4 overflow-y-auto">
+          {/* Menu Items List / Grid */}
+          <div className="flex-1 p-3.5 overflow-y-auto">
             {loading ? (
-              <div className="text-center py-12 text-slate-400 text-xs">Loading menu...</div>
+              <div className="text-center py-12 text-slate-400 text-xs">Loading menu products...</div>
             ) : filteredProducts.length === 0 ? (
-              <div className="text-center py-12 text-slate-400 text-xs">No products found.</div>
+              <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8">
+                <ShoppingBag className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-3" />
+                <h4 className="text-sm font-black text-slate-800 dark:text-slate-200">No products found in this selection</h4>
+                <p className="text-xs text-slate-400 mt-1">Try selecting another category or clearing your search.</p>
+              </div>
+            ) : itemViewMode === 'list' ? (
+              /* VERTICAL MENU ITEMS LIST */
+              <div className="space-y-2.5">
+                {filteredProducts.map((p) => {
+                  const hasVariants = p.variants && p.variants.length > 0;
+                  const hasModifiers = p.modifier_groups && p.modifier_groups.length > 0;
+                  const defaultVariant = hasVariants ? (p.variants.find((v: any) => v.is_default) || p.variants[0]) : null;
+                  const displayPrice = defaultVariant ? Number(defaultVariant.price) : Number(p.base_price);
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-brand-500 hover:shadow-md transition-all select-none"
+                    >
+                      {/* Left Details */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="text-xs font-mono text-slate-400 font-bold">{p.sku}</span>
+                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md text-[10px] font-extrabold text-slate-600 dark:text-slate-400 uppercase">
+                            {p.station}
+                          </span>
+                          {p.category_name && (
+                            <span className="px-2 py-0.5 bg-brand-50 dark:bg-brand-950/40 border border-brand-200/60 dark:border-brand-900 rounded-md text-[10px] font-bold text-brand-600 dark:text-brand-400">
+                              {p.category_name}
+                            </span>
+                          )}
+                        </div>
+
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white truncate">
+                          {p.name}
+                        </h4>
+                        {p.name_urdu && (
+                          <p className="font-urdu text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate" dir="rtl">
+                            {p.name_urdu}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Right: Variants pills, Price, and Quick Add */}
+                      <div className="flex items-center flex-wrap gap-2.5 shrink-0 sm:justify-end">
+                        {/* Variant Pills if any */}
+                        {hasVariants && (
+                          <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                            {p.variants.map((v: any) => (
+                              <button
+                                key={v.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  addToCart(p, v);
+                                }}
+                                className="px-2 py-1 rounded-lg text-xs font-bold bg-white dark:bg-slate-900 hover:bg-brand-500 hover:text-white text-slate-700 dark:text-slate-200 transition-colors shadow-xs"
+                                title={`Add ${v.name} for ${currencySymbol} ${Number(v.price).toLocaleString()}`}
+                              >
+                                {v.name} ({currencySymbol}{Number(v.price).toLocaleString()})
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="text-right mr-1">
+                          <span className="text-base font-black text-brand-600 dark:text-brand-400 block">
+                            {currencySymbol} {displayPrice.toLocaleString()}
+                          </span>
+                          {hasModifiers && (
+                            <span className="text-[10px] text-slate-400 block">
+                              Addons available
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Add Button */}
+                        <div className="flex items-center space-x-1.5">
+                          {hasModifiers ? (
+                            <button
+                              onClick={() => {
+                                setCustomizingProduct(p);
+                                setCustomizingVariant(defaultVariant);
+                                setSelectedModifiers([]);
+                                setItemCustomNotes('');
+                                setCustomQuantity(1);
+                              }}
+                              className="px-3.5 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-extrabold text-xs flex items-center space-x-1.5 shadow-sm transition-all active:scale-95"
+                            >
+                              <span>Customize</span>
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                if (hasVariants) {
+                                  addToCart(p, defaultVariant);
+                                } else {
+                                  addToCart(p);
+                                }
+                              }}
+                              className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-brand-600 dark:bg-white dark:text-slate-900 dark:hover:bg-brand-500 dark:hover:text-white text-white font-black text-xs flex items-center space-x-1.5 shadow-sm transition-all active:scale-95"
+                            >
+                              <span>Add</span>
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-                {filteredProducts.map((p) => (
-                  <div
-                    key={p.id}
-                    onClick={() => {
-                      if (p.variants && p.variants.length > 0) {
-                        const def = p.variants.find((v: any) => v.is_default) || p.variants[0];
-                        addToCart(p, def);
-                      } else {
-                        addToCart(p);
-                      }
-                    }}
-                    className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3.5 flex flex-col justify-between hover:border-brand-500 hover:shadow-md cursor-pointer transition-all active:scale-[0.98] select-none"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                        <span className="font-mono">{p.sku}</span>
-                        <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-slate-600 dark:text-slate-400 font-semibold uppercase">
-                          {p.station}
+              /* GRID VIEW (WHEN TOGGLED) */
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
+                {filteredProducts.map((p) => {
+                  const hasVariants = p.variants && p.variants.length > 0;
+                  const defaultVariant = hasVariants ? (p.variants.find((v: any) => v.is_default) || p.variants[0]) : null;
+                  const displayPrice = defaultVariant ? Number(defaultVariant.price) : Number(p.base_price);
+                  const hasModifiers = p.modifier_groups && p.modifier_groups.length > 0;
+
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => {
+                        if (hasModifiers) {
+                          setCustomizingProduct(p);
+                          setCustomizingVariant(defaultVariant);
+                          setSelectedModifiers([]);
+                          setItemCustomNotes('');
+                          setCustomQuantity(1);
+                        } else if (hasVariants) {
+                          addToCart(p, defaultVariant);
+                        } else {
+                          addToCart(p);
+                        }
+                      }}
+                      className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3.5 flex flex-col justify-between hover:border-brand-500 hover:shadow-md cursor-pointer transition-all active:scale-[0.98] select-none"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                          <span className="font-mono">{p.sku}</span>
+                          <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-slate-600 dark:text-slate-400 font-semibold uppercase">
+                            {p.station}
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-slate-900 dark:text-white text-xs leading-snug line-clamp-2">
+                          {p.name}
+                        </h4>
+                        {p.name_urdu && (
+                          <p className="font-urdu text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1" dir="rtl">
+                            {p.name_urdu}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                        <span className="font-extrabold text-sm text-brand-600 dark:text-brand-400">
+                          {currencySymbol} {displayPrice.toLocaleString()}
+                        </span>
+                        <span className="w-6 h-6 rounded-lg bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-400 flex items-center justify-center font-bold text-xs hover:bg-brand-500 hover:text-white transition-colors">
+                          +
                         </span>
                       </div>
-                      <h4 className="font-bold text-slate-900 dark:text-white text-xs leading-snug line-clamp-2">
-                        {p.name}
-                      </h4>
-                      {p.name_urdu && (
-                        <p className="font-urdu text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1" dir="rtl">
-                          {p.name_urdu}
-                        </p>
-                      )}
                     </div>
-
-                    <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                      <span className="font-extrabold text-sm text-brand-600 dark:text-brand-400">
-                        {currencySymbol} {Number(p.base_price).toLocaleString()}
-                      </span>
-                      <span className="w-6 h-6 rounded-lg bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-400 flex items-center justify-center font-bold text-xs hover:bg-brand-500 hover:text-white transition-colors">
-                        +
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
-        {/* Right: Shopping Cart & Waiter Checkout Panel */}
-        <div className="w-96 bg-white dark:bg-slate-900 flex flex-col justify-between shadow-xl shrink-0 z-10 border-l border-slate-200 dark:border-slate-800">
-          {/* Order Meta / Type Bar */}
+        {/* ==================== 3. RESIZABLE BILLING / CART SECTION ==================== */}
+        <div
+          style={{ width: `${billingWidth}px` }}
+          className="relative bg-white dark:bg-slate-900 flex flex-col justify-between shadow-2xl shrink-0 z-10 border-l border-slate-200 dark:border-slate-800 select-none transition-[width] duration-75"
+        >
+          {/* Draggable Resizer Handle on Left Edge */}
+          <div
+            onMouseDown={handleMouseDownResizer}
+            title="Drag left/right to resize billing section"
+            className={`absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize z-30 group flex items-center justify-center transition-colors ${
+              isDraggingResizer ? 'bg-brand-500/80' : 'hover:bg-brand-500/30'
+            }`}
+          >
+            <div className={`w-1 h-14 rounded-full transition-colors ${
+              isDraggingResizer ? 'bg-white shadow' : 'bg-slate-300 dark:bg-slate-700 group-hover:bg-brand-500'
+            }`} />
+          </div>
+
+          {/* Cart Header with Width Size Adjuster & Order Type */}
           <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 space-y-2.5">
+            {/* Top Bar with Resizer Presets */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-1.5">
+                <ShoppingBag className="w-4 h-4 text-brand-500" />
+                <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                  Current Bill ({cartItems.reduce((a, b) => a + b.quantity, 0)})
+                </span>
+              </div>
+
+              {/* Width Presets */}
+              <div className="flex items-center space-x-1">
+                <span className="text-[10px] text-slate-400 font-bold hidden sm:inline">Width:</span>
+                {[
+                  { label: 'S', width: 340, title: 'Compact (340px)' },
+                  { label: 'M', width: 420, title: 'Standard (420px)' },
+                  { label: 'L', width: 540, title: 'Wide (540px)' },
+                  { label: 'XL', width: 680, title: 'Expanded (680px)' },
+                ].map((s) => (
+                  <button
+                    key={s.label}
+                    onClick={() => {
+                      setBillingWidth(s.width);
+                      localStorage.setItem('pos_billing_width', String(s.width));
+                    }}
+                    title={s.title}
+                    className={`px-1.5 py-0.5 text-[10px] font-black rounded-md transition-colors ${
+                      Math.abs(billingWidth - s.width) < 30
+                        ? 'bg-brand-500 text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+
+                {/* Quick Toggle Expand / Shrink */}
+                <button
+                  onClick={() => {
+                    const next = billingWidth > 450 ? 360 : 560;
+                    setBillingWidth(next);
+                    localStorage.setItem('pos_billing_width', String(next));
+                  }}
+                  title={billingWidth > 450 ? 'Shrink Billing Section' : 'Expand Billing Section'}
+                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ml-1"
+                >
+                  {billingWidth > 450 ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
             {/* Order Type Selector */}
-            <div className="grid grid-cols-4 gap-1.5 text-xs font-bold">
+            <div className="grid grid-cols-4 gap-1 text-xs font-bold">
               {[
                 { type: OrderType.DINE_IN, label: 'Dine-In' },
                 { type: OrderType.COUNTER, label: 'Counter' },
@@ -840,9 +1309,9 @@ export const PosTerminal: React.FC = () => {
                 <button
                   key={ot.type}
                   onClick={() => setOrderType(ot.type)}
-                  className={`py-1.5 rounded-lg text-center transition-colors ${
+                  className={`py-1.5 rounded-xl text-center text-xs transition-colors ${
                     orderType === ot.type
-                      ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
+                      ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm font-black'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                   }`}
                 >
@@ -868,6 +1337,103 @@ export const PosTerminal: React.FC = () => {
                 </button>
               </div>
             )}
+
+            {/* DELIVERY CUSTOMER & EDITABLE DELIVERY FEE SECTION */}
+            {orderType === OrderType.DELIVERY && (
+              <div className="p-3 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-2xl space-y-2.5 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 text-amber-800 dark:text-amber-300 font-extrabold text-xs">
+                    <Truck className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span>Delivery Order Information</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
+                    Required for Dispatch
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
+                      <User className="w-3 h-3 text-slate-400" /> Customer Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Ali Khan"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
+                      <Phone className="w-3 h-3 text-slate-400" /> Mobile Number *
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="e.g. 0300-1234567"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
+                    <MapPin className="w-3 h-3 text-slate-400" /> Delivery Address *
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="House / Street / Area / Landmark..."
+                    value={deliveryAddress}
+                    onChange={(e) => setDeliveryAddress(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium resize-none"
+                  />
+                </div>
+
+                {/* Editable Delivery Price / Fee */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                      <span>Delivery Fee / Additional Charges ({currencySymbol})</span>
+                    </label>
+                    <span className="text-[10px] font-extrabold text-brand-600 dark:text-brand-400">
+                      Editable
+                    </span>
+                  </div>
+
+                  <div className="flex items-center space-x-1.5">
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1.5 text-xs text-slate-400 font-bold">{currencySymbol}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="10"
+                        value={deliveryFee}
+                        onChange={(e) => setDeliveryFee(Math.max(0, Number(e.target.value)))}
+                        className="w-full pl-8 pr-2.5 py-1 text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500"
+                      />
+                    </div>
+                    {/* Quick presets */}
+                    {[0, 100, 150, 200, 250].map((fee) => (
+                      <button
+                        key={fee}
+                        type="button"
+                        onClick={() => setDeliveryFee(fee)}
+                        className={`px-2 py-1 text-[11px] font-bold rounded-lg border transition-all ${
+                          deliveryFee === fee
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        {fee === 0 ? 'Free' : fee}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Cart Items List */}
@@ -876,20 +1442,34 @@ export const PosTerminal: React.FC = () => {
               <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 space-y-2">
                 <ShoppingBag className="w-8 h-8 opacity-40" />
                 <p>Cart is empty</p>
-                <p className="text-[11px] text-slate-400">Tap items on the left to take customer order</p>
+                <p className="text-[11px] text-slate-400">Select items from the catalog</p>
               </div>
             ) : (
               cartItems.map((item, idx) => (
-                <div key={idx} className="py-2.5 flex items-center justify-between">
-                  <div className="flex-1 pr-2">
+                <div key={idx} className="py-2.5 flex items-start justify-between gap-2">
+                  <div className="flex-1 pr-1 min-w-0">
                     <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{item.productName}</p>
                     <p className="text-[11px] text-slate-400">
                       {currencySymbol} {item.unitPrice.toLocaleString()} each
                     </p>
+
+                    {/* Modifiers & Notes */}
+                    {item.modifiers && item.modifiers.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {item.modifiers.map((m: any, mIdx: number) => (
+                          <span key={mIdx} className="text-[10px] px-1.5 py-0.2 rounded-md bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 font-bold border border-brand-200/60 dark:border-brand-900/40">
+                            +{m.name} ({currencySymbol}{Number(m.unitPrice || 0)})
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {item.notes && (
+                      <p className="text-[10px] text-amber-600 dark:text-amber-400 italic mt-0.5">Note: {item.notes}</p>
+                    )}
                   </div>
 
                   {/* Quantity Controls */}
-                  <div className="flex items-center space-x-1.5">
+                  <div className="flex items-center space-x-1 shrink-0">
                     <button
                       onClick={() => updateQuantity(idx, -1)}
                       className="w-6 h-6 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center font-bold text-slate-600 dark:text-slate-300"
@@ -906,7 +1486,7 @@ export const PosTerminal: React.FC = () => {
                   </div>
 
                   {/* Item Total */}
-                  <div className="text-right w-20 pl-2">
+                  <div className="text-right w-20 pl-1 shrink-0">
                     <p className="font-extrabold text-slate-900 dark:text-white">
                       {currencySymbol} {(item.unitPrice * item.quantity).toLocaleString()}
                     </p>
@@ -943,6 +1523,14 @@ export const PosTerminal: React.FC = () => {
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>Service Charge ({serviceChargeRate}%)</span>
                   <span>{currencySymbol} {Math.round(calculatedServiceCharge).toLocaleString()}</span>
+                </div>
+              )}
+              {orderType === OrderType.DELIVERY && deliveryFee > 0 && (
+                <div className="flex justify-between text-amber-700 dark:text-amber-400 font-semibold">
+                  <span className="flex items-center gap-1">
+                    <Truck className="w-3.5 h-3.5" /> Delivery Fee
+                  </span>
+                  <span>+{currencySymbol} {Number(deliveryFee).toLocaleString()}</span>
                 </div>
               )}
               <div className="flex justify-between font-black text-slate-900 dark:text-white text-base pt-1 border-t border-slate-200 dark:border-slate-700">
