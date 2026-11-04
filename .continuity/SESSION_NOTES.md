@@ -14,6 +14,12 @@
 - None. All 43 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 21 (commit 2fd06aa): Resolved Branch Filtering Mismatch, Timezone Boundary Calculation, and POS Branch Association:
+  1. Root cause analysis: User reported Today's Net Sales Rs. 0 and no sales on the dashboard despite orders being served. In PostgreSQL, `Lahore Karahi & Grill` had 3 completed orders with Rs. 10,100 net sales and Rs. 12,221 collections, but all were assigned to `Gulberg Main Branch` (`LHE-01`). The user session had switched or defaulted to `DHA Phase 5 Branch` (`LHE-02`), which was newly provisioned with 0 orders.
+  2. POS Terminal Branch association bug: In `PosTerminal.tsx`, orders were being submitted with hardcoded `user!.branchId` instead of the active session's `currentBranchId || user?.branchId || branches[0]?.id`. Now POS accurately routes orders to the selected branch.
+  3. Timezone calculation fix: In `RestaurantDashboard.tsx`, date boundaries were computed using `new Date().toISOString().split('T')[0]`, which misaligned with local UTC+5 midnight. Switched to local start-of-day (00:00:00.000) and end-of-day (23:59:59.999).
+  4. Active order status inclusion: Included `'CONFIRMED'` in active order aggregations in `financialService.ts` and `financial.routes.ts`.
+  5. In-Dashboard Branch Switcher & Multi-Branch Sales Banner: Directly embedded `<BranchSelector variant="navbar" />` in the dashboard header, and created an intelligent multi-branch alert banner that informs managers when the currently viewed branch has Rs. 0 sales but another branch has active sales, offering 1-click buttons to switch branches or view the consolidated Head Office metrics.
 - Decision 20 (commit 30c075f): Resolved KDS-to-Dashboard data synchronization and unpaid order visibility:
   1. Identified that financial report endpoints only accounted for COMPLETED orders, omitting in-flight and served/unpaid tickets, while the Dashboard lacked auto-polling.
   2. Implemented 5-second background auto-polling in `RestaurantDashboard.tsx` with a pulsing live sync badge and manual refresh button.
