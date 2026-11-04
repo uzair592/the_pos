@@ -37,8 +37,9 @@ import {
   Receipt,
   FileText,
   Tablet,
+  Lock,
 } from 'lucide-react';
-import { OrderType, PaymentMethod } from '@pos/shared';
+import { OrderType, PaymentMethod, SystemRole } from '@pos/shared';
 
 export const PosTerminal: React.FC = () => {
   const { user, tenant } = useAuth();
@@ -89,6 +90,31 @@ export const PosTerminal: React.FC = () => {
   // Receipt Modal State
   const [completedReceipt, setCompletedReceipt] = useState<any | null>(null);
 
+  // Station Lock State
+  const [isStationLocked, setIsStationLocked] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [unlockLoading, setUnlockLoading] = useState(false);
+
+  const handleUnlockTerminal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!unlockPassword) return;
+    setUnlockLoading(true);
+    setUnlockError('');
+    try {
+      await api.post('/auth/login', {
+        email: user?.email,
+        password: unlockPassword,
+      });
+      setIsStationLocked(false);
+      setUnlockPassword('');
+    } catch (err: any) {
+      setUnlockError(err.message || 'Invalid password to unlock terminal');
+    } finally {
+      setUnlockLoading(false);
+    }
+  };
+
   // Multi-Device Sync tracking
   const lastEventIdRef = useRef<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<'CONNECTED' | 'SYNCING'>('CONNECTED');
@@ -114,7 +140,7 @@ export const PosTerminal: React.FC = () => {
       setTables(tablesRes.tables || []);
       setCurrentShift(shiftRes.shift || null);
 
-      if (!shiftRes.shift) {
+      if (!shiftRes.shift && (user?.role === SystemRole.CASHIER || user?.role === SystemRole.RESTAURANT_OWNER)) {
         setIsOpenShiftModalOpen(true);
       }
     } catch (err: any) {
@@ -561,6 +587,16 @@ export const PosTerminal: React.FC = () => {
               <span>Held ({heldOrders.length})</span>
             </button>
           )}
+
+          {/* Lock Station Button */}
+          <button
+            onClick={() => setIsStationLocked(true)}
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition-colors border border-slate-700"
+            title="Lock Terminal"
+          >
+            <Lock className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Lock</span>
+          </button>
 
           {/* Theme Toggle Button */}
           <button

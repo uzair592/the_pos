@@ -181,6 +181,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
           const token = jwt.sign(
             {
+              userId: admin.id,
               id: admin.id,
               email: admin.email,
               role: SystemRole.SUPER_ADMIN,
@@ -238,9 +239,17 @@ export async function authRoutes(fastify: FastifyInstance) {
       deviceId = devRes.deviceId;
     }
 
-    const permissions = Array.isArray(user.custom_permissions) && user.custom_permissions.length > 0
+    const roleStr = String(user.role).toUpperCase();
+    let normalizedRole = user.role as SystemRole;
+    if (roleStr === 'OWNER') normalizedRole = SystemRole.RESTAURANT_OWNER;
+    else if (roleStr === 'MANAGER') normalizedRole = SystemRole.BRANCH_MANAGER;
+    else if (roleStr === 'ADMIN') normalizedRole = SystemRole.RESTAURANT_ADMIN;
+
+    const rolePerms = DEFAULT_ROLE_PERMISSIONS[normalizedRole] || DEFAULT_ROLE_PERMISSIONS[user.role as SystemRole] || [];
+    const customPerms = Array.isArray(user.custom_permissions) && user.custom_permissions.length > 0
       ? user.custom_permissions
-      : DEFAULT_ROLE_PERMISSIONS[user.role as SystemRole] || [];
+      : [];
+    const permissions = Array.from(new Set([...rolePerms, ...customPerms]));
 
     const token = jwt.sign(
       {

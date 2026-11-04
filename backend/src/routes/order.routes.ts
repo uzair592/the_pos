@@ -25,7 +25,8 @@ export async function orderRoutes(fastify: FastifyInstance) {
   fastify.post('/api/orders', {
     preHandler: [requirePermission(Permission.ORDERS_CREATE)],
   }, async (req, reply) => {
-    const parsed = CreateOrderSchema.safeParse(req.body);
+    const payload = { ...((req.body as any) || {}), branchId: (req.body as any)?.branchId || req.user?.branchId };
+    const parsed = CreateOrderSchema.safeParse(payload);
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.format() });
     }

@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { query } from './connection.js';
+import { SystemRole } from '@pos/shared';
 
 dotenv.config();
 
@@ -157,11 +158,11 @@ export async function seedDemoRestaurant() {
 
   // 6. Users (Staff & Admins)
   const usersToSeed = [
-    { email: 'owner@lahorekarahi.com', fullName: 'Tariq Mahmood (Owner)', role: 'OWNER' },
-    { email: 'manager@lahorekarahi.com', fullName: 'Hamza Ali (Manager)', role: 'MANAGER' },
-    { email: 'cashier@lahorekarahi.com', fullName: 'Bilal Ahmed (Cashier)', role: 'CASHIER' },
-    { email: 'waiter@lahorekarahi.com', fullName: 'Usman Shah (Waiter)', role: 'WAITER' },
-    { email: 'kitchen@lahorekarahi.com', fullName: 'Chef Rasheed (Kitchen)', role: 'KITCHEN_STAFF' },
+    { email: 'owner@lahorekarahi.com', fullName: 'Tariq Mahmood (Owner)', role: SystemRole.RESTAURANT_OWNER },
+    { email: 'manager@lahorekarahi.com', fullName: 'Hamza Ali (Manager)', role: SystemRole.BRANCH_MANAGER },
+    { email: 'cashier@lahorekarahi.com', fullName: 'Bilal Ahmed (Cashier)', role: SystemRole.CASHIER },
+    { email: 'waiter@lahorekarahi.com', fullName: 'Usman Shah (Waiter)', role: SystemRole.WAITER },
+    { email: 'kitchen@lahorekarahi.com', fullName: 'Chef Rasheed (Kitchen)', role: SystemRole.KITCHEN_STAFF },
   ];
 
   for (const u of usersToSeed) {

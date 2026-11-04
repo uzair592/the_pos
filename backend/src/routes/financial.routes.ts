@@ -49,7 +49,8 @@ export async function financialRoutes(fastify: FastifyInstance) {
   fastify.post('/api/financial/shifts/open', {
     preHandler: [requirePermission(Permission.SHIFTS_OPEN)],
   }, async (req, reply) => {
-    const parsed = OpenShiftSchema.safeParse(req.body);
+    const payload = { ...((req.body as any) || {}), branchId: (req.body as any)?.branchId || req.user?.branchId };
+    const parsed = OpenShiftSchema.safeParse(payload);
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
 
     const tenantId = req.user!.tenantId!;

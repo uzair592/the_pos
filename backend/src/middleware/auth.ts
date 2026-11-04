@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import jwt from 'jsonwebtoken';
-import { AuthUser, SystemRole, Permission } from '@pos/shared';
+import { AuthUser, SystemRole, Permission, DEFAULT_ROLE_PERMISSIONS } from '@pos/shared';
 import { FeatureKey } from '@pos/shared';
 import { query } from '../db/connection.js';
 
@@ -28,9 +28,10 @@ export async function authenticate(req: FastifyRequest, reply: FastifyReply) {
 
     if (decoded.role === SystemRole.SUPER_ADMIN) {
       // Super admin
+      const adminId = decoded.userId || decoded.id;
       const { rows } = await query(
         'SELECT id, email, full_name, is_active FROM platform_admins WHERE id = $1',
-        [decoded.userId],
+        [adminId],
         { isSuperAdmin: true }
       );
 
@@ -79,15 +80,26 @@ export async function authenticate(req: FastifyRequest, reply: FastifyReply) {
       });
     }
 
-    const customPerms: Permission[] = rows[0].custom_permissions || [];
+    const roleStr = String(rows[0].role).toUpperCase();
+    let normalizedRole = rows[0].role as SystemRole;
+    if (roleStr === 'OWNER') normalizedRole = SystemRole.RESTAURANT_OWNER;
+    else if (roleStr === 'MANAGER') normalizedRole = SystemRole.BRANCH_MANAGER;
+    else if (roleStr === 'ADMIN') normalizedRole = SystemRole.RESTAURANT_ADMIN;
+
+    const rolePerms = DEFAULT_ROLE_PERMISSIONS[normalizedRole] || [];
+    const customPerms: Permission[] = Array.isArray(rows[0].custom_permissions) && rows[0].custom_permissions.length > 0
+      ? rows[0].custom_permissions
+      : [];
+    const effectivePermissions = Array.from(new Set([...rolePerms, ...customPerms]));
+
     req.user = {
       id: rows[0].id,
       tenantId: rows[0].tenant_id,
       branchId: rows[0].branch_id,
       email: rows[0].email,
       fullName: rows[0].full_name,
-      role: rows[0].role as SystemRole,
-      permissions: customPerms,
+      role: normalizedRole,
+      permissions: effectivePermissions,
       isActive: rows[0].is_active,
     };
     req.tenantId = rows[0].tenant_id;
@@ -164,7 +176,11 @@ export function requirePermission(permission: Permission) {
     }
 
     // Super Admin and Restaurant Owner have full permissions
-    if (req.user.role === SystemRole.SUPER_ADMIN || req.user.role === SystemRole.RESTAURANT_OWNER) {
+    if (
+      req.user.role === SystemRole.SUPER_ADMIN ||
+      req.user.role === SystemRole.RESTAURANT_OWNER ||
+      (req.user.role as string) === 'OWNER'
+    ) {
       return;
     }
 

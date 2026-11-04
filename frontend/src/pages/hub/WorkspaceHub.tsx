@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.js';
+import { api } from '../../api/client.js';
 import {
   LayoutGrid,
   ShoppingCart,
@@ -10,17 +11,28 @@ import {
   ArrowRight,
   LogOut,
   Users,
-  ShieldCheck,
-  Building2,
+  Lock,
   Check,
   X,
+  AlertCircle,
+  Shield,
+  ShieldAlert,
 } from 'lucide-react';
+import { SystemRole } from '@pos/shared';
 
 export const WorkspaceHub: React.FC = () => {
   const { user, tenant, isSuperAdmin, logout, login } = useAuth();
   const navigate = useNavigate();
+
+  // Switch Staff Modal State
   const [isSwitchStaffOpen, setIsSwitchStaffOpen] = useState(false);
+  const [selectedStaffEmail, setSelectedStaffEmail] = useState<string | null>(null);
+  const [switchPassword, setSwitchPassword] = useState('');
+  const [switchError, setSwitchError] = useState('');
   const [switchLoading, setSwitchLoading] = useState(false);
+
+  // Restricted Access Dialog State
+  const [restrictedNotice, setRestrictedNotice] = useState<string | null>(null);
 
   // Compute User Display Initial
   const userInitial = user?.fullName
@@ -34,25 +46,67 @@ export const WorkspaceHub: React.FC = () => {
     navigate(isSuperAdmin ? '/platform-admin/login' : '/login');
   };
 
-  // Quick switch between demo staff roles on shared restaurant tablet
-  const handleSwitchStaff = async (staffEmail: string) => {
+  const currentRole = (user?.role || '').toUpperCase();
+  const isOwnerOrManager =
+    isSuperAdmin ||
+    currentRole === SystemRole.RESTAURANT_OWNER ||
+    currentRole === 'OWNER' ||
+    currentRole === SystemRole.BRANCH_MANAGER ||
+    currentRole === 'MANAGER' ||
+    currentRole === SystemRole.RESTAURANT_ADMIN;
+
+  const canAccessModule = (moduleId: string): boolean => {
+    if (isOwnerOrManager) return true;
+    switch (moduleId) {
+      case 'dashboard':
+        return currentRole === SystemRole.CASHIER;
+      case 'pos':
+        return currentRole === SystemRole.CASHIER || currentRole === SystemRole.WAITER;
+      case 'inventory':
+        return currentRole === SystemRole.INVENTORY_MANAGER;
+      case 'operations':
+        return currentRole === SystemRole.CASHIER || currentRole === SystemRole.WAITER;
+      case 'kds':
+        return currentRole === SystemRole.KITCHEN_STAFF;
+      default:
+        return false;
+    }
+  };
+
+  const handleModuleClick = (moduleId: string, route: string, title: string) => {
+    if (canAccessModule(moduleId)) {
+      navigate(route);
+    } else {
+      setRestrictedNotice(
+        `Your active station profile (${user?.role?.replace('_', ' ') || 'Staff'}) does not have permission to access the ${title} module. Please switch to an authorized staff account.`
+      );
+    }
+  };
+
+  // Secure staff switch with password verification
+  const handlePerformSwitch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStaffEmail) return;
+
     setSwitchLoading(true);
+    setSwitchError('');
+
     try {
-      const response = await fetch('http://localhost:4000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: staffEmail,
-          password: 'Password123!',
-        }),
+      const data = await api.post('/auth/login', {
+        email: selectedStaffEmail,
+        password: switchPassword,
       });
-      const data = await response.json();
-      if (data.token) {
+
+      if (data.token && data.user) {
         login(data.token, data.user);
         setIsSwitchStaffOpen(false);
+        setSelectedStaffEmail(null);
+        setSwitchPassword('');
+      } else {
+        setSwitchError('Authentication failed. Please verify password.');
       }
-    } catch (err) {
-      console.error('Failed to switch staff:', err);
+    } catch (err: any) {
+      setSwitchError(err.message || 'Invalid password for this staff account.');
     } finally {
       setSwitchLoading(false);
     }
@@ -166,7 +220,7 @@ export const WorkspaceHub: React.FC = () => {
               {tenant?.name || 'Restaurant POS'}
             </h2>
             <p className="text-[11px] text-slate-400">
-              {isSuperAdmin ? 'Platform Management Console' : 'Cloud Workspace Portal'}
+              {isSuperAdmin ? 'Platform Management Console' : 'Authenticated Workspace Portal'}
             </p>
           </div>
         </div>
@@ -175,8 +229,13 @@ export const WorkspaceHub: React.FC = () => {
         <div className="flex items-center space-x-2.5">
           {!isSuperAdmin && (
             <button
-              onClick={() => setIsSwitchStaffOpen(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-900/80 hover:bg-slate-800 border border-slate-700/70 rounded-xl text-xs font-semibold text-slate-300 hover:text-white transition-all"
+              onClick={() => {
+                setSelectedStaffEmail(null);
+                setSwitchPassword('');
+                setSwitchError('');
+                setIsSwitchStaffOpen(true);
+              }}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-900/80 hover:bg-slate-800 border border-slate-700/70 rounded-xl text-xs font-semibold text-slate-300 hover:text-white transition-all shadow-sm"
             >
               <Users className="w-3.5 h-3.5 text-blue-400" />
               <span className="hidden sm:inline">Switch Staff</span>
@@ -186,15 +245,15 @@ export const WorkspaceHub: React.FC = () => {
           <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-900/60 border border-slate-800 rounded-xl">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-xs font-bold text-slate-200">{user?.fullName || 'Staff Member'}</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 uppercase font-black">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 uppercase font-black border border-blue-500/30">
               {user?.role?.replace('_', ' ')}
             </span>
           </div>
 
           <button
             onClick={handleLogout}
-            title="Log Out"
-            className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-900 rounded-xl transition-colors"
+            title="Log Out Station"
+            className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-900 rounded-xl transition-colors border border-transparent hover:border-slate-800"
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -213,7 +272,7 @@ export const WorkspaceHub: React.FC = () => {
         {/* Welcome Text */}
         <div className="text-center mb-10 sm:mb-12">
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Welcome
+            Welcome, {user?.fullName ? user.fullName.split(' ')[0] : 'Staff'}
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-2 font-medium max-w-md mx-auto">
             Select your workspace module to begin operations
@@ -224,11 +283,15 @@ export const WorkspaceHub: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-5 w-full max-w-6xl">
           {modules.map((m) => {
             const Icon = m.icon;
+            const allowed = canAccessModule(m.id);
+
             return (
               <div
                 key={m.id}
-                onClick={() => navigate(m.route)}
-                className={`bg-[#0f1423]/90 hover:bg-[#151c33] border border-slate-800/90 rounded-2xl p-6 transition-all duration-300 shadow-xl relative overflow-hidden flex flex-col justify-between group cursor-pointer ${m.cardBorder} hover:-translate-y-1`}
+                onClick={() => handleModuleClick(m.id, m.route, m.title)}
+                className={`bg-[#0f1423]/90 hover:bg-[#151c33] border rounded-2xl p-6 transition-all duration-300 shadow-xl relative overflow-hidden flex flex-col justify-between group cursor-pointer ${m.cardBorder} hover:-translate-y-1 ${
+                  !allowed ? 'opacity-55 hover:opacity-80 border-slate-800' : 'border-slate-800/90'
+                }`}
               >
                 {/* Radial Glow in Corner */}
                 <div
@@ -237,10 +300,17 @@ export const WorkspaceHub: React.FC = () => {
 
                 {/* Card Top: Icon & Labels */}
                 <div>
-                  <div
-                    className={`w-11 h-11 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform ${m.iconBg}`}
-                  >
-                    <Icon className="w-5 h-5" />
+                  <div className="flex items-center justify-between mb-6">
+                    <div
+                      className={`w-11 h-11 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${m.iconBg}`}
+                    >
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    {!allowed && (
+                      <span className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-500" title="Restricted to authorized roles">
+                        <Lock className="w-3.5 h-3.5" />
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-base font-bold text-white mb-1 tracking-tight">
                     {m.title}
@@ -253,9 +323,13 @@ export const WorkspaceHub: React.FC = () => {
                 {/* Card Bottom: Action Pill Button */}
                 <div>
                   <span
-                    className={`inline-flex items-center space-x-1.5 px-4 py-1.5 rounded-full border border-slate-700/80 bg-slate-900/80 text-slate-300 group-hover:text-white text-xs font-semibold transition-all ${m.btnHover}`}
+                    className={`inline-flex items-center space-x-1.5 px-4 py-1.5 rounded-full border text-xs font-semibold transition-all ${
+                      allowed
+                        ? `border-slate-700/80 bg-slate-900/80 text-slate-300 group-hover:text-white ${m.btnHover}`
+                        : 'border-slate-800 bg-slate-950/60 text-slate-500'
+                    }`}
                   >
-                    <span>{m.buttonText}</span>
+                    <span>{allowed ? m.buttonText : 'Restricted'}</span>
                     <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                   </span>
                 </div>
@@ -276,14 +350,46 @@ export const WorkspaceHub: React.FC = () => {
         </div>
       </footer>
 
-      {/* Switch Staff Modal (for shared waiter/cashier/kitchen tablets) */}
+      {/* Restricted Access Modal */}
+      {restrictedNotice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-[#0f1423] border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative text-center">
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-4">
+              <ShieldAlert className="w-7 h-7" />
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2">Access Restricted</h3>
+            <p className="text-xs text-slate-400 leading-relaxed mb-6">
+              {restrictedNotice}
+            </p>
+            <div className="flex items-center justify-center space-x-3">
+              <button
+                onClick={() => setRestrictedNotice(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold text-white transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setRestrictedNotice(null);
+                  setIsSwitchStaffOpen(true);
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-xs font-bold text-white transition-colors"
+              >
+                Switch Staff Account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Secure Switch Staff Modal with Password Verification */}
       {isSwitchStaffOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
           <div className="bg-[#0f1423] border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-2">
-                <Users className="w-5 h-5 text-blue-400" />
-                <h3 className="text-base font-bold text-white">Switch Staff Account</h3>
+                <Shield className="w-5 h-5 text-blue-400" />
+                <h3 className="text-base font-bold text-white">Switch Station Staff</h3>
               </div>
               <button
                 onClick={() => setIsSwitchStaffOpen(false)}
@@ -293,66 +399,116 @@ export const WorkspaceHub: React.FC = () => {
               </button>
             </div>
 
-            <p className="text-xs text-slate-400 my-4">
-              Select an account to instantly switch station profile on this shared device:
+            <p className="text-xs text-slate-400 my-3">
+              Select an account and enter password to switch profiles on this terminal:
             </p>
 
-            <div className="space-y-2">
-              {[
-                {
-                  email: 'owner@lahorekarahi.com',
-                  name: 'Tariq Mahmood',
-                  role: 'Owner (All Access)',
-                  icon: '👑',
-                },
-                {
-                  email: 'cashier@lahorekarahi.com',
-                  name: 'Bilal Ahmed',
-                  role: 'Cashier (POS & Billing)',
-                  icon: '💵',
-                },
-                {
-                  email: 'waiter@lahorekarahi.com',
-                  name: 'Usman Shah',
-                  role: 'Waiter (Table Orders)',
-                  icon: '🍽️',
-                },
-                {
-                  email: 'kitchen@lahorekarahi.com',
-                  name: 'Chef Rasheed',
-                  role: 'Kitchen (KDS)',
-                  icon: '👨‍🍳',
-                },
-              ].map((staff) => (
-                <button
-                  key={staff.email}
-                  disabled={switchLoading}
-                  onClick={() => handleSwitchStaff(staff.email)}
-                  className={`w-full flex items-center justify-between p-3 rounded-2xl border text-left transition-all ${
-                    user?.email === staff.email
-                      ? 'bg-blue-600/20 border-blue-500/50 text-white'
-                      : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white'
-                  }`}
-                >
-                  <div className="flex items-center space-x-3">
-                    <span className="text-xl">{staff.icon}</span>
-                    <div>
-                      <p className="text-xs font-bold leading-tight">{staff.name}</p>
-                      <p className="text-[10px] text-slate-400">{staff.role}</p>
+            {switchError && (
+              <div className="mb-3 bg-rose-500/10 border border-rose-500/20 rounded-xl p-2.5 flex items-center space-x-2 text-rose-400 text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{switchError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handlePerformSwitch} className="space-y-3">
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {[
+                  {
+                    email: 'owner@lahorekarahi.com',
+                    name: 'Tariq Mahmood',
+                    role: 'Owner (All Modules)',
+                    icon: '👑',
+                  },
+                  {
+                    email: 'cashier@lahorekarahi.com',
+                    name: 'Bilal Ahmed',
+                    role: 'Cashier (POS & Billing)',
+                    icon: '💵',
+                  },
+                  {
+                    email: 'waiter@lahorekarahi.com',
+                    name: 'Usman Shah',
+                    role: 'Waiter (Table Orders)',
+                    icon: '🍽️',
+                  },
+                  {
+                    email: 'kitchen@lahorekarahi.com',
+                    name: 'Chef Rasheed',
+                    role: 'Kitchen (KDS)',
+                    icon: '👨‍🍳',
+                  },
+                ].map((staff) => (
+                  <button
+                    key={staff.email}
+                    type="button"
+                    onClick={() => {
+                      setSelectedStaffEmail(staff.email);
+                      setSwitchError('');
+                    }}
+                    className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
+                      selectedStaffEmail === staff.email
+                        ? 'bg-blue-600/20 border-blue-500 text-white'
+                        : user?.email === staff.email
+                        ? 'bg-slate-900/90 border-slate-700 text-slate-200'
+                        : 'bg-slate-900/40 border-slate-800 hover:border-slate-700 text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2.5">
+                      <span className="text-lg">{staff.icon}</span>
+                      <div>
+                        <p className="text-xs font-bold leading-tight">{staff.name}</p>
+                        <p className="text-[10px] text-slate-400">{staff.role}</p>
+                      </div>
                     </div>
+                    {user?.email === staff.email ? (
+                      <span className="flex items-center space-x-1 text-[10px] font-bold text-emerald-400">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Current</span>
+                      </span>
+                    ) : selectedStaffEmail === staff.email ? (
+                      <span className="text-[11px] font-bold text-blue-400">Selected</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+
+              {selectedStaffEmail && (
+                <div className="pt-2 animate-in fade-in space-y-2">
+                  <label className="block text-xs font-bold text-slate-300">
+                    Enter Password for {selectedStaffEmail}
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
+                    <input
+                      type="password"
+                      required
+                      autoFocus
+                      value={switchPassword}
+                      onChange={(e) => setSwitchPassword(e.target.value)}
+                      placeholder="••••••••••••"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
                   </div>
-                  {user?.email === staff.email ? (
-                    <span className="flex items-center space-x-1 text-[11px] font-bold text-blue-400">
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Active</span>
-                    </span>
-                  ) : (
-                    <span className="text-xs font-semibold text-slate-500 hover:text-blue-400">
-                      Switch →
-                    </span>
-                  )}
-                </button>
-              ))}
+
+                  <button
+                    type="submit"
+                    disabled={switchLoading || !switchPassword}
+                    className="w-full py-2 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors disabled:opacity-50"
+                  >
+                    {switchLoading ? 'Verifying Password...' : 'Authenticate & Switch Station'}
+                  </button>
+                </div>
+              )}
+            </form>
+
+            <div className="pt-4 mt-3 border-t border-slate-800 text-center">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="text-xs font-semibold text-rose-400 hover:text-rose-300 transition-colors"
+              >
+                Log Out Station Completely →
+              </button>
             </div>
           </div>
         </div>

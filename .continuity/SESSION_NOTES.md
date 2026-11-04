@@ -1,17 +1,18 @@
 # Session Notes
 
 ## Goals
-- Provide dark workspace hub module launcher matching user's uploaded reference UI.
-- Enable multi-device restaurant workflows:
-  - Waiters taking orders on tablet POS terminal (`/pos`) and dispatching to Kitchen without upfront payment.
-  - Kitchen staff receiving orders in real-time on Kitchen Display System (`/kds`).
-  - Served orders automatically populating the Unpaid Bills queue with real-time alerts.
-  - Cashiers taking payment to settle orders, exhaust FIFO inventory batches, release tables, and move orders to Orders Hub history (`/app/orders`).
-  - Quick staff account switching on shared restaurant tablets directly from the Workspace Hub (`/hub`).
-- Commit and push all verified changes to GitHub repository `https://github.com/uzair592/the_pos.git`.
+- Enforce strict security, authentication, and role authorization across the entire POS SaaS system.
+- Prevent unauthenticated users from bypassing login and directly viewing the Workspace Hub, POS terminal, KDS, or Dashboard.
+- Eliminate insecure auto-fill demo buttons and hardcoded staff bypasses.
+- Implement station lock / terminal security for POS registers.
+- Normalize user roles and default permissions in backend middleware and token generation.
+- Push clean, verified code to GitHub repository `https://github.com/uzair592/the_pos.git`.
 
 ## Blockers
-- None. All 29 integration tests passing, TypeScript builds passing with 0 errors across monorepo workspaces, and servers active.
+- None. All 29 integration tests pass, TypeScript compiles with 0 errors across monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
-- Decision d11a7b5: Created `frontend/src/pages/hub/WorkspaceHub.tsx` matching the reference image (5 stations: Dashboard, POS Terminal, Inventory, Operations, Kitchen Display) with a glowing initial badge and instant staff profile switcher for shared tablet devices.
+- Decision e89a12c4: Secured application routes via `ProtectedRoute` and `PublicAuthRoute`. Now, unauthenticated visitors are automatically forced to `/login`.
+- Replaced insecure switch staff auto-login with real password-verified authentication on shared tablets.
+- Added one-click POS station lock with a password unlock overlay.
+- Normalized `SystemRole` and dynamically resolved `DEFAULT_ROLE_PERMISSIONS` in auth middleware and login tokens.
