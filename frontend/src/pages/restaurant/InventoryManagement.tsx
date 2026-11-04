@@ -250,7 +250,7 @@ export const InventoryManagement: React.FC = () => {
             Inventory & FIFO Engine
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Batch-tracked First-In, First-Out costing, recipes, multi-branch stock transfers, and valuation
+            Batch-tracked First-In, First-Out costing, recipes, and inventory valuation
           </p>
         </div>
 
@@ -271,13 +271,15 @@ export const InventoryManagement: React.FC = () => {
             <span>Purchases & Vendors</span>
           </Link>
 
-          <button
-            onClick={() => setIsAddTransferOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-          >
-            <ArrowRightLeft className="w-4 h-4 text-blue-500" />
-            <span>New Stock Transfer</span>
-          </button>
+          {branches.length > 1 && (
+            <button
+              onClick={() => setIsAddTransferOpen(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+            >
+              <ArrowRightLeft className="w-4 h-4 text-blue-500" />
+              <span>New Stock Transfer</span>
+            </button>
+          )}
 
           <button
             onClick={() => setIsAddRecipeOpen(true)}
@@ -320,17 +322,19 @@ export const InventoryManagement: React.FC = () => {
           <Layers className="w-4 h-4 text-brand-500" />
           <span>FIFO Stock Lots / Batches ({batches.length})</span>
         </button>
-        <button
-          onClick={() => setActiveTab('TRANSFERS')}
-          className={`flex items-center space-x-1.5 px-4 py-2 rounded-xl transition-all shrink-0 ${
-            activeTab === 'TRANSFERS'
-              ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Truck className="w-4 h-4 text-blue-500" />
-          <span>Stock Transfers ({transfers.length})</span>
-        </button>
+        {branches.length > 1 && (
+          <button
+            onClick={() => setActiveTab('TRANSFERS')}
+            className={`flex items-center space-x-1.5 px-4 py-2 rounded-xl transition-all shrink-0 ${
+              activeTab === 'TRANSFERS'
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Truck className="w-4 h-4 text-blue-500" />
+            <span>Stock Transfers ({transfers.length})</span>
+          </button>
+        )}
         <button
           onClick={() => setActiveTab('RECIPES')}
           className={`px-4 py-2 rounded-xl transition-all shrink-0 ${

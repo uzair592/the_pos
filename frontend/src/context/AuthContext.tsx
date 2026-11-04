@@ -68,21 +68,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const bList: BranchInfo[] = data.branches || [];
       setBranches(bList);
 
-      // Branch selection priority:
-      // 1. Stored choice in localStorage
-      // 2. User assigned branch
-      // 3. First branch in tenant
-      const stored = localStorage.getItem('pos_current_branch_id');
-      if (stored === 'ALL') {
-        setCurrentBranchId(null);
-      } else if (stored && bList.some((b) => b.id === stored)) {
-        setCurrentBranchId(stored);
-      } else if (data.user?.branchId && bList.some((b) => b.id === data.user.branchId)) {
-        setCurrentBranchId(data.user.branchId);
-        localStorage.setItem('pos_current_branch_id', data.user.branchId);
-      } else if (bList.length > 0) {
-        setCurrentBranchId(bList[0].id);
-        localStorage.setItem('pos_current_branch_id', bList[0].id);
+      // Single-branch restaurant architecture:
+      // Lock current branch directly to the restaurant's primary branch
+      const primaryBranchId = data.user?.branchId || (bList.length > 0 ? bList[0].id : null);
+      if (primaryBranchId) {
+        setCurrentBranchId(primaryBranchId);
+        localStorage.setItem('pos_current_branch_id', primaryBranchId);
       } else {
         setCurrentBranchId(null);
       }

@@ -13,8 +13,7 @@ import {
   Clock,
   BarChart3,
   Users,
-  Store,
-  Settings,
+    Settings,
   Monitor,
   ChefHat,
   ShoppingBag,
@@ -45,7 +44,6 @@ export const Sidebar: React.FC = () => {
     { to: '/app/shifts', label: 'Shifts & Registers', icon: Clock, permission: Permission.SHIFTS_VIEW },
     { to: '/app/reports', label: 'Reports & Analytics', icon: BarChart3, permission: Permission.REPORTS_SALES },
     { to: '/app/staff', label: 'Staff & Roles', icon: Users, permission: Permission.STAFF_MANAGE },
-    { to: '/app/branches', label: 'Branches', icon: Store, permission: Permission.BRANCHES_MANAGE },
     { to: '/app/settings', label: 'Restaurant Settings', icon: Settings, permission: Permission.SETTINGS_MANAGE },
   ];
 

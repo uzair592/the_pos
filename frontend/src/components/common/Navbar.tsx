@@ -2,11 +2,9 @@ import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
-import { BranchSelector } from './BranchSelector.js';
 import {
   UtensilsCrossed,
-  Store,
-  Monitor,
+    Monitor,
   ChefHat,
   LayoutGrid,
   LogOut,
@@ -55,8 +53,6 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center space-x-2.5 sm:space-x-3">
             {!isSuperAdmin && (
               <>
-                {/* Global Branch Switcher */}
-                <BranchSelector variant="navbar" />
 
                 {/* Workspace Hub Launcher */}
                 <Link

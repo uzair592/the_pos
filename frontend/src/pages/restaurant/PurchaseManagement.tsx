@@ -703,23 +703,25 @@ export const PurchaseManagement: React.FC = () => {
       >
         <form onSubmit={handleCreateInvoice} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Destination Branch *
-              </label>
-              <select
-                value={invoiceForm.branchId}
-                onChange={(e) => setInvoiceForm({ ...invoiceForm, branchId: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-brand-500"
-                required
-              >
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.code})
-                  </option>
-                ))}
-              </select>
-            </div>
+            {branches.length > 1 && (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Destination Branch *
+                </label>
+                <select
+                  value={invoiceForm.branchId}
+                  onChange={(e) => setInvoiceForm({ ...invoiceForm, branchId: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-brand-500"
+                  required
+                >
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <div className="flex items-center justify-between mb-1">

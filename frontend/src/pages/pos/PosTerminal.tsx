@@ -1,4 +1,3 @@
-import { BranchSelector } from '../../components/common/BranchSelector.js';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
@@ -769,7 +768,6 @@ export const PosTerminal: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2 text-xs">
-          <BranchSelector variant="hub" />
           {/* ==================== UNPAID ORDERS BUTTON & BADGE ==================== */}
           <button
             onClick={() => {

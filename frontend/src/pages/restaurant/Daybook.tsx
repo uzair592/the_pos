@@ -299,22 +299,7 @@ export const Daybook: React.FC = () => {
 
         {/* Date Selector & Branch Controls */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Branch Filter */}
-          <div className="flex items-center space-x-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-1.5 border border-slate-200 dark:border-slate-700">
-            <Building2 className="w-3.5 h-3.5 text-slate-400" />
-            <select
-              value={selectedBranchId}
-              onChange={(e) => setSelectedBranchId(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
-            >
-              <option value="" className="text-slate-900 dark:text-white">All Branches (Consolidated)</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id} className="text-slate-900 dark:text-white">
-                  {b.name} ({b.code})
-                </option>
-              ))}
-            </select>
-          </div>
+
 
           {/* Date Picker & Navigators */}
           <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 border border-slate-200 dark:border-slate-700">

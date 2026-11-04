@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
-import { BranchSelector } from '../../components/common/BranchSelector.js';
 import {
   ChefHat,
   Clock,
@@ -23,7 +22,7 @@ import {
 import { PrepStatus, PrepStation } from '@pos/shared';
 
 export const KitchenDisplay: React.FC = () => {
-  const { user, currentBranchId, currentBranch } = useAuth();
+  const { user, tenant, currentBranchId, currentBranch } = useAuth();
   const { success, error } = useToast();
   const [tickets, setTickets] = useState<any[]>([]);
   const [stationFilter, setStationFilter] = useState<string>('ALL');
@@ -144,7 +143,7 @@ export const KitchenDisplay: React.FC = () => {
             <div>
               <h1 className="text-sm font-extrabold tracking-tight">Kitchen Order Display (KDS)</h1>
               <p className="text-[11px] text-slate-400">
-                {currentBranch?.name || 'All Branches'} • Real-Time Kitchen Operations
+                {tenant?.name || 'Kitchen Operations'} • Real-Time Kitchen Display
               </p>
             </div>
           </div>
@@ -152,7 +151,6 @@ export const KitchenDisplay: React.FC = () => {
 
         {/* Branch Selector, Station Filter & Sound Toggle */}
         <div className="flex items-center space-x-2.5 text-xs font-bold">
-          <BranchSelector variant="hub" />
 
           {/* Sound Notification Chime Toggle */}
           <button
