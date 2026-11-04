@@ -319,3 +319,590 @@ export async function generateFinancialSummary(filters: FinancialReportFilters):
     unpaidAmount,
   };
 }
+
+export interface DaybookFilters {
+  tenantId: string;
+  branchId?: string | null;
+  date?: string; // YYYY-MM-DD
+}
+
+export interface DaybookData {
+  date: string;
+  displayDate: string;
+  branchId: string | null;
+  branchName: string;
+  currencySymbol: string;
+  summary: {
+    totalGrossSales: number;
+    totalNetSales: number;
+    totalTax: number;
+    totalDiscounts: number;
+    totalDeliveryFees: number;
+    totalGrandTotal: number;
+    completedOrdersCount: number;
+    activeOrdersCount: number;
+    cancelledOrdersCount: number;
+    refundedOrdersCount: number;
+    totalRefundedAmount: number;
+
+    totalPurchasesAmount: number;
+    totalPurchasesPaid: number;
+    totalPurchasesUnpaid: number;
+    purchasesCount: number;
+
+    totalIngredientsCost: number; // FIFO COGS
+    grossProfit: number;
+    grossMarginPercent: number;
+
+    totalWastageCost: number;
+    totalWastageQuantity: number;
+    wastageCount: number;
+
+    totalExpensesAmount: number;
+    totalCashExpenses: number;
+    expensesCount: number;
+
+    openingRegisterCash: number;
+    cashSalesCollected: number;
+    nonCashSalesCollected: number;
+    netDailyProfit: number;
+    netOperatingCashPosition: number;
+  };
+  paymentMethods: Array<{
+    method: string;
+    totalAmount: number;
+    transactionCount: number;
+    percentage: number;
+  }>;
+  salesOrders: Array<{
+    id: string;
+    orderNumber: string;
+    orderType: string;
+    tableNumber: string | null;
+    customerName: string | null;
+    customerPhone: string | null;
+    riderName: string | null;
+    status: string;
+    paymentStatus: string;
+    grandTotal: number;
+    taxAmount: number;
+    totalDiscount: number;
+    deliveryFee: number;
+    cashierName: string;
+    createdAt: string;
+    branchName: string;
+    paymentMethods: string | null;
+    itemsCount: number;
+  }>;
+  purchases: Array<{
+    id: string;
+    invoiceNumber: string;
+    totalAmount: number;
+    paidAmount: number;
+    balancePayable: number;
+    status: string;
+    createdAt: string;
+    receivedAt: string | null;
+    supplierName: string;
+    branchName: string;
+    receivedByName: string | null;
+    itemsCount: number;
+  }>;
+  ingredientConsumptions: Array<{
+    ingredientId: string;
+    ingredientName: string;
+    unit: string;
+    totalQuantityUsed: number;
+    totalFifoCost: number;
+    ordersCount: number;
+  }>;
+  wastageRecords: Array<{
+    id: string;
+    ingredientId: string;
+    ingredientName: string;
+    unit: string;
+    quantity: number;
+    unitCost: number;
+    totalCost: number;
+    reason: string;
+    recordedByName: string | null;
+    branchName: string;
+    createdAt: string;
+  }>;
+  expenses: Array<{
+    id: string;
+    categoryName: string;
+    description: string;
+    amount: number;
+    paymentMethod: string;
+    recordedByName: string | null;
+    branchName: string;
+    expenseDate: string;
+    createdAt: string;
+  }>;
+  shifts: Array<{
+    id: string;
+    cashierName: string;
+    branchName: string;
+    openedAt: string;
+    closedAt: string | null;
+    openingCash: number;
+    cashSales: number;
+    cashIn: number;
+    cashOut: number;
+    expectedCash: number;
+    actualCash: number | null;
+    variance: number | null;
+    status: string;
+    closingNotes: string | null;
+  }>;
+}
+
+export async function getDaybookData(filters: DaybookFilters): Promise<DaybookData> {
+  const { tenantId, branchId } = filters;
+  const dNow = new Date();
+  const defaultLocalDate = `${dNow.getFullYear()}-${String(dNow.getMonth() + 1).padStart(2, '0')}-${String(dNow.getDate()).padStart(2, '0')}`;
+  const targetDate = filters.date || defaultLocalDate;
+  const startDate = `${targetDate} 00:00:00.000`;
+  const endDate = `${targetDate} 23:59:59.999`;
+
+  // 1. Resolve Branch Name & Currency Symbol
+  let branchName = 'All Branches Consolidated';
+  if (branchId) {
+    const bRes = await query('SELECT name FROM branches WHERE id = $1 AND tenant_id = $2', [branchId, tenantId], { tenantId });
+    if (bRes.rows.length > 0) branchName = bRes.rows[0].name;
+  }
+
+  const sRes = await query('SELECT currency_symbol FROM restaurant_settings WHERE tenant_id = $1', [tenantId], { tenantId });
+  const currencySymbol = sRes.rows[0]?.currency_symbol || 'Rs.';
+
+  const branchParam = branchId ? [branchId] : [];
+  const baseParams = [tenantId, startDate, endDate, ...branchParam];
+  const bClauseOrders = branchId ? 'AND o.branch_id = $4' : '';
+  const bClausePurchases = branchId ? 'AND p.branch_id = $4' : '';
+  const bClauseStock = branchId ? 'AND sm.branch_id = $4' : '';
+  const bClauseExp = branchId ? 'AND e.branch_id = $4' : '';
+  const bClauseShifts = branchId ? 'AND rs.branch_id = $4' : '';
+  const bClauseConsumptions = branchId ? 'AND c.branch_id = $4' : '';
+
+  // 2. Orders Summary (Completed, Active, Cancelled, Totals)
+  const ordersSummaryRes = await query(
+    `
+    SELECT
+      COUNT(*)::int as total_orders,
+      COUNT(CASE WHEN o.status = 'COMPLETED' THEN 1 END)::int as completed_count,
+      COUNT(CASE WHEN o.status IN ('PENDING', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'OUT_FOR_DELIVERY') THEN 1 END)::int as active_count,
+      COUNT(CASE WHEN o.status = 'CANCELLED' THEN 1 END)::int as cancelled_count,
+      COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.subtotal ELSE 0 END), 0)::numeric as total_gross_sales,
+      COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN (o.grand_total - o.tax_amount - o.delivery_fee) ELSE 0 END), 0)::numeric as total_net_sales,
+      COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.tax_amount ELSE 0 END), 0)::numeric as total_tax,
+      COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.total_discount ELSE 0 END), 0)::numeric as total_discounts,
+      COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.delivery_fee ELSE 0 END), 0)::numeric as total_delivery_fees,
+      COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o.grand_total ELSE 0 END), 0)::numeric as total_grand_total
+    FROM orders o
+    WHERE o.tenant_id = $1
+      AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+      ${bClauseOrders}
+    `,
+    baseParams,
+    { tenantId }
+  );
+  const oSum = ordersSummaryRes.rows[0] || {};
+
+  // 3. Refunds Summary
+  const refundsRes = await query(
+    `
+    SELECT
+      COUNT(*)::int as refund_count,
+      COALESCE(SUM(r.total_refund_amount), 0)::numeric as total_refund_amount
+    FROM order_refunds r
+    WHERE r.tenant_id = $1
+      AND r.created_at >= $2::timestamptz AND r.created_at <= $3::timestamptz
+      ${branchId ? 'AND r.branch_id = $4' : ''}
+    `,
+    baseParams,
+    { tenantId }
+  );
+  const refSum = refundsRes.rows[0] || {};
+
+  // 4. Payment Methods Breakdown
+  const paymentsRes = await query(
+    `
+    SELECT
+      op.method,
+      COALESCE(SUM(op.amount), 0)::numeric as total_amount,
+      COUNT(*)::int as transaction_count
+    FROM order_payments op
+    JOIN orders o ON o.id = op.order_id
+    WHERE o.tenant_id = $1
+      AND o.status = 'COMPLETED'
+      AND op.paid_at >= $2::timestamptz AND op.paid_at <= $3::timestamptz
+      ${bClauseOrders}
+    GROUP BY op.method
+    ORDER BY total_amount DESC
+    `,
+    baseParams,
+    { tenantId }
+  );
+
+  const totalCollectedSum = paymentsRes.rows.reduce((acc, r) => acc + Number(r.total_amount), 0);
+  const paymentMethods = paymentsRes.rows.map((r) => ({
+    method: r.method,
+    totalAmount: Number(r.total_amount),
+    transactionCount: Number(r.transaction_count),
+    percentage: totalCollectedSum > 0 ? Math.round((Number(r.total_amount) / totalCollectedSum) * 100) : 0,
+  }));
+
+  // 5. Purchases Done Today
+  const purchasesRes = await query(
+    `
+    SELECT
+      p.id,
+      p.invoice_number,
+      p.total_amount,
+      p.paid_amount,
+      p.balance_payable,
+      p.status,
+      p.created_at,
+      p.received_at,
+      s.name as supplier_name,
+      b.name as branch_name,
+      u.full_name as received_by_name,
+      (SELECT COUNT(*)::int FROM purchase_items pi WHERE pi.purchase_id = p.id) as items_count
+    FROM purchase_invoices p
+    JOIN suppliers s ON s.id = p.supplier_id
+    JOIN branches b ON b.id = p.branch_id
+    LEFT JOIN users u ON u.id = p.recorded_by_user_id
+    WHERE p.tenant_id = $1
+      AND (p.created_at >= $2::timestamptz AND p.created_at <= $3::timestamptz OR (p.received_at IS NOT NULL AND p.received_at >= $2::timestamptz AND p.received_at <= $3::timestamptz))
+      ${bClausePurchases}
+    ORDER BY p.created_at DESC
+    `,
+    baseParams,
+    { tenantId }
+  );
+
+  const purchases = purchasesRes.rows.map((p) => ({
+    id: p.id,
+    invoiceNumber: p.invoice_number,
+    totalAmount: Number(p.total_amount),
+    paidAmount: Number(p.paid_amount),
+    balancePayable: Number(p.balance_payable),
+    status: p.status,
+    createdAt: p.created_at,
+    receivedAt: p.received_at,
+    supplierName: p.supplier_name,
+    branchName: p.branch_name,
+    receivedByName: p.received_by_name,
+    itemsCount: Number(p.items_count || 0),
+  }));
+
+  // 6. Ingredients Consumed in Today's Sales (FIFO COGS)
+  const consumptionsRes = await query(
+    `
+    SELECT
+      i.id as ingredient_id,
+      i.name as ingredient_name,
+      i.unit,
+      COALESCE(SUM(c.quantity), 0)::numeric as total_quantity_used,
+      COALESCE(SUM(c.total_cost), 0)::numeric as total_fifo_cost,
+      COUNT(DISTINCT c.order_id)::int as orders_count
+    FROM order_item_batch_consumptions c
+    JOIN ingredients i ON i.id = c.ingredient_id
+    JOIN orders o ON o.id = c.order_id
+    WHERE c.tenant_id = $1
+      AND o.status = 'COMPLETED'
+      AND c.created_at >= $2::timestamptz AND c.created_at <= $3::timestamptz
+      ${bClauseConsumptions}
+    GROUP BY i.id, i.name, i.unit
+    ORDER BY total_fifo_cost DESC
+    `,
+    baseParams,
+    { tenantId }
+  );
+
+  const ingredientConsumptions = consumptionsRes.rows.map((c) => ({
+    ingredientId: c.ingredient_id,
+    ingredientName: c.ingredient_name,
+    unit: c.unit,
+    totalQuantityUsed: Number(c.total_quantity_used),
+    totalFifoCost: Number(c.total_fifo_cost),
+    ordersCount: Number(c.orders_count),
+  }));
+
+  // 7. Wastage Log Today
+  const wastageRes = await query(
+    `
+    SELECT
+      sm.id,
+      sm.ingredient_id,
+      sm.quantity,
+      sm.unit_cost,
+      sm.total_cost,
+      sm.reason,
+      sm.created_at,
+      i.name as ingredient_name,
+      i.unit,
+      b.name as branch_name,
+      u.full_name as recorded_by_name
+    FROM stock_movements sm
+    JOIN ingredients i ON i.id = sm.ingredient_id
+    JOIN branches b ON b.id = sm.branch_id
+    LEFT JOIN users u ON u.id = sm.recorded_by_user_id
+    WHERE sm.tenant_id = $1
+      AND sm.movement_type = 'WASTAGE'
+      AND sm.created_at >= $2::timestamptz AND sm.created_at <= $3::timestamptz
+      ${bClauseStock}
+    ORDER BY sm.created_at DESC
+    `,
+    baseParams,
+    { tenantId }
+  );
+
+  const wastageRecords = wastageRes.rows.map((w) => ({
+    id: w.id,
+    ingredientId: w.ingredient_id,
+    ingredientName: w.ingredient_name,
+    unit: w.unit,
+    quantity: Math.abs(Number(w.quantity)),
+    unitCost: Number(w.unit_cost),
+    totalCost: Math.abs(Number(w.total_cost)),
+    reason: w.reason || 'Recorded as kitchen wastage',
+    recordedByName: w.recorded_by_name,
+    branchName: w.branch_name,
+    createdAt: w.created_at,
+  }));
+
+  // 8. Expenses Done Today
+  const expensesRes = await query(
+    `
+    SELECT
+      e.id,
+      e.amount,
+      e.payment_method,
+      e.description,
+      e.expense_date,
+      e.created_at,
+      ec.name as category_name,
+      b.name as branch_name,
+      u.full_name as recorded_by_name
+    FROM expenses e
+    JOIN expense_categories ec ON ec.id = e.category_id
+    JOIN branches b ON b.id = e.branch_id
+    LEFT JOIN users u ON u.id = e.recorded_by_user_id
+    WHERE e.tenant_id = $1
+      AND (e.created_at >= $2::timestamptz AND e.created_at <= $3::timestamptz OR e.expense_date = $2::date)
+      ${bClauseExp}
+    ORDER BY e.created_at DESC
+    `,
+    baseParams,
+    { tenantId }
+  );
+
+  const expenses = expensesRes.rows.map((e) => ({
+    id: e.id,
+    categoryName: e.category_name,
+    description: e.description,
+    amount: Number(e.amount),
+    paymentMethod: e.payment_method,
+    recordedByName: e.recorded_by_name,
+    branchName: e.branch_name,
+    expenseDate: e.expense_date,
+    createdAt: e.created_at,
+  }));
+
+  // 9. Register Shifts Today
+  const shiftsRes = await query(
+    `
+    SELECT
+      rs.id,
+      rs.opened_at,
+      rs.closed_at,
+      rs.opening_cash,
+      rs.total_cash_sales,
+      rs.total_cash_in,
+      rs.total_cash_out,
+      rs.expected_cash,
+      rs.actual_cash,
+      rs.cash_variance,
+      rs.status,
+      rs.closing_notes,
+      u.full_name as cashier_name,
+      b.name as branch_name
+    FROM register_shifts rs
+    JOIN users u ON u.id = rs.cashier_id
+    JOIN branches b ON b.id = rs.branch_id
+    WHERE rs.tenant_id = $1
+      AND (rs.opened_at >= $2::timestamptz AND rs.opened_at <= $3::timestamptz OR (rs.closed_at IS NOT NULL AND rs.closed_at >= $2::timestamptz AND rs.closed_at <= $3::timestamptz))
+      ${bClauseShifts}
+    ORDER BY rs.opened_at DESC
+    `,
+    baseParams,
+    { tenantId }
+  );
+
+  const shifts = shiftsRes.rows.map((s) => ({
+    id: s.id,
+    cashierName: s.cashier_name,
+    branchName: s.branch_name,
+    openedAt: s.opened_at,
+    closedAt: s.closed_at,
+    openingCash: Number(s.opening_cash || 0),
+    cashSales: Number(s.total_cash_sales || 0),
+    cashIn: Number(s.total_cash_in || 0),
+    cashOut: Number(s.total_cash_out || 0),
+    expectedCash: Number(s.expected_cash || 0),
+    actualCash: s.actual_cash !== null ? Number(s.actual_cash) : null,
+    variance: s.cash_variance !== null ? Number(s.cash_variance) : null,
+    status: s.status,
+    closingNotes: s.closing_notes,
+  }));
+
+  // 10. Detailed Sales Orders List
+  const ordersListRes = await query(
+    `
+    SELECT
+      o.id,
+      o.order_number,
+      o.order_type,
+      o.table_number,
+      o.customer_name,
+      o.customer_phone,
+      o.rider_name,
+      o.status,
+      o.payment_status,
+      o.grand_total,
+      o.tax_amount,
+      o.total_discount,
+      o.delivery_fee,
+      o.cashier_name,
+      o.created_at,
+      b.name as branch_name,
+      (SELECT string_agg(DISTINCT op.method, ', ') FROM order_payments op WHERE op.order_id = o.id) as payment_methods,
+      (SELECT COUNT(*)::int FROM order_items oi WHERE oi.order_id = o.id) as items_count
+    FROM orders o
+    JOIN branches b ON b.id = o.branch_id
+    WHERE o.tenant_id = $1
+      AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+      ${bClauseOrders}
+    ORDER BY o.created_at DESC
+    `,
+    baseParams,
+    { tenantId }
+  );
+
+  const salesOrders = ordersListRes.rows.map((o) => ({
+    id: o.id,
+    orderNumber: o.order_number,
+    orderType: o.order_type,
+    tableNumber: o.table_number,
+    customerName: o.customer_name,
+    customerPhone: o.customer_phone,
+    riderName: o.rider_name,
+    status: o.status,
+    paymentStatus: o.payment_status,
+    grandTotal: Number(o.grand_total),
+    taxAmount: Number(o.tax_amount),
+    totalDiscount: Number(o.total_discount),
+    deliveryFee: Number(o.delivery_fee),
+    cashierName: o.cashier_name,
+    createdAt: o.created_at,
+    branchName: o.branch_name,
+    paymentMethods: o.payment_methods,
+    itemsCount: Number(o.items_count || 0),
+  }));
+
+  // Calculations for Summary
+  const totalGrossSales = Number(oSum.total_gross_sales || 0);
+  const totalNetSales = Number(oSum.total_net_sales || 0);
+  const totalTax = Number(oSum.total_tax || 0);
+  const totalDiscounts = Number(oSum.total_discounts || 0);
+  const totalDeliveryFees = Number(oSum.total_delivery_fees || 0);
+  const totalGrandTotal = Number(oSum.total_grand_total || 0);
+  const completedOrdersCount = Number(oSum.completed_count || 0);
+  const activeOrdersCount = Number(oSum.active_count || 0);
+  const cancelledOrdersCount = Number(oSum.cancelled_count || 0);
+  const refundedOrdersCount = Number(refSum.refund_count || 0);
+  const totalRefundedAmount = Number(refSum.total_refund_amount || 0);
+
+  const totalPurchasesAmount = purchases.reduce((acc, p) => acc + p.totalAmount, 0);
+  const totalPurchasesPaid = purchases.reduce((acc, p) => acc + p.paidAmount, 0);
+  const totalPurchasesUnpaid = Math.max(0, totalPurchasesAmount - totalPurchasesPaid);
+
+  const totalIngredientsCost = ingredientConsumptions.reduce((acc, i) => acc + i.totalFifoCost, 0);
+  const grossProfit = totalNetSales - totalIngredientsCost;
+  const grossMarginPercent = totalNetSales > 0 ? Math.round((grossProfit / totalNetSales) * 100) : 0;
+
+  const totalWastageCost = wastageRecords.reduce((acc, w) => acc + w.totalCost, 0);
+  const totalWastageQuantity = wastageRecords.reduce((acc, w) => acc + w.quantity, 0);
+
+  const totalExpensesAmount = expenses.reduce((acc, e) => acc + e.amount, 0);
+  const totalCashExpenses = expenses.filter((e) => e.paymentMethod === 'CASH').reduce((acc, e) => acc + e.amount, 0);
+
+  const openingRegisterCash = shifts.reduce((acc, s) => acc + s.openingCash, 0);
+  const cashSalesCollected = paymentMethods.find((p) => p.method === 'CASH')?.totalAmount || 0;
+  const nonCashSalesCollected = paymentMethods.filter((p) => p.method !== 'CASH').reduce((acc, p) => acc + p.totalAmount, 0);
+
+  const netDailyProfit = grossProfit - totalExpensesAmount - totalWastageCost;
+  const netOperatingCashPosition = (openingRegisterCash + cashSalesCollected) - totalCashExpenses;
+
+  // Format Human Readable Date
+  const parsedD = new Date(`${targetDate}T12:00:00`);
+  const displayDate = parsedD.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  return {
+    date: targetDate,
+    displayDate,
+    branchId: branchId || null,
+    branchName,
+    currencySymbol,
+    summary: {
+      totalGrossSales,
+      totalNetSales,
+      totalTax,
+      totalDiscounts,
+      totalDeliveryFees,
+      totalGrandTotal,
+      completedOrdersCount,
+      activeOrdersCount,
+      cancelledOrdersCount,
+      refundedOrdersCount,
+      totalRefundedAmount,
+
+      totalPurchasesAmount,
+      totalPurchasesPaid,
+      totalPurchasesUnpaid,
+      purchasesCount: purchases.length,
+
+      totalIngredientsCost,
+      grossProfit,
+      grossMarginPercent,
+
+      totalWastageCost,
+      totalWastageQuantity,
+      wastageCount: wastageRecords.length,
+
+      totalExpensesAmount,
+      totalCashExpenses,
+      expensesCount: expenses.length,
+
+      openingRegisterCash,
+      cashSalesCollected,
+      nonCashSalesCollected,
+      netDailyProfit,
+      netOperatingCashPosition,
+    },
+    paymentMethods,
+    salesOrders,
+    purchases,
+    ingredientConsumptions,
+    wastageRecords,
+    expenses,
+    shifts,
+  };
+}

@@ -479,4 +479,103 @@ describe('FIFO Inventory, Credential Management, Orders Hub & Backup System Test
     expect(receipt.deliveryAddress).toBe('House 42, Street 5, F-7/2, Islamabad');
     expect(Number(receipt.deliveryFee)).toBe(150);
   });
+
+  it('M6: Daily Daybook Operational & Financial Ledger Verification', async () => {
+    // 1. Fetch Expense Categories and ensure seeded categories exist
+    const catRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/expenses/categories',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(catRes.statusCode).toBe(200);
+    const categories = JSON.parse(catRes.payload).categories;
+    expect(categories.length).toBeGreaterThan(0);
+    const categoryId = categories[0].id;
+
+    // 2. Record an expense today
+    const expRes = await app.inject({
+      method: 'POST',
+      url: '/api/financial/expenses',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        branchId,
+        categoryId,
+        amount: 450,
+        paymentMethod: 'CASH',
+        description: 'Kitchen cleaning liquid and mops',
+      },
+    });
+    expect(expRes.statusCode).toBe(201);
+    const recordedExpense = JSON.parse(expRes.payload).expense;
+    expect(Number(recordedExpense.amount)).toBe(450);
+
+    // 3. Record wastage adjustment for ingredient
+    const wasteRes = await app.inject({
+      method: 'POST',
+      url: '/api/inventory/adjustments',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        branchId,
+        ingredientId,
+        movementType: 'WASTAGE',
+        quantity: 0.5,
+        reason: 'Dropped on floor during kitchen rush',
+      },
+    });
+    expect(wasteRes.statusCode).toBe(201);
+
+    // 4. Query Daily Daybook for today
+    const dNow = new Date();
+    const todayStr = `${dNow.getFullYear()}-${String(dNow.getMonth() + 1).padStart(2, '0')}-${String(dNow.getDate()).padStart(2, '0')}`;
+    const daybookRes = await app.inject({
+      method: 'GET',
+      url: `/api/financial/daybook?date=${todayStr}&branchId=${branchId}`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(daybookRes.statusCode).toBe(200);
+    const { daybook } = JSON.parse(daybookRes.payload);
+    
+
+    // Verify daybook high-level structure
+    expect(daybook).toBeDefined();
+    expect(daybook.date).toBe(todayStr);
+    expect(daybook.branchId).toBe(branchId);
+    expect(daybook.summary).toBeDefined();
+    expect(daybook.paymentMethods).toBeInstanceOf(Array);
+    expect(daybook.purchases).toBeInstanceOf(Array);
+    expect(daybook.ingredientConsumptions).toBeInstanceOf(Array);
+    expect(daybook.wastageRecords).toBeInstanceOf(Array);
+    expect(daybook.expenses).toBeInstanceOf(Array);
+    expect(daybook.salesOrders).toBeInstanceOf(Array);
+
+    // Verify recorded expense is present in daybook
+    const foundExp = daybook.expenses.find((e: any) => e.id === recordedExpense.id);
+    expect(foundExp).toBeDefined();
+    expect(Number(foundExp.amount)).toBe(450);
+    expect(foundExp.description).toBe('Kitchen cleaning liquid and mops');
+
+    // Verify wastage record is present in daybook
+    const foundWaste = daybook.wastageRecords.find((w: any) => w.ingredientId === ingredientId);
+    expect(foundWaste).toBeDefined();
+    expect(foundWaste.reason).toBe('Dropped on floor during kitchen rush');
+    expect(Number(foundWaste.quantity)).toBe(0.5);
+
+    // Verify financial balances in summary
+    expect(daybook.summary.totalExpensesAmount).toBeGreaterThanOrEqual(450);
+    expect(daybook.summary.totalWastageCost).toBeGreaterThanOrEqual(0);
+    expect(typeof daybook.summary.grossProfit).toBe('number');
+    expect(typeof daybook.summary.netDailyProfit).toBe('number');
+    expect(typeof daybook.summary.netOperatingCashPosition).toBe('number');
+
+    // 5. Query Daybook without branchId (All branches tenant-wide)
+    const allBranchesRes = await app.inject({
+      method: 'GET',
+      url: `/api/financial/daybook?date=${todayStr}`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(allBranchesRes.statusCode).toBe(200);
+    const allBranchesData = JSON.parse(allBranchesRes.payload).daybook;
+    expect(allBranchesData.branchName).toContain('All Branches');
+    expect(allBranchesData.expenses.some((e: any) => e.id === recordedExpense.id)).toBe(true);
+  });
 });

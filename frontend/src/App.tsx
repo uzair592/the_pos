@@ -20,6 +20,7 @@ import { PlatformPayments } from './pages/platform/PlatformPayments.js';
 // Restaurant Pages
 import { OnboardingWizard } from './pages/restaurant/OnboardingWizard.js';
 import { RestaurantDashboard } from './pages/restaurant/RestaurantDashboard.js';
+import { Daybook } from './pages/restaurant/Daybook.js';
 import { OrdersHub } from './pages/orders/OrdersHub.js';
 import { MenuCatalog } from './pages/restaurant/MenuCatalog.js';
 import { InventoryManagement } from './pages/restaurant/InventoryManagement.js';
@@ -296,6 +297,7 @@ export const App: React.FC = () => {
               {/* Restaurant Management Area */}
               <Route path="/app" element={<RestaurantLayout />}>
                 <Route index element={<RestaurantDashboard />} />
+                <Route path="daybook" element={<Daybook />} />
                 <Route path="orders" element={<OrdersHub />} />
                 <Route path="menu" element={<MenuCatalog />} />
                 <Route path="inventory" element={<InventoryManagement />} />

@@ -14,6 +14,7 @@ import {
   recordCashMovement,
   closeShift,
   generateFinancialSummary,
+  getDaybookData,
 } from '../services/financialService.js';
 
 export async function financialRoutes(fastify: FastifyInstance) {
@@ -222,7 +223,28 @@ export async function financialRoutes(fastify: FastifyInstance) {
 
   fastify.get('/api/financial/expenses/categories', async (req, reply) => {
     const tenantId = req.user!.tenantId!;
-    const { rows } = await query('SELECT * FROM expense_categories WHERE tenant_id = $1 ORDER BY name ASC', [tenantId], { tenantId });
+    let { rows } = await query('SELECT * FROM expense_categories WHERE tenant_id = $1 ORDER BY name ASC', [tenantId], { tenantId });
+
+    if (rows.length === 0) {
+      const defaults = [
+        { name: 'Utilities & Bills', description: 'Electricity, gas, water, internet' },
+        { name: 'Kitchen & Cleaning Supplies', description: 'Disposables, dishwashing, packaging' },
+        { name: 'Staff Welfare & Meals', description: 'Staff food, tea, allowances' },
+        { name: 'Maintenance & Repairs', description: 'Equipment servicing, plumbing, electrical' },
+        { name: 'Fuel & Delivery Operations', description: 'Bike fuel, delivery logistics' },
+        { name: 'Miscellaneous Expenses', description: 'Petty cash, general expenses' },
+      ];
+      for (const d of defaults) {
+        await query(
+          'INSERT INTO expense_categories (tenant_id, name, description) VALUES ($1, $2, $3)',
+          [tenantId, d.name, d.description],
+          { tenantId }
+        );
+      }
+      const seeded = await query('SELECT * FROM expense_categories WHERE tenant_id = $1 ORDER BY name ASC', [tenantId], { tenantId });
+      rows = seeded.rows;
+    }
+
     return reply.send({ categories: rows });
   });
 
@@ -715,4 +737,23 @@ export async function financialRoutes(fastify: FastifyInstance) {
       topProducts,
     });
   });
+
+  /**
+   * Daily Daybook: Comprehensive Operations & Financial Ledger
+   */
+  fastify.get('/api/financial/daybook', {
+    preHandler: [requirePermission(Permission.REPORTS_SALES)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, date } = req.query as { branchId?: string; date?: string };
+
+    const daybook = await getDaybookData({
+      tenantId,
+      branchId: branchId || null,
+      date: date || undefined,
+    });
+
+    return reply.send({ daybook });
+  });
+
 }
