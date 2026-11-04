@@ -51,6 +51,14 @@ export const PosTerminal: React.FC = () => {
   const [products, setProducts] = useState<any[]>([]);
   const [tables, setTables] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [selectedSubCategory, setSelectedSubCategory] = useState<string>('ALL');
+
+  // Customization & Addons Modal State
+  const [customizingProduct, setCustomizingProduct] = useState<any | null>(null);
+  const [customizingVariant, setCustomizingVariant] = useState<any | null>(null);
+  const [selectedModifiers, setSelectedModifiers] = useState<Array<{ name: string; unitPrice: number; groupId: string; optionId: string }>>([]);
+  const [itemCustomNotes, setItemCustomNotes] = useState<string>('');
+  const [customQuantity, setCustomQuantity] = useState<number>(1);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 

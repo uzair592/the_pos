@@ -20,8 +20,10 @@ export async function menuRoutes(fastify: FastifyInstance) {
     const { rows } = await query(
       `
       SELECT c.*,
-             (SELECT COUNT(*)::int FROM products WHERE category_id = c.id AND is_available = true) as product_count
+             (SELECT COUNT(*)::int FROM products WHERE category_id = c.id AND is_available = true) as product_count,
+             p.name as parent_name
       FROM categories c
+      LEFT JOIN categories p ON p.id = c.parent_id
       WHERE c.tenant_id = $1
       ORDER BY c.sort_order ASC, c.name ASC
       `,
@@ -68,11 +70,16 @@ export async function menuRoutes(fastify: FastifyInstance) {
           sort_order = COALESCE($4, sort_order),
           image_url = COALESCE($5, image_url),
           is_active = COALESCE($6, is_active),
+          parent_id = CASE WHEN $7::boolean = true THEN $8::uuid ELSE parent_id END,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $7 AND tenant_id = $8
+      WHERE id = $9 AND tenant_id = $10
       RETURNING *
       `,
-      [body.name, body.nameUrdu, body.description, body.sortOrder, body.imageUrl, body.isActive, id, tenantId],
+      [
+        body.name, body.nameUrdu, body.description, body.sortOrder, body.imageUrl, body.isActive,
+        body.parentId !== undefined, body.parentId || null,
+        id, tenantId
+      ],
       { tenantId }
     );
 
@@ -146,6 +153,59 @@ export async function menuRoutes(fastify: FastifyInstance) {
     );
 
     return reply.status(201).send({ modifierGroup: rows[0] });
+  });
+
+  fastify.put('/api/menu/modifiers/:id', {
+    preHandler: [requirePermission(Permission.MENU_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    const body = req.body as any;
+
+    let optionsJson: string | null = null;
+    if (body.options && Array.isArray(body.options)) {
+      const optionsWithIds = body.options.map((opt: any) => ({
+        id: opt.id || crypto.randomUUID(),
+        name: opt.name,
+        nameUrdu: opt.nameUrdu || null,
+        price: Number(opt.price) || 0,
+        isDefault: Boolean(opt.isDefault),
+        isActive: opt.isActive !== false,
+      }));
+      optionsJson = JSON.stringify(optionsWithIds);
+    }
+
+    const { rows } = await query(
+      `
+      UPDATE modifier_groups
+      SET name = COALESCE($1, name),
+          name_urdu = COALESCE($2, name_urdu),
+          min_select = COALESCE($3, min_select),
+          max_select = COALESCE($4, max_select),
+          is_required = COALESCE($5, is_required),
+          options = COALESCE($6::jsonb, options)
+      WHERE id = $7 AND tenant_id = $8
+      RETURNING *
+      `,
+      [
+        body.name, body.nameUrdu, body.minSelect, body.maxSelect, body.isRequired,
+        optionsJson, id, tenantId
+      ],
+      { tenantId }
+    );
+
+    if (rows.length === 0) return reply.status(404).send({ error: 'Modifier group not found' });
+    return reply.send({ modifierGroup: rows[0] });
+  });
+
+  fastify.delete('/api/menu/modifiers/:id', {
+    preHandler: [requirePermission(Permission.MENU_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    await query('DELETE FROM modifier_groups WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+    return reply.send({ message: 'Modifier group deleted successfully' });
   });
 
   /**
@@ -323,20 +383,34 @@ export async function menuRoutes(fastify: FastifyInstance) {
           dine_in_price = COALESCE($9, dine_in_price),
           takeaway_price = COALESCE($10, takeaway_price),
           delivery_price = COALESCE($11, delivery_price),
+          category_id = COALESCE($12, category_id),
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $12 AND tenant_id = $13
+      WHERE id = $13 AND tenant_id = $14
       RETURNING *
       `,
       [
         body.name, body.nameUrdu, body.description, body.basePrice, body.costPrice,
         body.station, body.isAvailable, body.trackInventory,
         body.dineInPrice, body.takeawayPrice, body.deliveryPrice,
+        body.categoryId || null,
         id, tenantId,
       ],
       { tenantId }
     );
 
     if (rows.length === 0) return reply.status(404).send({ error: 'Product not found' });
+
+    if (Array.isArray(body.modifierGroupIds)) {
+      await query('DELETE FROM product_modifier_groups WHERE product_id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+      for (const mgId of body.modifierGroupIds) {
+        await query(
+          'INSERT INTO product_modifier_groups (tenant_id, product_id, modifier_group_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+          [tenantId, id, mgId],
+          { tenantId }
+        );
+      }
+    }
+
     return reply.send({ product: rows[0] });
   });
 

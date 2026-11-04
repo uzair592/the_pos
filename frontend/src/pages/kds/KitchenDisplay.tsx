@@ -353,6 +353,13 @@ export const KitchenDisplay: React.FC = () => {
                             </div>
                           </div>
 
+                          {/* Modifiers & Addons Summary */}
+                          {it.modifiers_summary && (
+                            <div className="mt-1 flex items-center space-x-1 px-2 py-0.5 rounded bg-purple-500/20 border border-purple-500/40 text-purple-300 text-[10px] font-bold">
+                              <span>⚡ Addons: {it.modifiers_summary}</span>
+                            </div>
+                          )}
+
                           {/* Cooking Notes / Special Instructions */}
                           {it.notes && (
                             <div className="mt-1 flex items-center space-x-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold">

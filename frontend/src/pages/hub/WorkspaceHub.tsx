@@ -117,7 +117,7 @@ export const WorkspaceHub: React.FC = () => {
     {
       id: 'dashboard',
       title: 'Dashboard',
-      subtitle: 'Executive Overview',
+      subtitle: 'Executive Overview & Control',
       buttonText: 'Overview',
       route: '/app',
       icon: LayoutGrid,
@@ -141,34 +141,8 @@ export const WorkspaceHub: React.FC = () => {
       btnHover: 'group-hover:bg-emerald-600 group-hover:border-emerald-500',
     },
     {
-      id: 'inventory',
-      title: 'Inventory',
-      subtitle: 'Stock & Menu Control',
-      buttonText: 'Manage Stock',
-      route: '/app/inventory',
-      icon: Package,
-      color: 'amber',
-      cardBorder: 'hover:border-amber-500/60 border-b-2 border-b-amber-500',
-      iconBg: 'bg-amber-500/20 border border-amber-500/30 text-amber-400',
-      glowBg: 'bg-amber-500/15 group-hover:bg-amber-500/25',
-      btnHover: 'group-hover:bg-amber-600 group-hover:border-amber-500',
-    },
-    {
-      id: 'operations',
-      title: 'Operations',
-      subtitle: 'Orders, Staff & Settings',
-      buttonText: 'Manage',
-      route: '/app/orders',
-      icon: Sliders,
-      color: 'purple',
-      cardBorder: 'hover:border-purple-500/60 border-b-2 border-b-purple-500',
-      iconBg: 'bg-purple-500/20 border border-purple-500/30 text-purple-400',
-      glowBg: 'bg-purple-500/15 group-hover:bg-purple-500/25',
-      btnHover: 'group-hover:bg-purple-600 group-hover:border-purple-500',
-    },
-    {
       id: 'kds',
-      title: 'Kitchen Display',
+      title: 'Kitchen Terminal',
       subtitle: 'Live Kitchen Orders (KDS)',
       buttonText: 'Open KDS',
       route: '/kds',
@@ -288,7 +262,7 @@ export const WorkspaceHub: React.FC = () => {
         </div>
 
         {/* The 5 Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-5 w-full max-w-6xl">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6 w-full max-w-4xl">
           {modules.map((m) => {
             const Icon = m.icon;
             const allowed = canAccessModule(m.id);

@@ -243,16 +243,17 @@ export async function seedDemoRestaurant() {
   }
   console.log(`Seeded ${tables.length} dining tables.`);
 
-  // 8. Categories
-  const categories = [
-    { name: 'Karahi & Handi', sortOrder: 1 },
-    { name: 'BBQ & Grills', sortOrder: 2 },
-    { name: 'Naan & Breads', sortOrder: 3 },
-    { name: 'Beverages & Drinks', sortOrder: 4 },
+  // 8. Categories & Sub-Categories
+  const mainCategories = [
+    { name: 'Karahi & Handi', nameUrdu: 'کڑاہی اور ہانڈی', sortOrder: 1 },
+    { name: 'BBQ & Grills', nameUrdu: 'باربی کیو', sortOrder: 2 },
+    { name: 'Fast Food & Burgers', nameUrdu: 'فاسٹ فوڈ اور برگرز', sortOrder: 3 },
+    { name: 'Naan & Breads', nameUrdu: 'نان اور روٹی', sortOrder: 4 },
+    { name: 'Beverages & Drinks', nameUrdu: 'مشروبات', sortOrder: 5 },
   ];
 
   const catMap = new Map<string, string>();
-  for (const cat of categories) {
+  for (const cat of mainCategories) {
     const { rows: existingCat } = await query(
       'SELECT id FROM categories WHERE tenant_id = $1 AND name = $2',
       [tenantId, cat.name],
@@ -261,16 +262,49 @@ export async function seedDemoRestaurant() {
     if (existingCat.length === 0) {
       const { rows: newCat } = await query(
         `
-        INSERT INTO categories (tenant_id, name, sort_order, is_active)
-        VALUES ($1, $2, $3, true)
+        INSERT INTO categories (tenant_id, name, name_urdu, sort_order, is_active)
+        VALUES ($1, $2, $3, $4, true)
         RETURNING id
         `,
-        [tenantId, cat.name, cat.sortOrder],
+        [tenantId, cat.name, cat.nameUrdu, cat.sortOrder],
         { isSuperAdmin: true }
       );
       catMap.set(cat.name, newCat[0].id);
     } else {
       catMap.set(cat.name, existingCat[0].id);
+    }
+  }
+
+  // Seed Sub-Categories
+  const subCategories = [
+    { name: 'Chicken Karahi Specialties', nameUrdu: 'چکن کڑاہی', parent: 'Karahi & Handi', sortOrder: 1 },
+    { name: 'Mutton & Beef Handi', nameUrdu: 'مٹن ہانڈی', parent: 'Karahi & Handi', sortOrder: 2 },
+    { name: 'Tikka & Boti', nameUrdu: 'ٹکہ بوٹی', parent: 'BBQ & Grills', sortOrder: 1 },
+    { name: 'Seekh Kebabs', nameUrdu: 'سیخ کباب', parent: 'BBQ & Grills', sortOrder: 2 },
+    { name: 'Smash Burgers', nameUrdu: 'سمیش برگرز', parent: 'Fast Food & Burgers', sortOrder: 1 },
+    { name: 'Wraps & Shawarma', nameUrdu: 'ریپس اور شوارما', parent: 'Fast Food & Burgers', sortOrder: 2 },
+  ];
+
+  for (const sub of subCategories) {
+    const parentId = catMap.get(sub.parent);
+    const { rows: existingSub } = await query(
+      'SELECT id FROM categories WHERE tenant_id = $1 AND name = $2',
+      [tenantId, sub.name],
+      { isSuperAdmin: true }
+    );
+    if (existingSub.length === 0) {
+      const { rows: newSub } = await query(
+        `
+        INSERT INTO categories (tenant_id, parent_id, name, name_urdu, sort_order, is_active)
+        VALUES ($1, $2, $3, $4, $5, true)
+        RETURNING id
+        `,
+        [tenantId, parentId, sub.name, sub.nameUrdu, sub.sortOrder],
+        { isSuperAdmin: true }
+      );
+      catMap.set(sub.name, newSub[0].id);
+    } else {
+      catMap.set(sub.name, existingSub[0].id);
     }
   }
 
@@ -523,6 +557,69 @@ export async function seedDemoRestaurant() {
     }
   }
   console.log(`Seeded ${products.length} menu products with recipes.`);
+
+  // 10b. Modifier / Add-on Groups (e.g. Extra Sauces, Cheese, Dips)
+  const addonGroups = [
+    {
+      name: 'Extra Sauces & Dips',
+      nameUrdu: 'اضافی ساس اور چٹنی',
+      minSelect: 0,
+      maxSelect: 5,
+      isRequired: false,
+      options: [
+        { id: '11111111-aaaa-bbbb-cccc-111111111111', name: 'Extra Garlic Mayo Sauce', price: 50, isDefault: false, isActive: true },
+        { id: '22222222-aaaa-bbbb-cccc-222222222222', name: 'Spicy Mint Raita', price: 40, isDefault: false, isActive: true },
+        { id: '33333333-aaaa-bbbb-cccc-333333333333', name: 'Smoky BBQ Dip Sauce', price: 60, isDefault: false, isActive: true },
+        { id: '44444444-aaaa-bbbb-cccc-444444444444', name: 'Special Imlee Chutney', price: 30, isDefault: false, isActive: true },
+      ],
+    },
+    {
+      name: 'Burger & Meal Addons',
+      nameUrdu: 'برگر اور کھانے کے ایڈ آنز',
+      minSelect: 0,
+      maxSelect: 3,
+      isRequired: false,
+      options: [
+        { id: '55555555-aaaa-bbbb-cccc-555555555555', name: 'Extra Cheddar Cheese Slice', price: 70, isDefault: false, isActive: true },
+        { id: '66666666-aaaa-bbbb-cccc-666666666666', name: 'Crispy Fried Egg', price: 60, isDefault: false, isActive: true },
+        { id: '77777777-aaaa-bbbb-cccc-777777777777', name: 'Side French Fries (Small)', price: 150, isDefault: false, isActive: true },
+      ],
+    },
+  ];
+
+  for (const ag of addonGroups) {
+    const { rows: existingAg } = await query(
+      'SELECT id FROM modifier_groups WHERE tenant_id = $1 AND name = $2',
+      [tenantId, ag.name],
+      { isSuperAdmin: true }
+    );
+    let agId: string;
+    if (existingAg.length === 0) {
+      const { rows: newAg } = await query(
+        `INSERT INTO modifier_groups (tenant_id, name, name_urdu, min_select, max_select, is_required, options)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id`,
+        [tenantId, ag.name, ag.nameUrdu, ag.minSelect, ag.maxSelect, ag.isRequired, JSON.stringify(ag.options)],
+        { isSuperAdmin: true }
+      );
+      agId = newAg[0].id;
+    } else {
+      agId = existingAg[0].id;
+    }
+
+    // Attach addon group to all products in tenant
+    const { rows: prods } = await query('SELECT id FROM products WHERE tenant_id = $1', [tenantId], { isSuperAdmin: true });
+    for (const pr of prods) {
+      await query(
+        `INSERT INTO product_modifier_groups (tenant_id, product_id, modifier_group_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (product_id, modifier_group_id) DO NOTHING`,
+        [tenantId, pr.id, agId],
+        { isSuperAdmin: true }
+      );
+    }
+  }
+  console.log('Seeded demo addon modifier groups & linked to products.');
 
   // 11. Initial Open Shift for Cashier
   const { rows: existingShifts } = await query(
