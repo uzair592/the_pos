@@ -28,6 +28,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { FeatureKey } from '@pos/shared';
+import { getTodayRangeISO } from '../../utils/dateUtils.js';
 
 export const RestaurantDashboard: React.FC = () => {
   const { tenant, hasFeature, currentBranchId, currentBranch, branches } = useAuth();

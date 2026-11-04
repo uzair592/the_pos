@@ -27,6 +27,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
+import { getLocalYMD, getLocalDayRangeISO } from '../../utils/dateUtils.js';
 import { Modal } from '../../components/common/Modal.js';
 import {
   exportSalesReportPdf,
@@ -44,7 +45,7 @@ interface FinancialReportsProps {
 }
 
 export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab = 'OVERVIEW' }) => {
-  const { tenant } = useAuth();
+  const { tenant, currentBranchId, branches } = useAuth();
   const [searchParams] = useSearchParams();
   const queryTab = searchParams.get('tab') as ReportTab;
   const [activeTab, setActiveTab] = useState<ReportTab>(queryTab || defaultTab);
@@ -78,13 +79,14 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
   const fetchReports = async () => {
     setLoading(true);
     try {
-      const start = `${startDate}T00:00:00Z`;
-      const end = `${endDate}T23:59:59Z`;
+      const { start, end } = getLocalDayRangeISO(startDate, endDate);
+      const branchId = currentBranchId || (branches.length > 0 ? branches[0].id : null);
+      const branchParam = branchId ? `&branchId=${branchId}` : '';
 
       const [summaryRes, prodRes, catRes] = await Promise.all([
-        api.get(`/financial/reports/summary?startDate=${start}&endDate=${end}`),
-        api.get(`/financial/reports/sales-by-product?startDate=${start}&endDate=${end}`),
-        api.get(`/financial/reports/sales-by-category?startDate=${start}&endDate=${end}`),
+        api.get(`/financial/reports/summary?startDate=${start}&endDate=${end}${branchParam}`),
+        api.get(`/financial/reports/sales-by-product?startDate=${start}&endDate=${end}${branchParam}`),
+        api.get(`/financial/reports/sales-by-category?startDate=${start}&endDate=${end}${branchParam}`),
       ]);
 
       setSummary(summaryRes.report);
@@ -93,19 +95,19 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
 
       // If specific sub-report tab is active or preloaded:
       if (activeTab === 'SALES' || activeTab === 'OVERVIEW') {
-        const salesRes = await api.get(`/financial/reports/sales-detailed?startDate=${start}&endDate=${end}`);
+        const salesRes = await api.get(`/financial/reports/sales-detailed?startDate=${start}&endDate=${end}${branchParam}`);
         setDetailedSales(salesRes.sales || []);
       }
       if (activeTab === 'PURCHASES' || activeTab === 'OVERVIEW') {
-        const purRes = await api.get(`/financial/reports/purchases?startDate=${start}&endDate=${end}`);
+        const purRes = await api.get(`/financial/reports/purchases?startDate=${start}&endDate=${end}${branchParam}`);
         setPurchases(purRes.purchases || []);
       }
       if (activeTab === 'EXPENSES' || activeTab === 'OVERVIEW') {
-        const expRes = await api.get(`/financial/reports/expenses-detailed?startDate=${start}&endDate=${end}`);
+        const expRes = await api.get(`/financial/reports/expenses-detailed?startDate=${start}&endDate=${end}${branchParam}`);
         setExpenses(expRes.expenses || []);
       }
       if (activeTab === 'GROSS_PROFIT' || activeTab === 'OVERVIEW') {
-        const gpRes = await api.get(`/financial/reports/gross-profit-report?startDate=${start}&endDate=${end}`);
+        const gpRes = await api.get(`/financial/reports/gross-profit-report?startDate=${start}&endDate=${end}${branchParam}`);
         setDailyProfits(gpRes.dailyProfit || []);
       }
       if (activeTab === 'BILL_PROFIT_LOSS' || activeTab === 'OVERVIEW') {
@@ -175,11 +177,36 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
     return list;
   }, [billProfitLossReport, billOrderTypeFilter, billSearchQuery, billSortField]);
 
+  const setDatePreset = (preset: 'today' | 'yesterday' | '7days' | 'month') => {
+    const today = getLocalYMD();
+    if (preset === 'today') {
+      setStartDate(today);
+      setEndDate(today);
+    } else if (preset === 'yesterday') {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const ymd = getLocalYMD(y);
+      setStartDate(ymd);
+      setEndDate(ymd);
+    } else if (preset === '7days') {
+      const p = new Date();
+      p.setDate(p.getDate() - 6);
+      setStartDate(getLocalYMD(p));
+      setEndDate(today);
+    } else if (preset === 'month') {
+      const now = new Date();
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      setStartDate(getLocalYMD(first));
+      setEndDate(today);
+    }
+  };
+
   const handleExportBillProfitLossCsv = () => {
-    const start = `${startDate}T00:00:00Z`;
-    const end = `${endDate}T23:59:59Z`;
+    const { start, end } = getLocalDayRangeISO(startDate, endDate);
+    const branchId = currentBranchId || (branches.length > 0 ? branches[0].id : null);
+    const branchParam = branchId ? `&branchId=${branchId}` : '';
     window.open(
-      `/api/financial/reports/bill-profit-loss/export?startDate=${start}&endDate=${end}${
+      `/api/financial/reports/bill-profit-loss/export?startDate=${start}&endDate=${end}${branchParam}${
         billOrderTypeFilter !== 'ALL' ? `&orderType=${billOrderTypeFilter}` : ''
       }`,
       '_blank'
@@ -187,9 +214,10 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
   };
 
   const handleExportCsv = () => {
-    const start = `${startDate}T00:00:00Z`;
-    const end = `${endDate}T23:59:59Z`;
-    window.open(`/api/financial/reports/export?startDate=${start}&endDate=${end}`, '_blank');
+    const { start, end } = getLocalDayRangeISO(startDate, endDate);
+    const branchId = currentBranchId || (branches.length > 0 ? branches[0].id : null);
+    const branchParam = branchId ? `&branchId=${branchId}` : '';
+    window.open(`/api/financial/reports/export?startDate=${start}&endDate=${end}${branchParam}`, '_blank');
   };
 
   return (

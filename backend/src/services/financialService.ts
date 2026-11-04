@@ -172,6 +172,7 @@ export async function generateFinancialSummary(filters: FinancialReportFilters):
   const discounts = Number(o.discounts || 0);
   const taxCollected = Number(o.tax_collected || 0);
   const serviceCharges = Number(o.service_charges || 0);
+  const deliveryFees = Number(o.delivery_fees || 0);
 
   // 1b. Active & Unpaid Orders aggregation (Live operations pipeline)
   let activeQuery = `
@@ -209,7 +210,7 @@ export async function generateFinancialSummary(filters: FinancialReportFilters):
 
   // Net Sales formula: Gross Sales - Discounts - Refunds (Excluding Tax)
   const netSales = Math.max(0, grossSales - discounts - refunds);
-  const totalCollected = netSales + taxCollected + serviceCharges;
+  const totalCollected = netSales + taxCollected + serviceCharges + deliveryFees;
 
   // 3. Cost of Goods Sold (COGS) from exact FIFO batch consumptions
   let cogsQuery = `
