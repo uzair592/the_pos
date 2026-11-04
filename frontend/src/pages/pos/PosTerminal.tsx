@@ -399,7 +399,7 @@ export const PosTerminal: React.FC = () => {
     setIsSubmittingKitchen(true);
     try {
       const createOrderRes = await api.post('/orders', {
-        branchId: user!.branchId,
+        branchId: currentBranchId || user?.branchId || branches[0]?.id,
         orderType,
         tableId: selectedTable?.id || null,
         customerId: null,
@@ -529,7 +529,7 @@ export const PosTerminal: React.FC = () => {
       } else {
         // Immediate counter payment: create order first
         const createOrderRes = await api.post('/orders', {
-          branchId: user!.branchId,
+          branchId: currentBranchId || user?.branchId || branches[0]?.id,
           orderType,
           tableId: selectedTable?.id || null,
           customerId: null,

@@ -656,7 +656,7 @@ export async function financialRoutes(fastify: FastifyInstance) {
           COALESCE(SUM(o.grand_total), 0) as unpaid_orders_amount
         FROM orders o
         WHERE o.tenant_id = $1 AND o.branch_id = b.id
-          AND o.status IN ('PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'ON_HOLD')
+          AND o.status IN ('PENDING', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'ON_HOLD')
       ) active_data ON true
       WHERE b.tenant_id = $1 AND b.is_active = true
       ORDER BY b.is_main_branch DESC, b.name ASC

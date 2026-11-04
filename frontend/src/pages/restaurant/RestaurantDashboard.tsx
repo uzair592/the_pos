@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { StatCard } from '../../components/common/StatCard.js';
+import { BranchSelector } from '../../components/common/BranchSelector.js';
 import {
   DollarSign,
   ShoppingBag,
@@ -25,11 +26,12 @@ import {
   Scale,
   RefreshCw,
   Bell,
+  MapPin,
 } from 'lucide-react';
 import { FeatureKey } from '@pos/shared';
 
 export const RestaurantDashboard: React.FC = () => {
-  const { tenant, hasFeature, currentBranchId, currentBranch, switchBranch } = useAuth();
+  const { tenant, hasFeature, currentBranchId, currentBranch, switchBranch, branches } = useAuth();
   const [summary, setSummary] = useState<any>(null);
   const [headOfficeSummary, setHeadOfficeSummary] = useState<any>(null);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
@@ -52,9 +54,10 @@ export const RestaurantDashboard: React.FC = () => {
     }
 
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const start = `${today}T00:00:00Z`;
-      const end = `${today}T23:59:59Z`;
+      // Local start of day and end of day to respect user's local timezone (e.g. Asia/Karachi UTC+5)
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).toISOString();
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
 
       if (isHeadOffice) {
         // Head Office Consolidated Mode
@@ -75,17 +78,19 @@ export const RestaurantDashboard: React.FC = () => {
       } else {
         // Specific Branch Mode
         const branchParam = `&branchId=${currentBranchId}`;
-        const [summaryRes, ordersRes, activeRes, productsRes] = await Promise.all([
+        const [summaryRes, ordersRes, activeRes, productsRes, hoRes] = await Promise.all([
           api.get(`/financial/reports/summary?startDate=${start}&endDate=${end}${branchParam}`),
           api.get(`/orders?limit=10&branchId=${currentBranchId}`),
           api.get(`/orders/active?branchId=${currentBranchId}`),
           api.get(`/financial/reports/sales-by-product?startDate=${start}&endDate=${end}${branchParam}`),
+          api.get(`/financial/reports/head-office-summary?startDate=${start}&endDate=${end}`).catch(() => null),
         ]);
 
         setSummary(summaryRes.report);
         setRecentOrders(ordersRes.orders || []);
         setActiveOrders(activeRes.orders || []);
         setTopProducts((productsRes.products || []).slice(0, 6));
+        if (hoRes) setHeadOfficeSummary(hoRes);
 
         if (hasFeature(FeatureKey.INVENTORY)) {
           const stockRes = await api.get(`/inventory/ingredients?branchId=${currentBranchId}&lowStockOnly=true`);
@@ -136,6 +141,12 @@ export const RestaurantDashboard: React.FC = () => {
             Kitchen Cooking
           </span>
         );
+      case 'CONFIRMED':
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+            Order Confirmed
+          </span>
+        );
       case 'CANCELLED':
         return (
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
@@ -165,16 +176,21 @@ export const RestaurantDashboard: React.FC = () => {
   );
   const inKitchenOrders = activeOrders.filter(
     (o) =>
-      ['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.status) ||
-      ['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.prep_status)
+      ['PENDING', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.status) ||
+      ['PENDING', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.prep_status)
   );
   const totalUnpaidAmount = activeOrders.reduce((sum, o) => sum + Number(o.grand_total || 0), 0);
   const servedUnpaidAmount = servedUnpaidOrders.reduce((sum, o) => sum + Number(o.grand_total || 0), 0);
 
+  // Other branches with sales if current branch has 0
+  const otherBranchesWithSales = (headOfficeSummary?.branches || []).filter(
+    (b: any) => b.branch_id !== currentBranchId && (Number(b.net_sales || 0) > 0 || Number(b.total_orders || 0) > 0)
+  );
+
   // Head Office Consolidated Dashboard View
   if (isHeadOffice && headOfficeSummary) {
     const c = headOfficeSummary.consolidated || {};
-    const branches: any[] = headOfficeSummary.branches || [];
+    const branchList: any[] = headOfficeSummary.branches || [];
 
     const grossMarginPercent = c.netSales > 0
       ? ((c.grossProfit / c.netSales) * 100).toFixed(1)
@@ -202,12 +218,15 @@ export const RestaurantDashboard: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Consolidated financials, FIFO COGS, and branch-by-branch performance across {branches.length} branches
+                Consolidated financials, FIFO COGS, and branch-by-branch performance across {branchList.length} branches
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Branch Switcher Dropdown */}
+            {branches.length > 0 && <BranchSelector variant="navbar" />}
+
             {/* Live Auto-Sync Status Indicator */}
             <div className="flex items-center space-x-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-xl text-xs shadow-sm">
               <span className="relative flex h-2 w-2">
@@ -366,7 +385,7 @@ export const RestaurantDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {branches.map((b) => (
+                {branchList.map((b) => (
                   <tr key={b.branch_id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="py-3.5 px-4">
                       <div className="flex items-center space-x-2">
@@ -558,6 +577,9 @@ export const RestaurantDashboard: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Direct Branch Switcher in Dashboard Header */}
+          {branches.length > 0 && <BranchSelector variant="navbar" />}
+
           {/* Live Auto-Sync Status Indicator */}
           <div className="flex items-center space-x-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl text-xs shadow-sm">
             <span className="relative flex h-2 w-2">
@@ -604,6 +626,51 @@ export const RestaurantDashboard: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Multi-Branch Sales Notice if Current Branch has 0 sales today but other locations have sales */}
+      {(summary?.totalOrders || 0) === 0 && activeOrders.length === 0 && otherBranchesWithSales.length > 0 && (
+        <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-blue-500/10 border-2 border-blue-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-sm">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shadow-md shrink-0">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                  Active Branch: <span className="text-blue-600 dark:text-blue-400 font-black">{currentBranch?.name || 'Current Branch'}</span>
+                </h4>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-extrabold text-[10px]">
+                  0 Sales at This Location Today
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                Sales recorded at other locations:{' '}
+                <strong className="text-slate-900 dark:text-white">
+                  {otherBranchesWithSales.map((b: any) => `${b.branch_name} (${b.total_orders} orders • ${currencySymbol} ${Number(b.net_sales).toLocaleString()})`).join(', ')}
+                </strong>
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {otherBranchesWithSales.length === 1 && (
+              <button
+                onClick={() => switchBranch(otherBranchesWithSales[0].branch_id)}
+                className="px-3.5 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold text-xs shadow-sm transition-all flex items-center space-x-1.5"
+              >
+                <span>Switch to {otherBranchesWithSales[0].branch_name}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              onClick={() => switchBranch(null)}
+              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm transition-all flex items-center space-x-1.5"
+            >
+              <span>View All Branches (Head Office)</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Low Stock Banner Alert */}
       {lowStock.length > 0 && (
@@ -703,7 +770,11 @@ export const RestaurantDashboard: React.FC = () => {
         <StatCard
           title="Today's Net Sales"
           value={`${currencySymbol} ${Number(summary?.netSales || 0).toLocaleString()}`}
-          subtitle={`${summary?.totalOrders || 0} completed orders`}
+          subtitle={
+            servedUnpaidOrders.length > 0
+              ? `${summary?.totalOrders || 0} completed • ${servedUnpaidOrders.length} served (${currencySymbol} ${servedUnpaidAmount.toLocaleString()} unpaid)`
+              : `${summary?.totalOrders || 0} completed orders`
+          }
           icon={DollarSign}
           color="orange"
         />
@@ -751,7 +822,7 @@ export const RestaurantDashboard: React.FC = () => {
           <div>
             <p className="text-[11px] text-slate-400 font-semibold uppercase">Kitchen In-Flight</p>
             <p className="text-base font-black text-slate-900 dark:text-white">
-              {inKitchenOrders.length} Preparing Orders
+              {inKitchenOrders.length} Active Orders
             </p>
           </div>
         </div>

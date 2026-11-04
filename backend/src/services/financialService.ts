@@ -181,7 +181,7 @@ export async function generateFinancialSummary(filters: FinancialReportFilters):
       COALESCE(SUM(grand_total), 0)::numeric as unpaid_amount
     FROM orders
     WHERE tenant_id = $1
-      AND status IN ('PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'ON_HOLD')
+      AND status IN ('PENDING', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'ON_HOLD')
   `;
   const activeParams: any[] = [tenantId];
   if (branchId) {
