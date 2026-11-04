@@ -388,9 +388,15 @@ export const MenuCatalog: React.FC = () => {
     return acc + (Number(it.quantity) || 0) * unitCost;
   }, 0) / (Number(productForm.recipe.yieldCount) || 1);
 
-  const modalGrossProfit = Math.max(0, Number(productForm.basePrice || 0) - modalCalculatedCost);
-  const modalGrossMarginPercent = Number(productForm.basePrice) > 0
-    ? Math.round((modalGrossProfit / Number(productForm.basePrice)) * 100)
+  // Effective cost price: manual input if set (>0), otherwise fallback to calculated recipe cost
+  const effectiveCostPrice = Number(productForm.costPrice) > 0
+    ? Number(productForm.costPrice)
+    : modalCalculatedCost;
+
+  const modalBasePrice = Number(productForm.basePrice || 0);
+  const modalGrossProfit = Math.max(0, modalBasePrice - effectiveCostPrice);
+  const modalGrossMarginPercent = modalBasePrice > 0
+    ? Math.round((modalGrossProfit / modalBasePrice) * 100)
     : 0;
 
   const handleSaveProduct = async (e: React.FormEvent) => {
@@ -403,7 +409,9 @@ export const MenuCatalog: React.FC = () => {
         sku: productForm.sku,
         barcode: productForm.barcode || undefined,
         basePrice: Number(productForm.basePrice),
-        costPrice: modalCalculatedCost > 0 ? modalCalculatedCost : Number(productForm.costPrice || 0),
+        costPrice: Number(productForm.costPrice) > 0
+          ? Number(productForm.costPrice)
+          : (modalCalculatedCost > 0 ? Number(modalCalculatedCost.toFixed(2)) : 0),
         station: productForm.station,
         trackInventory: productForm.trackInventory,
         modifierGroupIds: productForm.modifierGroupIds,
@@ -626,7 +634,7 @@ export const MenuCatalog: React.FC = () => {
                     </tr>
                   ) : (
                     filteredProducts.map((p) => {
-                      const costPrice = Number(p.calculatedCost || p.cost_price || 0);
+                      const costPrice = Number(p.cost_price || p.calculatedCost || 0);
                       const basePrice = Number(p.base_price || 0);
                       const grossProfit = Math.max(0, basePrice - costPrice);
                       const marginPercent = basePrice > 0 ? Math.round((grossProfit / basePrice) * 100) : 0;
@@ -1259,27 +1267,97 @@ export const MenuCatalog: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Selling Price ({currencySymbol}) *
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                required
-                value={productForm.basePrice}
-                onChange={(e) => setProductForm({ ...productForm, basePrice: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-black text-slate-900 dark:text-white text-base"
-              />
+          {/* Pricing, Costing & Live Margin Card */}
+          <div className="bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-200 mb-1">
+                  Selling Price ({currencySymbol}) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs select-none">
+                    {currencySymbol}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={productForm.basePrice || ''}
+                    onChange={(e) => setProductForm({ ...productForm, basePrice: parseFloat(e.target.value) || 0 })}
+                    placeholder="0.00"
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs font-black text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Retail menu selling price to customer</p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-200">
+                    Product Cost ({currencySymbol}) *
+                  </label>
+                  {modalCalculatedCost > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setProductForm({ ...productForm, costPrice: Number(modalCalculatedCost.toFixed(2)) })}
+                      className="text-[10px] text-brand-600 dark:text-brand-400 hover:text-brand-700 font-bold hover:underline flex items-center space-x-1"
+                      title="Sync cost with current recipe calculation"
+                    >
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>Use Recipe Cost ({currencySymbol} {modalCalculatedCost.toFixed(2)})</span>
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs select-none">
+                    {currencySymbol}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={productForm.costPrice === 0 ? '' : productForm.costPrice}
+                    onChange={(e) => setProductForm({ ...productForm, costPrice: parseFloat(e.target.value) || 0 })}
+                    placeholder={modalCalculatedCost > 0 ? modalCalculatedCost.toFixed(2) : "0.00"}
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs font-bold text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {modalCalculatedCost > 0
+                    ? `Recipe ingredients estimate: ${currencySymbol} ${modalCalculatedCost.toFixed(2)}`
+                    : 'Wholesale, preparation, or raw material cost per item'}
+                </p>
+              </div>
             </div>
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Calculated Ingredient Cost ({currencySymbol})
-              </label>
-              <div className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-amber-600 dark:text-amber-400">
-                {currencySymbol} {modalCalculatedCost.toLocaleString()}
+
+            {/* Live Profitability & Margin Summary Strip */}
+            <div className="pt-2.5 border-t border-slate-200/80 dark:border-slate-700/80 grid grid-cols-3 gap-2 text-center">
+              <div className="bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200/60 dark:border-slate-700/60">
+                <span className="text-[10px] text-slate-400 block font-semibold">Effective Cost</span>
+                <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 font-mono">
+                  {currencySymbol} {effectiveCostPrice.toFixed(2)}
+                </span>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200/60 dark:border-slate-700/60">
+                <span className="text-[10px] text-slate-400 block font-semibold">Gross Profit / Item</span>
+                <span className={`text-xs font-black font-mono ${modalGrossProfit > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`}>
+                  {currencySymbol} {modalGrossProfit.toFixed(2)}
+                </span>
+              </div>
+
+              <div className={`p-2 rounded-lg border flex flex-col justify-center ${
+                modalGrossMarginPercent >= 50
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  : modalGrossMarginPercent >= 20
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
+              }`}>
+                <span className="text-[10px] opacity-80 block font-semibold">Profit Margin</span>
+                <span className="text-xs font-black">
+                  {modalGrossMarginPercent}%
+                </span>
               </div>
             </div>
           </div>
