@@ -1,3 +1,4 @@
+import { BranchSelector } from '../../components/common/BranchSelector.js';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.js';
@@ -228,6 +229,9 @@ export const WorkspaceHub: React.FC = () => {
         {/* User Badge & Switch Staff / Logout Controls */}
         <div className="flex items-center space-x-2.5">
           {!isSuperAdmin && (
+            <BranchSelector variant="hub" />
+          )}
+          {!isSuperAdmin && (
             <button
               onClick={() => {
                 setSelectedStaffEmail(null);
@@ -277,6 +281,10 @@ export const WorkspaceHub: React.FC = () => {
           <p className="text-xs sm:text-sm text-slate-400 mt-2 font-medium max-w-md mx-auto">
             Select your workspace module to begin operations
           </p>
+          <div className="mt-4 flex items-center justify-center space-x-2">
+            <span className="text-xs font-semibold text-slate-400">Branch Location:</span>
+            <BranchSelector variant="hub" />
+          </div>
         </div>
 
         {/* The 5 Cards Grid */}

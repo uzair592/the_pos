@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
+import { BranchSelector } from './BranchSelector.js';
 import {
   UtensilsCrossed,
   Store,
@@ -50,10 +51,13 @@ export const Navbar: React.FC = () => {
             </Link>
           </div>
 
-          {/* Quick Action Navigation Buttons */}
-          <div className="flex items-center space-x-3">
+          {/* Quick Action Navigation Buttons & Branch Switcher */}
+          <div className="flex items-center space-x-2.5 sm:space-x-3">
             {!isSuperAdmin && (
               <>
+                {/* Global Branch Switcher */}
+                <BranchSelector variant="navbar" />
+
                 {/* Workspace Hub Launcher */}
                 <Link
                   to="/hub"
@@ -98,18 +102,22 @@ export const Navbar: React.FC = () => {
             {/* User Badge */}
             <div className="flex items-center space-x-2.5 pl-3 border-l border-slate-200 dark:border-slate-800">
               <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300">
-                {isSuperAdmin ? <ShieldCheck className="w-4 h-4 text-brand-600" /> : <User className="w-4 h-4" />}
+                <User className="w-4 h-4" />
               </div>
-              <div className="hidden md:block text-left">
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">{user?.fullName || 'User'}</p>
-                <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  {user?.role?.replace('_', ' ')}
-                </p>
+              <div className="hidden lg:block">
+                <span className="text-xs font-bold text-slate-900 dark:text-white block leading-tight">
+                  {user?.fullName || 'User'}
+                </span>
+                <span className="text-[10px] text-slate-400 capitalize block">
+                  {user?.role?.replace('_', ' ').toLowerCase() || 'Staff'}
+                </span>
               </div>
+
+              {/* Logout Button */}
               <button
                 onClick={handleLogout}
-                title="Sign Out"
-                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors"
+                title="Sign out"
+                className="p-2 text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors ml-1"
               >
                 <LogOut className="w-4 h-4" />
               </button>

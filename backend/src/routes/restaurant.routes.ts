@@ -499,6 +499,29 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
     return reply.send({ devices: rows });
   });
 
+  fastify.put('/api/restaurant/devices/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    const { isActive, defaultWorkspace, deviceName } = req.body as any;
+
+    const { rows } = await query(
+      `
+      UPDATE registered_devices
+      SET is_active = COALESCE($1, is_active),
+          default_workspace = COALESCE($2, default_workspace),
+          device_name = COALESCE($3, device_name),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4 AND tenant_id = $5
+      RETURNING *
+      `,
+      [isActive !== undefined ? isActive : null, defaultWorkspace || null, deviceName || null, id, tenantId],
+      { tenantId }
+    );
+
+    if (rows.length === 0) return reply.status(404).send({ error: 'Device not found' });
+    return reply.send({ device: rows[0], message: 'Device status updated' });
+  });
+
   fastify.delete('/api/restaurant/devices/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const tenantId = req.user!.tenantId!;

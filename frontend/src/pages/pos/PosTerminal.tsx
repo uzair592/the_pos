@@ -1,3 +1,4 @@
+import { BranchSelector } from '../../components/common/BranchSelector.js';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
@@ -42,7 +43,7 @@ import {
 import { OrderType, PaymentMethod, SystemRole } from '@pos/shared';
 
 export const PosTerminal: React.FC = () => {
-  const { user, tenant } = useAuth();
+  const { user, tenant, currentBranchId, currentBranch, branches } = useAuth();
   const { success, error, info } = useToast();
   const { theme, toggleTheme } = useTheme();
 
@@ -114,6 +115,83 @@ export const PosTerminal: React.FC = () => {
       setUnlockLoading(false);
     }
   };
+
+  // Item Cooking Notes Modal
+  const [noteItemIndex, setNoteItemIndex] = useState<number | null>(null);
+  const [itemNoteText, setItemNoteText] = useState('');
+
+  // Table Transfer Modal
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [orderToTransfer, setOrderToTransfer] = useState<any | null>(null);
+  const [targetTableId, setTargetTableId] = useState('');
+
+  // Offline Order Queue
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [offlineQueue, setOfflineQueue] = useState<any[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('pos_offline_orders') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  // Offline Listeners & Sync
+  const syncOfflineOrders = async () => {
+    try {
+      const queue = JSON.parse(localStorage.getItem('pos_offline_orders') || '[]');
+      if (!queue || queue.length === 0) return;
+      info(`Syncing ${queue.length} offline orders to cloud server...`);
+      const remaining = [];
+      for (const ord of queue) {
+        try {
+          await api.post('/orders', {
+            branchId: ord.branchId,
+            orderType: ord.orderType,
+            tableId: ord.tableId,
+            customerName: ord.customerName,
+            customerPhone: ord.customerPhone,
+            billDiscountPercent: ord.billDiscountPercent,
+            billDiscountAmount: ord.billDiscountAmount,
+            orderNotes: ord.orderNotes,
+            idempotencyKey: ord.localId,
+            items: ord.items.map((i: any) => ({
+              productId: i.productId,
+              variantId: i.variantId,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              itemDiscount: i.itemDiscount,
+              notes: i.notes,
+            })),
+          });
+        } catch (e) {
+          remaining.push(ord);
+        }
+      }
+      setOfflineQueue(remaining);
+      localStorage.setItem('pos_offline_orders', JSON.stringify(remaining));
+      if (remaining.length === 0) {
+        success('All queued offline orders synced successfully!');
+      }
+      fetchInitialData();
+      fetchUnpaidOrders();
+    } catch (err) {
+      console.error('Failed to sync offline orders:', err);
+    }
+  };
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      syncOfflineOrders();
+    };
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Multi-Device Sync tracking
   const lastEventIdRef = useRef<string | null>(null);
@@ -503,6 +581,26 @@ export const PosTerminal: React.FC = () => {
     }
   };
 
+  const handleTransferTable = async () => {
+    if (!orderToTransfer || !targetTableId) {
+      error('Please select destination table');
+      return;
+    }
+    try {
+      const res = await api.post(`/orders/${orderToTransfer.id}/transfer-table`, {
+        newTableId: targetTableId,
+      });
+      success(res.message || 'Table transferred successfully!');
+      setIsTransferModalOpen(false);
+      setOrderToTransfer(null);
+      setTargetTableId('');
+      fetchInitialData();
+      fetchUnpaidOrders();
+    } catch (err: any) {
+      error(err.message || 'Failed to transfer table');
+    }
+  };
+
   // Served Count Calculation
   const servedCount = unpaidOrders.filter((o) => o.status === 'SERVED').length;
   const filteredUnpaidOrders = unpaidOrders.filter((o) => {
@@ -537,7 +635,8 @@ export const PosTerminal: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center space-x-2.5 text-xs">
+        <div className="flex items-center space-x-2 text-xs">
+          <BranchSelector variant="hub" />
           {/* ==================== UNPAID ORDERS BUTTON & BADGE ==================== */}
           <button
             onClick={() => {
@@ -1222,6 +1321,148 @@ export const PosTerminal: React.FC = () => {
       </Modal>
 
       {/* Modal: Printable Receipt on Complete */}
+      {/* Modal: Item Cooking Note & Instructions */}
+      <Modal
+        isOpen={noteItemIndex !== null}
+        onClose={() => setNoteItemIndex(null)}
+        title="Item Cooking Note & Instructions"
+        maxWidth="sm"
+      >
+        <div className="space-y-3 text-xs">
+          <p className="text-slate-500 dark:text-slate-400">
+            Select standard cooking instructions or enter special preparation instructions for the kitchen:
+          </p>
+
+          <div className="flex flex-wrap gap-1.5">
+            {['🌶️ Less Spicy', '🔥 Extra Spicy', '🧅 No Onions', '🧀 Extra Cheese', '🥩 Well Done', '🥡 Pack Separately', 'Urgent Rush'].map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => setItemNoteText(chip)}
+                className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 dark:hover:bg-amber-950/40 hover:text-amber-800 dark:hover:text-amber-300 rounded-lg font-medium text-[11px] transition-colors border border-slate-200 dark:border-slate-700"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Custom Instruction</label>
+            <input
+              type="text"
+              value={itemNoteText}
+              onChange={(e) => setItemNoteText(e.target.value)}
+              placeholder="e.g. Mild gravy, serve with extra spoons"
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+            />
+          </div>
+
+          <div className="flex justify-end space-x-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (noteItemIndex !== null) {
+                  const updated = [...cartItems];
+                  updated[noteItemIndex].notes = '';
+                  setCartItems(updated);
+                }
+                setNoteItemIndex(null);
+              }}
+              className="px-3 py-1.5 text-slate-500 hover:text-rose-500 font-semibold"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (noteItemIndex !== null) {
+                  const updated = [...cartItems];
+                  updated[noteItemIndex].notes = itemNoteText.trim();
+                  setCartItems(updated);
+                }
+                setNoteItemIndex(null);
+              }}
+              className="px-4 py-1.5 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg shadow-sm"
+            >
+              Save Note
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Transfer Table */}
+      <Modal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        title="Transfer Table"
+        maxWidth="md"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-xl">
+            <p className="font-bold text-blue-900 dark:text-blue-200">
+              Transfer Order #{orderToTransfer?.order_number}
+            </p>
+            <p className="text-blue-700 dark:text-blue-300 text-[11px] mt-0.5">
+              Current Table: <strong>{orderToTransfer?.table_number || 'None'}</strong> • Grand Total: {currencySymbol} {Number(orderToTransfer?.grand_total || 0).toLocaleString()}
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-2">
+              Select Destination Dining Table:
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-56 overflow-y-auto p-1">
+              {tables
+                .filter((t) => t.id !== orderToTransfer?.table_id)
+                .map((t) => {
+                  const isAvailable = t.status === 'AVAILABLE';
+                  const isSelected = targetTableId === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      disabled={!isAvailable}
+                      onClick={() => setTargetTableId(t.id)}
+                      className={`p-3 rounded-xl border text-center transition-all ${
+                        isSelected
+                          ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400/50 shadow-md'
+                          : isAvailable
+                          ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-blue-400 text-slate-800 dark:text-slate-200'
+                          : 'bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 opacity-50 cursor-not-allowed'
+                      }`}
+                    >
+                      <p className="font-black text-sm">{t.table_number}</p>
+                      <p className="text-[10px] mt-0.5 opacity-80">{t.capacity} seats</p>
+                      <span className={`inline-block mt-1 text-[9px] px-1 rounded uppercase font-bold ${
+                        isAvailable ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                      }`}>
+                        {t.status}
+                      </span>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setIsTransferModalOpen(false)}
+              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-400"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleTransferTable}
+              disabled={!targetTableId}
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-md transition-all disabled:opacity-40"
+            >
+              Move Order to Selected Table
+            </button>
+          </div>
+        </div>
+      </Modal>
       <ReceiptModal
         isOpen={!!completedReceipt}
         onClose={() => setCompletedReceipt(null)}

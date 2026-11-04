@@ -527,4 +527,200 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: err.message });
     }
   });
+
+  /**
+   * ==========================================
+   * Inter-Branch Stock Transfers
+   * ==========================================
+   */
+  fastify.get('/api/inventory/transfers', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, status } = req.query as { branchId?: string; status?: string };
+
+    let sql = `
+      SELECT st.*,
+             fb.name as from_branch_name, fb.code as from_branch_code,
+             tb.name as to_branch_name, tb.code as to_branch_code,
+             COALESCE(i.name, p.name) as item_name,
+             COALESCE(i.unit, 'pcs') as unit,
+             u1.full_name as requested_by_name,
+             u2.full_name as dispatched_by_name,
+             u3.full_name as received_by_name
+      FROM stock_transfers st
+      JOIN branches fb ON fb.id = st.from_branch_id
+      JOIN branches tb ON tb.id = st.to_branch_id
+      LEFT JOIN ingredients i ON i.id = st.ingredient_id
+      LEFT JOIN products p ON p.id = st.product_id
+      LEFT JOIN users u1 ON u1.id = st.requested_by_id
+      LEFT JOIN users u2 ON u2.id = st.dispatched_by_id
+      LEFT JOIN users u3 ON u3.id = st.received_by_id
+      WHERE st.tenant_id = $1
+    `;
+    const params: any[] = [tenantId];
+
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND (st.from_branch_id = ${params.length} OR st.to_branch_id = ${params.length})`;
+    }
+    if (status) {
+      params.push(status);
+      sql += ` AND st.status = ${params.length}`;
+    }
+
+    sql += ` ORDER BY st.created_at DESC`;
+
+    const { rows: transfers } = await query(sql, params, { tenantId });
+    return reply.send({ transfers });
+  });
+
+  fastify.post('/api/inventory/transfers', {
+    preHandler: [requirePermission(Permission.INVENTORY_MANAGE)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { fromBranchId, toBranchId, ingredientId, productId, quantity, notes } = req.body as any;
+
+    if (!fromBranchId || !toBranchId || (!ingredientId && !productId) || !quantity || Number(quantity) <= 0) {
+      return reply.status(400).send({ error: 'fromBranchId, toBranchId, quantity, and an ingredient or product are required' });
+    }
+
+    if (fromBranchId === toBranchId) {
+      return reply.status(400).send({ error: 'Origin and destination branches must be different' });
+    }
+
+    // Get unit cost from ingredient or product
+    let unitCost = 0;
+    if (ingredientId) {
+      const { rows: ingRows } = await query('SELECT cost_per_unit FROM ingredients WHERE id = $1 AND tenant_id = $2', [ingredientId, tenantId], { tenantId });
+      if (ingRows.length > 0) unitCost = Number(ingRows[0].cost_per_unit);
+    } else if (productId) {
+      const { rows: prodRows } = await query('SELECT cost_price, base_price FROM products WHERE id = $1 AND tenant_id = $2', [productId, tenantId], { tenantId });
+      if (prodRows.length > 0) unitCost = Number(prodRows[0].cost_price || prodRows[0].base_price);
+    }
+
+    const transferNumber = `TR-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
+    const totalCost = Number(quantity) * unitCost;
+
+    const { rows } = await query(
+      `
+      INSERT INTO stock_transfers (
+        tenant_id, transfer_number, from_branch_id, to_branch_id, ingredient_id, product_id,
+        quantity, unit_cost, total_cost, status, notes, requested_by_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING', $10, $11)
+      RETURNING *
+      `,
+      [tenantId, transferNumber, fromBranchId, toBranchId, ingredientId || null, productId || null, quantity, unitCost, totalCost, notes || null, req.user!.id],
+      { tenantId }
+    );
+
+    return reply.status(201).send({ transfer: rows[0] });
+  });
+
+  fastify.put('/api/inventory/transfers/:id/dispatch', {
+    preHandler: [requirePermission(Permission.INVENTORY_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    const result = await withTransaction(async (client) => {
+      const { rows: trRows } = await client.query(
+        'SELECT * FROM stock_transfers WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+        [id, tenantId]
+      );
+
+      if (trRows.length === 0) throw new Error('Stock transfer not found');
+      const tr = trRows[0];
+      if (tr.status !== 'PENDING') throw new Error(`Cannot dispatch transfer in ${tr.status} status`);
+
+      // Deduct stock from from_branch
+      if (tr.ingredient_id) {
+        await client.query(
+          `UPDATE branch_stocks 
+           SET current_stock = GREATEST(0, current_stock - $1), last_updated = CURRENT_TIMESTAMP
+           WHERE branch_id = $2 AND ingredient_id = $3 AND tenant_id = $4`,
+          [tr.quantity, tr.from_branch_id, tr.ingredient_id, tenantId]
+        );
+
+        await client.query(
+          `INSERT INTO stock_movements (
+             tenant_id, branch_id, ingredient_id, movement_type, quantity, unit_cost, total_cost,
+             reference_type, reference_id, notes, recorded_by_user_id
+           )
+           VALUES ($1, $2, $3, 'TRANSFER_OUT', $4, $5, $6, 'TRANSFER', $7, 'Inter-branch transfer dispatch', $8)`,
+          [tenantId, tr.from_branch_id, tr.ingredient_id, tr.quantity, tr.unit_cost, tr.total_cost, tr.id, req.user!.id]
+        );
+      }
+
+      const { rows: updated } = await client.query(
+        `UPDATE stock_transfers 
+         SET status = 'DISPATCHED', dispatched_at = CURRENT_TIMESTAMP, dispatched_by_id = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2 RETURNING *`,
+        [req.user!.id, id]
+      );
+
+      return updated[0];
+    }, { tenantId });
+
+    return reply.send({ transfer: result, message: 'Stock transfer dispatched successfully' });
+  });
+
+  fastify.put('/api/inventory/transfers/:id/receive', {
+    preHandler: [requirePermission(Permission.INVENTORY_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    const result = await withTransaction(async (client) => {
+      const { rows: trRows } = await client.query(
+        'SELECT * FROM stock_transfers WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+        [id, tenantId]
+      );
+
+      if (trRows.length === 0) throw new Error('Stock transfer not found');
+      const tr = trRows[0];
+      if (tr.status !== 'DISPATCHED') throw new Error(`Cannot receive transfer in ${tr.status} status. It must be dispatched first.`);
+
+      // Add stock to to_branch and create FIFO batch
+      if (tr.ingredient_id) {
+        await client.query(
+          `INSERT INTO branch_stocks (tenant_id, branch_id, ingredient_id, current_stock, cost_per_unit)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (branch_id, ingredient_id) DO UPDATE SET
+             current_stock = branch_stocks.current_stock + $4,
+             cost_per_unit = $5,
+             last_updated = CURRENT_TIMESTAMP`,
+          [tenantId, tr.to_branch_id, tr.ingredient_id, tr.quantity, tr.unit_cost]
+        );
+
+        // FIFO stock lot
+        await client.query(
+          `INSERT INTO inventory_batches (
+             tenant_id, branch_id, ingredient_id, quantity_received, quantity_remaining, unit_cost, received_at, status
+           )
+           VALUES ($1, $2, $3, $4, $4, $5, CURRENT_TIMESTAMP, 'ACTIVE')`,
+          [tenantId, tr.to_branch_id, tr.ingredient_id, tr.quantity, tr.unit_cost]
+        );
+
+        await client.query(
+          `INSERT INTO stock_movements (
+             tenant_id, branch_id, ingredient_id, movement_type, quantity, unit_cost, total_cost,
+             reference_type, reference_id, notes, recorded_by_user_id
+           )
+           VALUES ($1, $2, $3, 'TRANSFER_IN', $4, $5, $6, 'TRANSFER', $7, 'Inter-branch transfer received into FIFO batch', $8)`,
+          [tenantId, tr.to_branch_id, tr.ingredient_id, tr.quantity, tr.unit_cost, tr.total_cost, tr.id, req.user!.id]
+        );
+      }
+
+      const { rows: updated } = await client.query(
+        `UPDATE stock_transfers 
+         SET status = 'RECEIVED', received_at = CURRENT_TIMESTAMP, received_by_id = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2 RETURNING *`,
+        [req.user!.id, id]
+      );
+
+      return updated[0];
+    }, { tenantId });
+
+    return reply.send({ transfer: result, message: 'Stock received into destination branch inventory batch' });
+  });
 }

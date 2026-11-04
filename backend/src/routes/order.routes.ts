@@ -367,6 +367,90 @@ export async function orderRoutes(fastify: FastifyInstance) {
   /**
    * Get Order Details
    */
+  /**
+   * Table Transfer (Move active order from Table A to Table B)
+   */
+  fastify.post('/api/orders/:id/transfer-table', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    const { newTableId } = req.body as { newTableId: string };
+
+    if (!newTableId) {
+      return reply.status(400).send({ error: 'newTableId is required' });
+    }
+
+    try {
+      const result = await withTransaction(async (client) => {
+        // 1. Get order
+        const { rows: oRows } = await client.query(
+          'SELECT id, table_id, order_number, branch_id FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+          [id, tenantId]
+        );
+        if (oRows.length === 0) throw new Error('Order not found');
+        const order = oRows[0];
+        const oldTableId = order.table_id;
+
+        // 2. Check new table
+        const { rows: tRows } = await client.query(
+          'SELECT id, table_number, status FROM restaurant_tables WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+          [newTableId, tenantId]
+        );
+        if (tRows.length === 0) throw new Error('New table not found');
+        const newTable = tRows[0];
+
+        // 3. Update order table_id
+        await client.query(
+          'UPDATE orders SET table_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+          [newTableId, id]
+        );
+
+        // 4. Update new table status to OCCUPIED and current_order_id
+        await client.query(
+          "UPDATE restaurant_tables SET status = 'OCCUPIED', current_order_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+          [id, newTableId]
+        );
+
+        // 5. If oldTableId, free it if no other active orders on it
+        if (oldTableId && oldTableId !== newTableId) {
+          const { rows: activeOther } = await client.query(
+            "SELECT id FROM orders WHERE table_id = $1 AND id != $2 AND status NOT IN ('COMPLETED', 'CANCELLED')",
+            [oldTableId, id]
+          );
+          if (activeOther.length === 0) {
+            await client.query(
+              "UPDATE restaurant_tables SET status = 'AVAILABLE', current_order_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+              [oldTableId]
+            );
+          }
+        }
+
+        return {
+          orderId: id,
+          orderNumber: order.order_number,
+          branchId: order.branch_id,
+          oldTableId,
+          newTableId,
+          newTableNumber: newTable.table_number,
+        };
+      }, { tenantId });
+
+      await emitSyncEvent(query, {
+        tenantId,
+        branchId: result.branchId,
+        eventType: 'TABLE_STATUS_CHANGED',
+        entityId: newTableId,
+        payload: result,
+      });
+
+      return reply.send({
+        message: `Order #${result.orderNumber} successfully moved to Table ${result.newTableNumber}`,
+        transfer: result,
+      });
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message || 'Failed to transfer table' });
+    }
+  });
+
   fastify.get('/api/orders/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const tenantId = req.user!.tenantId!;

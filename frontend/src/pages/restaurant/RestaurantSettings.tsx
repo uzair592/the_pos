@@ -490,37 +490,106 @@ export const RestaurantSettings: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Registered Devices Section */}
+      {/* Registered Multi-Device Terminals Management */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4 text-xs">
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div className="flex items-center space-x-2">
-            <Smartphone className="w-5 h-5 text-slate-700 dark:text-slate-300" />
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Registered Multi-Device Terminals</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Registered Multi-Device Terminals</h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Track waiter tablets, cashier terminals, kitchen screens, and manage active hardware sessions
+              </p>
+            </div>
           </div>
-          <span className="text-slate-500 dark:text-slate-400 text-[11px] font-semibold">
-            {devices.length} registered terminal(s)
+          <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+            {devices.length} Terminal(s) Bound
           </span>
         </div>
 
-        <div className="space-y-2">
-          {devices.map((d) => (
-            <div key={d.id} className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div>
-                <p className="font-bold text-slate-900 dark:text-white">{d.device_name}</p>
-                <p className="text-slate-500 dark:text-slate-400 text-[11px] font-mono">{d.device_fingerprint}</p>
-                <p className="text-slate-400 dark:text-slate-500 text-[10px]">
-                  Branch: {d.branch_name} • Last active: {new Date(d.last_active_at).toLocaleString()}
-                </p>
-              </div>
-              <button
-                onClick={() => handleDeactivateDevice(d.id)}
-                className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
-                title="Revoke / Deactivate Terminal"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
+        <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold uppercase">
+                <tr>
+                  <th className="px-4 py-3">Device Name & Type</th>
+                  <th className="px-4 py-3">Branch</th>
+                  <th className="px-4 py-3">Default Workspace</th>
+                  <th className="px-4 py-3">Last Logged Staff</th>
+                  <th className="px-4 py-3">Last Active</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {devices.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400 italic">
+                      No terminal devices registered yet. Devices register automatically upon first terminal login.
+                    </td>
+                  </tr>
+                ) : (
+                  devices.map((d) => {
+                    const isActive = d.is_active !== false;
+                    return (
+                      <tr key={d.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-4 py-3">
+                          <p className="font-bold text-slate-900 dark:text-white">{d.device_name}</p>
+                          <p className="text-[10px] text-slate-400 font-mono truncate max-w-[150px]">
+                            {d.device_fingerprint}
+                          </p>
+                          <span className="inline-block mt-0.5 text-[9px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 uppercase font-black">
+                            {d.device_type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">
+                          {d.branch_name || 'Main Branch'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900">
+                            {d.default_workspace || 'POS_TERMINAL'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">{d.last_user_name || 'Staff'}</p>
+                          <p className="text-[10px] text-slate-400">{d.last_user_email || '—'}</p>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 font-mono text-[11px]">
+                          {d.last_active_at ? new Date(d.last_active_at).toLocaleString() : 'Just now'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isActive
+                                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200'
+                                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200'
+                            }`}
+                          >
+                            {isActive ? 'ONLINE / AUTHORIZED' : 'REVOKED'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {isActive ? (
+                            <button
+                              onClick={() => handleDeactivateDevice(d.id)}
+                              className="px-2.5 py-1 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-lg text-xs font-bold transition-colors"
+                              title="Revoke / Deactivate Terminal Device"
+                            >
+                              Revoke
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 italic">Deactivated</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

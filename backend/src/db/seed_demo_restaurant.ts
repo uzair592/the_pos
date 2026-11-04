@@ -553,7 +553,184 @@ export async function seedDemoRestaurant() {
     }
   }
 
-  console.log('✅ Demo restaurant seeding completed successfully!');
+
+  // 12. Multi-Branch Seed: DHA Phase 5 Branch (LHE-02)
+  let dhaBranchId: string;
+  const { rows: existingDha } = await query(
+    'SELECT id FROM branches WHERE tenant_id = $1 AND code = $2',
+    [tenantId, 'LHE-02'],
+    { isSuperAdmin: true }
+  );
+
+  if (existingDha.length === 0) {
+    const { rows: newDha } = await query(
+      `
+      INSERT INTO branches (
+        tenant_id, name, code, phone, email, address, city, state, is_main_branch, is_active
+      )
+      VALUES (
+        $1, 'DHA Phase 5 Branch', 'LHE-02', '+92 42 35891100', 'dha@lahorekarahi.com',
+        'Sector C, Commercial Area, DHA Phase 5', 'Lahore', 'Punjab', false, true
+      )
+      RETURNING id
+      `,
+      [tenantId],
+      { isSuperAdmin: true }
+    );
+    dhaBranchId = newDha[0].id;
+    console.log(`Created Second Branch: DHA Phase 5 Branch (${dhaBranchId})`);
+  } else {
+    dhaBranchId = existingDha[0].id;
+  }
+
+  // DHA Floor & Tables
+  const { rows: existingDhaFloor } = await query(
+    'SELECT id FROM floors WHERE tenant_id = $1 AND branch_id = $2',
+    [tenantId, dhaBranchId],
+    { isSuperAdmin: true }
+  );
+  let dhaFloorId: string;
+  if (existingDhaFloor.length === 0) {
+    const { rows: newFloor } = await query(
+      `INSERT INTO floors (tenant_id, branch_id, name, sort_order, is_active)
+       VALUES ($1, $2, 'Rooftop Terrace & Dining', 1, true) RETURNING id`,
+      [tenantId, dhaBranchId],
+      { isSuperAdmin: true }
+    );
+    dhaFloorId = newFloor[0].id;
+  } else {
+    dhaFloorId = existingDhaFloor[0].id;
+  }
+
+  const dhaTables = [
+    { number: 'DHA-01', capacity: 4 },
+    { number: 'DHA-02', capacity: 4 },
+    { number: 'DHA-03', capacity: 6 },
+    { number: 'DHA-04', capacity: 8 },
+    { number: 'DHA-05', capacity: 2 },
+  ];
+  for (const t of dhaTables) {
+    await query(
+      `INSERT INTO restaurant_tables (tenant_id, branch_id, floor_id, table_number, capacity, status, is_active)
+       VALUES ($1, $2, $3, $4, $5, 'AVAILABLE', true)
+       ON CONFLICT (branch_id, table_number) DO UPDATE SET is_active = true`,
+      [tenantId, dhaBranchId, dhaFloorId, t.number, t.capacity],
+      { isSuperAdmin: true }
+    );
+  }
+
+  // DHA Branch Stocks & FIFO Batches
+  const { rows: allIngs } = await query(
+    'SELECT id, name, unit, cost_per_unit FROM ingredients WHERE tenant_id = $1',
+    [tenantId],
+    { isSuperAdmin: true }
+  );
+
+  for (const ing of allIngs) {
+    await query(
+      `INSERT INTO branch_stocks (tenant_id, branch_id, ingredient_id, current_stock, cost_per_unit)
+       VALUES ($1, $2, $3, 40.0, $4)
+       ON CONFLICT (branch_id, ingredient_id) DO UPDATE SET current_stock = branch_stocks.current_stock`,
+      [tenantId, dhaBranchId, ing.id, ing.cost_per_unit],
+      { isSuperAdmin: true }
+    );
+
+    const { rows: existingDhaBatches } = await query(
+      'SELECT id FROM inventory_batches WHERE tenant_id = $1 AND branch_id = $2 AND ingredient_id = $3',
+      [tenantId, dhaBranchId, ing.id],
+      { isSuperAdmin: true }
+    );
+    if (existingDhaBatches.length === 0) {
+      await query(
+        `INSERT INTO inventory_batches (
+           tenant_id, branch_id, ingredient_id, quantity_received, quantity_remaining, unit_cost, received_at, status
+         )
+         VALUES ($1, $2, $3, 40.0, 40.0, $4, CURRENT_TIMESTAMP, 'ACTIVE')`,
+        [tenantId, dhaBranchId, ing.id, ing.cost_per_unit],
+        { isSuperAdmin: true }
+      );
+    }
+  }
+
+  // 13. Registered Devices for Multi-Device Operations
+  const devices = [
+    { fp: 'fp-glb-pos-01', name: 'Gulberg Main Cashier POS', type: 'POS_TERMINAL', branch: branchId, ws: 'POS', user: 'Bilal Ahmed', email: 'cashier@lahorekarahi.com' },
+    { fp: 'fp-glb-tab-01', name: 'Gulberg Floor Waiter Tablet', type: 'TABLET', branch: branchId, ws: 'POS', user: 'Usman Shah', email: 'waiter@lahorekarahi.com' },
+    { fp: 'fp-glb-kds-01', name: 'Gulberg Kitchen Display Monitor', type: 'KDS_DISPLAY', branch: branchId, ws: 'KDS', user: 'Chef Rasheed', email: 'kitchen@lahorekarahi.com' },
+    { fp: 'fp-dha-pos-01', name: 'DHA Counter Terminal', type: 'POS_TERMINAL', branch: dhaBranchId, ws: 'POS', user: 'Hamza Ali', email: 'manager@lahorekarahi.com' },
+    { fp: 'fp-dha-tab-01', name: 'DHA Rooftop Tablet #1', type: 'TABLET', branch: dhaBranchId, ws: 'POS', user: null, email: null },
+  ];
+
+  for (const d of devices) {
+    await query(
+      `INSERT INTO registered_devices (
+         tenant_id, branch_id, device_fingerprint, device_name, device_type, ip_address, is_active,
+         default_workspace, last_user_name, last_user_email
+       )
+       VALUES ($1, $2, $3, $4, $5, '192.168.1.100', true, $6, $7, $8)
+       ON CONFLICT (tenant_id, device_fingerprint) DO UPDATE SET
+         device_name = $4, is_active = true, default_workspace = $6, last_user_name = $7, last_user_email = $8,
+         last_active_at = CURRENT_TIMESTAMP`,
+      [tenantId, d.branch, d.fp, d.name, d.type, d.ws, d.user, d.email],
+      { isSuperAdmin: true }
+    );
+  }
+  console.log('Seeded registered devices for Gulberg and DHA branches.');
+
+  // 14. Inter-Branch Stock Transfers
+  const chickenIng = allIngs.find((i: any) => i.name.toLowerCase().includes('chicken')) || allIngs[0];
+  const oilIng = allIngs.find((i: any) => i.name.toLowerCase().includes('oil')) || allIngs[1] || allIngs[0];
+  const riceIng = allIngs.find((i: any) => i.name.toLowerCase().includes('rice')) || allIngs[2] || allIngs[0];
+
+  const sampleTransfers = [
+    {
+      num: 'TR-2026-00001',
+      from: branchId,
+      to: dhaBranchId,
+      ing: chickenIng?.id,
+      qty: 25.0,
+      cost: Number(chickenIng?.cost_per_unit || 800),
+      status: 'RECEIVED',
+      notes: 'Initial emergency stock replenishment for DHA grand opening',
+    },
+    {
+      num: 'TR-2026-00002',
+      from: branchId,
+      to: dhaBranchId,
+      ing: oilIng?.id,
+      qty: 15.0,
+      cost: Number(oilIng?.cost_per_unit || 450),
+      status: 'DISPATCHED',
+      notes: 'Weekly standard replenishment en route via delivery van',
+    },
+    {
+      num: 'TR-2026-00003',
+      from: dhaBranchId,
+      to: branchId,
+      ing: riceIng?.id,
+      qty: 10.0,
+      cost: Number(riceIng?.cost_per_unit || 280),
+      status: 'PENDING',
+      notes: 'Surplus transfer request awaiting manager dispatch approval',
+    },
+  ];
+
+  for (const st of sampleTransfers) {
+    if (st.ing) {
+      await query(
+        `INSERT INTO stock_transfers (
+           tenant_id, transfer_number, from_branch_id, to_branch_id, ingredient_id, quantity, unit_cost, total_cost, status, notes
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (tenant_id, transfer_number) DO UPDATE SET status = $9`,
+        [tenantId, st.num, st.from, st.to, st.ing, st.qty, st.cost, st.qty * st.cost, st.status, st.notes],
+        { isSuperAdmin: true }
+      );
+    }
+  }
+  console.log('Seeded sample inter-branch stock transfers.');
+
+    console.log('✅ Demo restaurant seeding completed successfully!');
 }
 
 if (process.argv[1] && process.argv[1].endsWith('seed_demo_restaurant.ts')) {

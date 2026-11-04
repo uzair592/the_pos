@@ -571,4 +571,130 @@ export async function financialRoutes(fastify: FastifyInstance) {
     const { rows } = await query(sql, params, { tenantId });
     return reply.send({ dailyProfit: rows });
   });
+
+  /**
+   * Head Office Consolidated Organization Summary
+   * Compares all branches under the tenant and provides consolidated totals
+   */
+  fastify.get('/api/financial/reports/head-office-summary', {
+    preHandler: [requirePermission(Permission.REPORTS_FINANCIAL)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    // 1. Per-Branch Performance Metrics (Gulberg, DHA, etc.)
+    const { rows: branchRows } = await query(
+      `
+      SELECT
+        b.id as branch_id,
+        b.name as branch_name,
+        b.code as branch_code,
+        b.is_main_branch,
+        b.city,
+        COALESCE(orders_data.total_orders, 0)::int as total_orders,
+        COALESCE(orders_data.net_sales, 0)::numeric as net_sales,
+        COALESCE(orders_data.fifo_cogs, 0)::numeric as fifo_cogs,
+        (COALESCE(orders_data.net_sales, 0) - COALESCE(orders_data.fifo_cogs, 0))::numeric as gross_profit,
+        CASE
+          WHEN COALESCE(orders_data.net_sales, 0) > 0
+          THEN ROUND(((COALESCE(orders_data.net_sales, 0) - COALESCE(orders_data.fifo_cogs, 0)) / orders_data.net_sales * 100)::numeric, 1)
+          ELSE 0
+        END as gross_margin_percent,
+        COALESCE(exp_data.total_expenses, 0)::numeric as total_expenses,
+        (COALESCE(orders_data.net_sales, 0) - COALESCE(orders_data.fifo_cogs, 0) - COALESCE(exp_data.total_expenses, 0))::numeric as net_profit,
+        COALESCE(stock_data.inventory_valuation, 0)::numeric as inventory_valuation,
+        COALESCE(tbl_data.active_tables, 0)::int as active_tables,
+        COALESCE(tbl_data.occupied_tables, 0)::int as occupied_tables,
+        COALESCE(dev_data.active_devices, 0)::int as active_devices
+      FROM branches b
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(o.id) as total_orders,
+          SUM(o.subtotal - o.total_discount) as net_sales,
+          SUM(cogs_sub.total_cogs) as fifo_cogs
+        FROM orders o
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(cogs), 0) as total_cogs
+          FROM order_items
+          WHERE order_id = o.id
+        ) cogs_sub ON true
+        WHERE o.tenant_id = $1 AND o.branch_id = b.id AND o.status = 'COMPLETED'
+          AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+      ) orders_data ON true
+      LEFT JOIN LATERAL (
+        SELECT SUM(e.amount) as total_expenses
+        FROM expenses e
+        WHERE e.tenant_id = $1 AND e.branch_id = b.id
+          AND e.expense_date >= $2::date AND e.expense_date <= $3::date
+      ) exp_data ON true
+      LEFT JOIN LATERAL (
+        SELECT SUM(bs.current_stock * bs.cost_per_unit) as inventory_valuation
+        FROM branch_stocks bs
+        WHERE bs.tenant_id = $1 AND bs.branch_id = b.id
+      ) stock_data ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(rt.id) as active_tables,
+          COUNT(rt.id) FILTER (WHERE rt.status = 'OCCUPIED') as occupied_tables
+        FROM restaurant_tables rt
+        WHERE rt.tenant_id = $1 AND rt.branch_id = b.id AND rt.is_active = true
+      ) tbl_data ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(rd.id) as active_devices
+        FROM registered_devices rd
+        WHERE rd.tenant_id = $1 AND rd.branch_id = b.id AND rd.is_active = true
+      ) dev_data ON true
+      WHERE b.tenant_id = $1 AND b.is_active = true
+      ORDER BY b.is_main_branch DESC, b.name ASC
+      `,
+      [tenantId, start, end],
+      { tenantId }
+    );
+
+    // 2. Global Consolidated Totals
+    const consolidated = {
+      totalBranches: branchRows.length,
+      totalOrders: branchRows.reduce((acc: number, r: any) => acc + Number(r.total_orders || 0), 0),
+      netSales: branchRows.reduce((acc: number, r: any) => acc + Number(r.net_sales || 0), 0),
+      fifoCogs: branchRows.reduce((acc: number, r: any) => acc + Number(r.fifo_cogs || 0), 0),
+      grossProfit: branchRows.reduce((acc: number, r: any) => acc + Number(r.gross_profit || 0), 0),
+      totalExpenses: branchRows.reduce((acc: number, r: any) => acc + Number(r.total_expenses || 0), 0),
+      netProfit: branchRows.reduce((acc: number, r: any) => acc + Number(r.net_profit || 0), 0),
+      inventoryValuation: branchRows.reduce((acc: number, r: any) => acc + Number(r.inventory_valuation || 0), 0),
+      activeTables: branchRows.reduce((acc: number, r: any) => acc + Number(r.active_tables || 0), 0),
+      occupiedTables: branchRows.reduce((acc: number, r: any) => acc + Number(r.occupied_tables || 0), 0),
+      activeDevices: branchRows.reduce((acc: number, r: any) => acc + Number(r.active_devices || 0), 0),
+    };
+
+    // 3. Top Products Across All Branches
+    const { rows: topProducts } = await query(
+      `
+      SELECT
+        p.id, p.name, p.category,
+        SUM(oi.quantity)::int as total_quantity_sold,
+        SUM(oi.subtotal)::numeric as total_revenue,
+        SUM(oi.cogs)::numeric as total_cogs,
+        (SUM(oi.subtotal) - SUM(oi.cogs))::numeric as product_gross_profit
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      JOIN menu_items p ON p.id = oi.menu_item_id
+      WHERE o.tenant_id = $1 AND o.status = 'COMPLETED'
+        AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+      GROUP BY p.id, p.name, p.category
+      ORDER BY total_revenue DESC
+      LIMIT 6
+      `,
+      [tenantId, start, end],
+      { tenantId }
+    );
+
+    return reply.send({
+      period: { start, end },
+      consolidated,
+      branches: branchRows,
+      topProducts,
+    });
+  });
 }
