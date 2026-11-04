@@ -7,12 +7,21 @@
 - Implement Addons functionality (extra sauces, dips, cheeses, upgrades) with item customization modal, live pricing, cart badges, and KDS tickets.
 - Implement multiple bill printing options with 5 specialized templates (Standard 80mm Thermal, Fine Dining Guest Check, Compact 58mm Mobile, Official Commercial GST Tax Invoice, and Kitchen / Dispatch Token).
 - Rigorously test multi-device synchronization (Waiter Tablet -> Kitchen Display System -> Cashier Checkout) and full CRUD operations across all modules with automated integration testing.
-- Pass all 41 integration tests and push clean code to GitHub repository `https://github.com/uzair592/the_pos.git`.
+- Fix real-time synchronization between KDS and Dashboard: orders showing in served and unpaid in KDS now immediately reflect on Dashboard in real-time with 5-second polling, live sync indicators, unpaid order collection shortcuts, and financial pipeline aggregation.
+- Pass all 43 integration tests and push clean code to GitHub repository `https://github.com/uzair592/the_pos.git`.
 
 ## Blockers
-- None. All 41 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
+- None. All 43 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 20 (commit 30c075f): Resolved KDS-to-Dashboard data synchronization and unpaid order visibility:
+  1. Identified that financial report endpoints only accounted for COMPLETED orders, omitting in-flight and served/unpaid tickets, while the Dashboard lacked auto-polling.
+  2. Implemented 5-second background auto-polling in `RestaurantDashboard.tsx` with a pulsing live sync badge and manual refresh button.
+  3. Integrated `GET /api/orders/active` into both Head Office and Branch dashboard views.
+  4. Built a dedicated "Live Operations & Unpaid Bills" banner and pipeline metrics strip on the dashboard, displaying the count and amount of served unpaid tickets awaiting cashier collection, in-kitchen cooking counts, and total in-flight pipeline, with one-click "Collect at POS" shortcuts.
+  5. Enhanced `generateFinancialSummary` in `financialService.ts` and `/api/financial/reports/head-office-summary` to aggregate `activeOrdersCount`, `servedUnpaidCount`, and `unpaidAmount` across branches.
+  6. Replaced hardcoded green order badges with contextual dynamic status badges (`Served (Unpaid)`, `Paid & Completed`, `Kitchen Cooking`, `Ready in Kitchen`, `Cancelled`).
+  7. Added automated integration test `Multi-Device Step 2b` in `multidevice_and_full_crud.test.ts`. All 43 tests pass cleanly.
 - Decision 19: Built complete Staff & Roles editing architecture in StaffManagement.tsx and restaurant.routes.ts: added comprehensive Edit Employee modal (name, email/username login, password, system role, assigned branch, and active status), quick Password Reset modal with secure password generator and visibility toggle, and one-click Active/Inactive status toggle; updated backend PUT /api/restaurant/users/:id to hash passwords securely, enforce tenant-scoped email uniqueness, and block self-deactivation; added soft deactivation via DELETE /api/restaurant/users/:id; added CRUD 5 test to multidevice_and_full_crud.test.ts verifying full credential lifecycle; and verified all 42 tests pass.
 - Decision 18: Optimized Menu Catalog product creation and editing modal (`MenuCatalog.tsx`): added editable Product Cost Price input with currency symbol and precision step support, added 1-click recipe cost synchronization button (`Sync Recipe Cost`), built live real-time profitability card (displaying effective unit cost, gross profit per unit, and color-coded margin percentage), and ensured final cost price persists accurately to PostgreSQL upon save. Table product listing prioritizes explicit product cost price.
 - Decision 17: Created comprehensive integration test suite `backend/test/multidevice_and_full_crud.test.ts` covering multi-device real-time flow: Waiter places Dine-In order with product variant, addons, and cooking instructions; KDS receives ticket with modifiers summary and advances status through PENDING -> ACCEPTED -> PREPARING -> READY -> SERVED with ORDER_STATUS_CHANGED sync event; Cashier sees served order in unpaid active drawer, settles payment via cash with change, deducts exact FIFO batch stock, releases table back to AVAILABLE, and prints multi-template receipt. Verified full CRUD operations across categories, sub-categories, addon groups, inward purchases, suppliers, and recipes. All 41 monorepo tests pass.
