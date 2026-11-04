@@ -35,7 +35,10 @@ export interface Branch {
   updatedAt: string;
 }
 
+export type ReceiptTemplateType = 'STANDARD_80MM' | 'FINE_DINING' | 'COMPACT_58MM' | 'TAX_INVOICE_A4' | 'KITCHEN_TOKEN';
+
 export interface ReceiptSettings {
+  defaultTemplate?: ReceiptTemplateType;
   headerText?: string;
   footerText?: string;
   showLogo: boolean;
@@ -46,6 +49,9 @@ export interface ReceiptSettings {
   bilingualUrduEnglish: boolean;
   customUrduHeader?: string;
   customUrduFooter?: string;
+  showQrCode?: boolean;
+  showBarcode?: boolean;
+  showTipGuide?: boolean;
 }
 
 export interface RestaurantSettings {

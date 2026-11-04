@@ -259,13 +259,45 @@ export const RestaurantSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* Receipt Settings */}
+        {/* Receipt & Bill Printing Settings */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4 text-xs">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-800 pb-2">
-            Thermal Receipt Printing Settings
-          </h3>
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                Receipt & Bill Printing Settings (5 Templates)
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Configure default bill layout, paper dimensions, tax registration, and bilingual typography
+              </p>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 font-bold border border-brand-200 dark:border-brand-800">
+              Multi-Template Enabled
+            </span>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Default Print Template
+              </label>
+              <select
+                value={settings?.receipt_settings?.defaultTemplate || 'STANDARD_80MM'}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    receipt_settings: { ...settings.receipt_settings, defaultTemplate: e.target.value },
+                  })
+                }
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+              >
+                <option value="STANDARD_80MM">🧾 Standard 80mm POS Thermal Receipt</option>
+                <option value="FINE_DINING">🍽️ Fine Dining Guest Check & Summary</option>
+                <option value="COMPACT_58MM">⚡ Compact 58mm Mobile / Kiosk Slip</option>
+                <option value="TAX_INVOICE_A4">📑 Official Commercial GST Tax Invoice (A4)</option>
+                <option value="KITCHEN_TOKEN">🎟️ Kitchen Order Ticket / Dispatch Token</option>
+              </select>
+            </div>
+
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Paper Roll Width</label>
               <select
@@ -283,10 +315,12 @@ export const RestaurantSettings: React.FC = () => {
                 <option value="A4">A4 Full Page Invoice</option>
               </select>
             </div>
+
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Receipt English Header</label>
               <input
                 type="text"
+                placeholder="e.g. Welcome to Lahore Karahi & Grill"
                 value={settings?.receipt_settings?.headerText || ''}
                 onChange={(e) =>
                   setSettings({
@@ -297,11 +331,29 @@ export const RestaurantSettings: React.FC = () => {
                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
               />
             </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Receipt English Footer</label>
+              <input
+                type="text"
+                placeholder="e.g. Thank you for dining with us! Visit again."
+                value={settings?.receipt_settings?.footerText || ''}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    receipt_settings: { ...settings.receipt_settings, footerText: e.target.value },
+                  })
+                }
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+              />
+            </div>
+
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Custom Urdu Header (اردو ہیڈر)</label>
               <input
                 type="text"
                 dir="rtl"
+                placeholder="خوش آمدید"
                 value={settings?.receipt_settings?.customUrduHeader || ''}
                 onChange={(e) =>
                   setSettings({
@@ -312,11 +364,13 @@ export const RestaurantSettings: React.FC = () => {
                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-urdu text-slate-900 dark:text-white"
               />
             </div>
+
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Custom Urdu Footer (اردو اختتامیہ)</label>
               <input
                 type="text"
                 dir="rtl"
+                placeholder="تشریف آوری کا شکریہ"
                 value={settings?.receipt_settings?.customUrduFooter || ''}
                 onChange={(e) =>
                   setSettings({
@@ -327,6 +381,69 @@ export const RestaurantSettings: React.FC = () => {
                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-urdu text-slate-900 dark:text-white"
               />
             </div>
+          </div>
+
+          {/* Toggle Flags */}
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings?.receipt_settings?.bilingualUrduEnglish !== false}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    receipt_settings: { ...settings.receipt_settings, bilingualUrduEnglish: e.target.checked },
+                  })
+                }
+                className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
+              />
+              <span className="font-semibold text-slate-700 dark:text-slate-300">Bilingual Urdu</span>
+            </label>
+
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings?.receipt_settings?.showQrCode !== false}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    receipt_settings: { ...settings.receipt_settings, showQrCode: e.target.checked },
+                  })
+                }
+                className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
+              />
+              <span className="font-semibold text-slate-700 dark:text-slate-300">QR Code Verification</span>
+            </label>
+
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings?.receipt_settings?.showTaxBreakdown !== false}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    receipt_settings: { ...settings.receipt_settings, showTaxBreakdown: e.target.checked },
+                  })
+                }
+                className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
+              />
+              <span className="font-semibold text-slate-700 dark:text-slate-300">STRN/NTN on Bill</span>
+            </label>
+
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings?.receipt_settings?.showCustomerDetails !== false}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    receipt_settings: { ...settings.receipt_settings, showCustomerDetails: e.target.checked },
+                  })
+                }
+                className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
+              />
+              <span className="font-semibold text-slate-700 dark:text-slate-300">Customer Details</span>
+            </label>
           </div>
         </div>
 

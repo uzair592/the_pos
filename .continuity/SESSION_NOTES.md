@@ -5,12 +5,14 @@
 - Streamline the Workspace Hub to 3 core terminals: Dashboard, POS Terminal, and Kitchen Terminal.
 - Implement Menu Sub-Categories across catalog management and POS order-taking.
 - Implement Addons functionality (extra sauces, dips, cheeses, upgrades) with item customization modal, live pricing, cart badges, and KDS tickets.
+- Implement multiple bill printing options with 5 specialized templates (Standard 80mm Thermal, Fine Dining Guest Check, Compact 58mm Mobile, Official Commercial GST Tax Invoice, and Kitchen / Dispatch Token).
 - Pass all 34 integration tests and push clean code to GitHub repository `https://github.com/uzair592/the_pos.git`.
 
 ## Blockers
 - None. All 34 integration tests pass, TypeScript builds with 0 errors across monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 16: Implemented 5 distinct bill printing templates in `ReceiptModal.tsx`: Standard 80mm POS thermal receipt, Fine Dining Guest Check with tip guide and signature line, Compact 58mm mobile/kiosk slip, Official Commercial GST Tax Invoice in full A4 format, and Kitchen Order / Pickup Token. Added live print options toggles (bilingual Urdu, QR code verification, STRN/NTN tax number, tip guide), instant WhatsApp/SMS clipboard formatting, universal print CSS isolation in `index.css`, default template selection in `RestaurantSettings.tsx`, and enriched `GET /api/orders/:id/receipt` payload with full customer, server, and dining scope details.
 - Streamlined Workspace Hub (`/hub`) to display exclusively the 3 core operations terminals: Dashboard, POS Terminal, and Kitchen Terminal in a clean 3-column layout.
 - Implemented Menu Sub-Categories support in backend categories API, Menu Catalog management, and POS Terminal with two-tier category and sub-category chips.
 - Implemented Addons & Modifiers system (extra sauces, dips, cheeses, upgrades) with dedicated Addons catalog management, interactive POS "Customize Order Item / Addons" modal with cooking note chips and live pricing, cart item addon badges, and KDS addon summary alerts for kitchen staff.

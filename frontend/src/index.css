@@ -23,24 +23,30 @@
   @apply bg-slate-400 dark:bg-slate-600;
 }
 
-/* Thermal Printer styles for 58mm and 80mm */
+/* Universal Printer styles for 58mm, 80mm and A4 Invoices */
 @media print {
   body * {
-    visibility: hidden;
+    visibility: hidden !important;
   }
   .printable-receipt, .printable-receipt * {
-    visibility: visible;
+    visibility: visible !important;
   }
   .printable-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 0;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 auto !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .no-print {
+    display: none !important;
   }
   @page {
-    margin: 0;
+    margin: 4mm;
+    size: auto;
   }
 }
 
