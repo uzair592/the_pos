@@ -51,3 +51,4 @@ ALTER TABLE registered_devices
   ADD COLUMN IF NOT EXISTS default_workspace VARCHAR(50) DEFAULT 'POS',
   ADD COLUMN IF NOT EXISTS last_user_name VARCHAR(255),
   ADD COLUMN IF NOT EXISTS last_user_email VARCHAR(255);
+

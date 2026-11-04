@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
@@ -261,6 +262,14 @@ export const InventoryManagement: React.FC = () => {
             <TrendingDown className="w-4 h-4 text-rose-500" />
             <span>Wastage / Adjustment</span>
           </button>
+
+          <Link
+            to="/app/purchases"
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+          >
+            <Truck className="w-4 h-4 text-emerald-500" />
+            <span>Purchases & Vendors</span>
+          </Link>
 
           <button
             onClick={() => setIsAddTransferOpen(true)}

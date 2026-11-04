@@ -468,6 +468,38 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     return reply.send({ purchases: rows });
   });
 
+  fastify.get('/api/inventory/purchases/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    const { rows: purchases } = await query(
+      `SELECT pi.*, s.name as supplier_name, s.phone as supplier_phone, b.name as branch_name, u.full_name as recorded_by_name
+       FROM purchase_invoices pi
+       JOIN suppliers s ON s.id = pi.supplier_id
+       JOIN branches b ON b.id = pi.branch_id
+       LEFT JOIN users u ON u.id = pi.recorded_by_user_id
+       WHERE pi.id = $1 AND pi.tenant_id = $2`,
+      [id, tenantId],
+      { tenantId }
+    );
+
+    if (purchases.length === 0) {
+      return reply.status(404).send({ error: 'Purchase invoice not found' });
+    }
+
+    const { rows: items } = await query(
+      `SELECT pi_item.*, i.name as ingredient_name
+       FROM purchase_items pi_item
+       JOIN ingredients i ON i.id = pi_item.ingredient_id
+       WHERE pi_item.purchase_id = $1 AND pi_item.tenant_id = $2
+       ORDER BY pi_item.id ASC`,
+      [id, tenantId],
+      { tenantId }
+    );
+
+    return reply.send({ purchase: purchases[0], items });
+  });
+
   fastify.post('/api/inventory/purchases', {
     preHandler: [requirePermission(Permission.PURCHASES_MANAGE)],
   }, async (req, reply) => {

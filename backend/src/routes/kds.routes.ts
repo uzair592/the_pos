@@ -29,26 +29,31 @@ export async function kdsRoutes(fastify: FastifyInstance) {
     };
 
     let sql = `
-      SELECT kt.*
+      SELECT kt.*, b.name as branch_name, b.code as branch_code
       FROM kitchen_tickets kt
+      LEFT JOIN branches b ON b.id = kt.branch_id
       WHERE kt.tenant_id = $1
     `;
     const params: any[] = [tenantId];
 
-    if (branchId) {
+    if (branchId && branchId !== 'ALL') {
       params.push(branchId);
-      sql += ` AND kt.branch_id = $${params.length}`;
+      sql += ' AND kt.branch_id = $' + params.length;
     }
     if (station && station !== 'ALL') {
       params.push(station);
-      sql += ` AND kt.station = $${params.length}`;
+      sql += ' AND kt.station = $' + params.length;
     }
-    if (status) {
+    if (status === 'ACTIVE') {
+      sql += " AND kt.status IN ('PENDING', 'ACCEPTED', 'PREPARING', 'READY')";
+    } else if (status === 'SERVED') {
+      sql += " AND kt.status = 'SERVED'";
+    } else if (status && status !== 'ALL') {
       params.push(status);
-      sql += ` AND kt.status = $${params.length}`;
-    } else {
+      sql += ' AND kt.status = $' + params.length;
+    } else if (!status) {
       // By default show active tickets
-      sql += ` AND kt.status NOT IN ('COMPLETED', 'CANCELLED')`;
+      sql += " AND kt.status NOT IN ('COMPLETED', 'CANCELLED')";
     }
 
     sql += ' ORDER BY kt.created_at ASC';

@@ -27,6 +27,7 @@ export const KitchenDisplay: React.FC = () => {
   const { success, error } = useToast();
   const [tickets, setTickets] = useState<any[]>([]);
   const [stationFilter, setStationFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'SERVED' | 'ALL'>('ACTIVE');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState<number>(Date.now());
@@ -76,6 +77,7 @@ export const KitchenDisplay: React.FC = () => {
       let url = '/kds/tickets';
       const params = new URLSearchParams();
       if (stationFilter !== 'ALL') params.append('station', stationFilter);
+      if (statusFilter) params.append('status', statusFilter);
       if (currentBranchId) params.append('branchId', currentBranchId);
       const queryStr = params.toString();
       if (queryStr) url += `?${queryStr}`;
@@ -111,7 +113,7 @@ export const KitchenDisplay: React.FC = () => {
       clearInterval(pollInterval);
       clearInterval(clockInterval);
     };
-  }, [stationFilter, currentBranchId, soundEnabled]);
+  }, [stationFilter, statusFilter, currentBranchId, soundEnabled]);
 
   const updateTicketStatus = async (ticketId: string, nextStatus: PrepStatus) => {
     try {
@@ -168,6 +170,27 @@ export const KitchenDisplay: React.FC = () => {
             {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{soundEnabled ? 'Sound On' : 'Muted'}</span>
           </button>
+
+          {/* Status Mode Filters */}
+          <div className="flex items-center space-x-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+            {[
+              { id: 'ACTIVE', label: '🔥 Active Cooking' },
+              { id: 'SERVED', label: '✅ Served / Unpaid' },
+              { id: 'ALL', label: '📋 All Tickets' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id as any)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  statusFilter === tab.id
+                    ? 'bg-brand-500 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
           {/* Station Filters */}
           <div className="flex items-center space-x-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800">

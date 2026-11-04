@@ -23,6 +23,7 @@ import { RestaurantDashboard } from './pages/restaurant/RestaurantDashboard.js';
 import { OrdersHub } from './pages/orders/OrdersHub.js';
 import { MenuCatalog } from './pages/restaurant/MenuCatalog.js';
 import { InventoryManagement } from './pages/restaurant/InventoryManagement.js';
+import { PurchaseManagement } from './pages/restaurant/PurchaseManagement.js';
 import { ShiftManagement } from './pages/restaurant/ShiftManagement.js';
 import { FinancialReports } from './pages/restaurant/FinancialReports.js';
 import { StaffManagement } from './pages/restaurant/StaffManagement.js';
@@ -298,6 +299,7 @@ export const App: React.FC = () => {
                 <Route path="orders" element={<OrdersHub />} />
                 <Route path="menu" element={<MenuCatalog />} />
                 <Route path="inventory" element={<InventoryManagement />} />
+                <Route path="purchases" element={<PurchaseManagement />} />
                 <Route path="shifts" element={<ShiftManagement />} />
                 <Route path="reports" element={<FinancialReports />} />
                 <Route path="staff" element={<StaffManagement />} />
