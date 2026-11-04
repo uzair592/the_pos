@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { query } from './connection.js';
+import { seedDemoRestaurant } from './seed_demo_restaurant.js';
 
 dotenv.config();
 
@@ -120,8 +121,8 @@ export async function seedDatabase() {
     { isSuperAdmin: true }
   );
 
+  const passwordHash = await bcrypt.hash(superAdminPassword, 10);
   if (existingAdmins.length === 0) {
-    const passwordHash = await bcrypt.hash(superAdminPassword, 10);
     await query(
       `
       INSERT INTO platform_admins (email, password_hash, full_name, is_active)
@@ -131,6 +132,21 @@ export async function seedDatabase() {
       { isSuperAdmin: true }
     );
     console.log(`Created default Super Admin: ${superAdminEmail}`);
+  } else {
+    await query(
+      `
+      UPDATE platform_admins
+      SET password_hash = $1, is_active = true, updated_at = CURRENT_TIMESTAMP
+      WHERE email = $2
+      `,
+      [passwordHash, superAdminEmail],
+      { isSuperAdmin: true }
+    );
+  }
+
+  // Also seed demo restaurant in dev / non-test environment
+  if (!process.env.VITEST && process.env.NODE_ENV !== 'test') {
+    await seedDemoRestaurant();
   }
 
   console.log('Database seeding completed.');

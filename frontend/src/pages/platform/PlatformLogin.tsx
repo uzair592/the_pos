@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
-import { Shield, Lock, Mail, AlertCircle, ArrowRight } from 'lucide-react';
+import { Shield, Lock, Mail, AlertCircle, ArrowRight, Sparkles } from 'lucide-react';
 
 export const PlatformLogin: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -11,6 +11,12 @@ export const PlatformLogin: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  const handleQuickFill = () => {
+    setEmail('admin@posplatform.com');
+    setPassword('SuperAdmin123!');
+    setError('');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +36,7 @@ export const PlatformLogin: React.FC = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-slate-800 p-8 rounded-2xl border border-slate-700 shadow-2xl">
+      <div className="max-w-md w-full space-y-6 bg-slate-800 p-8 rounded-2xl border border-slate-700 shadow-2xl">
         <div className="text-center">
           <div className="mx-auto w-14 h-14 bg-brand-500/10 border border-brand-500/20 text-brand-500 rounded-2xl flex items-center justify-center mb-4">
             <Shield className="w-8 h-8" />
@@ -48,7 +54,23 @@ export const PlatformLogin: React.FC = () => {
           </div>
         )}
 
-        <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+        {/* Quick Demo Credential Pill */}
+        <div className="bg-slate-900/60 border border-slate-700/80 rounded-xl p-3 flex items-center justify-between">
+          <div className="text-[11px] text-slate-400">
+            <span className="font-bold text-slate-300 block">Default Super Admin</span>
+            <span>admin@posplatform.com</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleQuickFill}
+            className="flex items-center space-x-1 px-3 py-1.5 bg-brand-500/20 hover:bg-brand-500/30 text-brand-400 border border-brand-500/30 rounded-lg text-xs font-bold transition-colors"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Quick Fill</span>
+          </button>
+        </div>
+
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
               Super Admin Email
