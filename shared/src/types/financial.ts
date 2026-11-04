@@ -167,3 +167,66 @@ export interface CashBankSummary {
   todayBankExpenses: number;
   bankAccounts: BankAccount[];
 }
+
+
+export interface BillItemProfitLoss {
+  id: string;
+  productId: string;
+  productName: string;
+  variantName?: string | null;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  cogs: number;
+  grossProfit: number;
+  grossMarginPercent: number;
+  modifiers?: any[];
+}
+
+export interface BillProfitLoss {
+  id: string;
+  orderNumber: string;
+  createdAt: string;
+  orderType: string;
+  status: string;
+  paymentStatus: string;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  riderName?: string | null;
+  riderPhone?: string | null;
+  tableNumber?: string | null;
+  branchName?: string;
+  cashierName?: string | null;
+  subtotal: number;
+  totalDiscount: number;
+  netSales: number;
+  deliveryFee: number;
+  taxAmount: number;
+  serviceChargeAmount: number;
+  grandTotal: number;
+  fifoCogs: number;
+  grossProfit: number;
+  grossMarginPercent: number;
+  paymentMethods: string;
+  itemCount: number;
+  items?: BillItemProfitLoss[];
+}
+
+export interface BillProfitLossSummary {
+  totalBills: number;
+  totalNetSales: number;
+  totalGrandTotal: number;
+  totalCogs: number;
+  totalGrossProfit: number;
+  averageProfitPerBill: number;
+  averageMarginPercent: number;
+  profitableBillsCount: number;
+  lossBillsCount: number;
+}
+
+export interface BillProfitLossReportResponse {
+  summary: BillProfitLossSummary;
+  bills: BillProfitLoss[];
+  startDate: string;
+  endDate: string;
+}

@@ -788,4 +788,82 @@ describe('FIFO Inventory, Credential Management, Orders Hub & Backup System Test
     const { ledger } = JSON.parse(ledgerRes.payload);
     expect(ledger.length).toBeGreaterThanOrEqual(3);
   });
+
+  it('M8: Bill-Wise Profit and Loss Report, Channel Filtering, and CSV Export', async () => {
+    // 1. Fetch Bill-Wise Profit and Loss Report
+    const reportRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/reports/bill-profit-loss',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(reportRes.statusCode).toBe(200);
+    const data = JSON.parse(reportRes.payload);
+
+    // Verify summary structure
+    expect(data.summary).toBeDefined();
+    expect(data.summary.totalBills).toBeGreaterThanOrEqual(1);
+    expect(typeof data.summary.totalNetSales).toBe('number');
+    expect(typeof data.summary.totalCogs).toBe('number');
+    expect(typeof data.summary.totalGrossProfit).toBe('number');
+    expect(typeof data.summary.averageMarginPercent).toBe('number');
+    expect(data.summary.profitableBillsCount).toBeGreaterThanOrEqual(1);
+
+    // Verify bills list
+    expect(data.bills).toBeInstanceOf(Array);
+    expect(data.bills.length).toBeGreaterThanOrEqual(1);
+
+    const sampleBill = data.bills[0];
+    expect(sampleBill.id).toBeDefined();
+    expect(sampleBill.orderNumber).toBeDefined();
+    expect(sampleBill.createdAt).toBeDefined();
+    expect(sampleBill.orderType).toBeDefined();
+    expect(typeof sampleBill.subtotal).toBe('number');
+    expect(typeof sampleBill.netSales).toBe('number');
+    expect(typeof sampleBill.fifoCogs).toBe('number');
+    expect(typeof sampleBill.grossProfit).toBe('number');
+    expect(typeof sampleBill.grossMarginPercent).toBe('number');
+    expect(sampleBill.items).toBeInstanceOf(Array);
+    expect(sampleBill.items.length).toBeGreaterThanOrEqual(1);
+
+    // Verify item-level calculations
+    const sampleItem = sampleBill.items[0];
+    expect(sampleItem.productName).toBeDefined();
+    expect(typeof sampleItem.unitPrice).toBe('number');
+    expect(typeof sampleItem.totalPrice).toBe('number');
+    expect(typeof sampleItem.cogs).toBe('number');
+    expect(typeof sampleItem.grossProfit).toBe('number');
+    expect(typeof sampleItem.grossMarginPercent).toBe('number');
+
+    // 2. Filter by Order Type
+    const dineInRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/reports/bill-profit-loss?orderType=DINE_IN',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(dineInRes.statusCode).toBe(200);
+    const dineInData = JSON.parse(dineInRes.payload);
+    expect(dineInData.bills.every((b: any) => b.orderType === 'DINE_IN')).toBe(true);
+
+    // 3. Search Filter by Order Number
+    const searchRes = await app.inject({
+      method: 'GET',
+      url: `/api/financial/reports/bill-profit-loss?search=${sampleBill.orderNumber}`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(searchRes.statusCode).toBe(200);
+    const searchData = JSON.parse(searchRes.payload);
+    expect(searchData.bills.some((b: any) => b.orderNumber === sampleBill.orderNumber)).toBe(true);
+
+    // 4. Test CSV Export
+    const csvRes = await app.inject({
+      method: 'GET',
+      url: '/api/financial/reports/bill-profit-loss/export',
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(csvRes.statusCode).toBe(200);
+    expect(csvRes.headers['content-type']).toContain('text/csv');
+    expect(csvRes.payload).toContain('Order Number,Date,Time,Channel');
+    expect(csvRes.payload).toContain('Gross Profit,Gross Margin %');
+    expect(csvRes.payload).toContain(sampleBill.orderNumber);
+  });
 });

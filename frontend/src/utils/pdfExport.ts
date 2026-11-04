@@ -514,3 +514,133 @@ export function exportNetProfitReportPdf(
   doc.save(`Net_Profit_PL_Report_${dates.startDate}_${dates.endDate}.pdf`);
 }
 
+
+/**
+ * 6. Bill-Wise Profit and Loss PDF Export
+ */
+export function exportBillWiseProfitLossPdf(
+  meta: RestaurantMeta,
+  dates: DateRangeMeta,
+  summary: any,
+  bills: any[]
+) {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || 'Rs.';
+
+  let startY = drawReportHeader(doc, 'Bill-Wise Profit & Loss Audit Report', meta, dates);
+
+  // Executive Summary KPI Banner
+  doc.setFillColor(241, 245, 249); // slate-100
+  doc.roundedRect(14, startY, doc.internal.pageSize.width - 28, 16, 2, 2, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42); // slate-900
+
+  const totalBills = summary?.totalBills || bills.length;
+  const netSales = Number(summary?.totalNetSales || 0);
+  const fifoCogs = Number(summary?.totalCogs || 0);
+  const grossProfit = Number(summary?.totalGrossProfit || 0);
+  const avgMargin = Number(summary?.averageMarginPercent || 0);
+  const avgProfit = Number(summary?.averageProfitPerBill || 0);
+
+  doc.text(`Total Bills: ${totalBills}`, 20, startY + 6);
+  doc.text(`Net Food Sales: ${sym} ${netSales.toLocaleString()}`, 65, startY + 6);
+  doc.text(`FIFO COGS: ${sym} ${fifoCogs.toLocaleString()}`, 125, startY + 6);
+  
+  if (grossProfit >= 0) {
+    doc.setTextColor(22, 163, 74); // green
+  } else {
+    doc.setTextColor(220, 38, 38); // red
+  }
+  doc.text(`Gross Profit: ${sym} ${grossProfit.toLocaleString()}`, 180, startY + 6);
+
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Overall Margin: ${avgMargin.toFixed(1)}%`, 20, startY + 12);
+  doc.text(`Avg Profit/Bill: ${sym} ${avgProfit.toLocaleString()}`, 65, startY + 12);
+  doc.text(`Profitable Bills: ${summary?.profitableBillsCount || 0} / ${totalBills}`, 125, startY + 12);
+
+  startY += 22;
+
+  const tableRows = bills.map((b) => {
+    const dt = new Date(b.createdAt);
+    const dateFormatted = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const profitVal = Number(b.grossProfit || 0);
+    const marginVal = Number(b.grossMarginPercent || 0);
+
+    return [
+      b.orderNumber,
+      dateFormatted,
+      b.orderType,
+      b.customerName || (b.orderType === 'DELIVERY' ? 'Delivery Guest' : 'Walk-in Guest'),
+      `${sym} ${Number(b.subtotal || 0).toLocaleString()}`,
+      `${sym} ${Number(b.totalDiscount || 0).toLocaleString()}`,
+      `${sym} ${Number(b.netSales || 0).toLocaleString()}`,
+      `${sym} ${Number(b.fifoCogs || 0).toLocaleString()}`,
+      `${sym} ${profitVal.toLocaleString()}`,
+      `${marginVal.toFixed(1)}%`,
+      `${sym} ${Number(b.grandTotal || 0).toLocaleString()}`,
+      b.paymentMethods || 'CASH',
+    ];
+  });
+
+  autoTable(doc, {
+    startY,
+    head: [[
+      'Bill #',
+      'Date & Time',
+      'Channel',
+      'Customer',
+      'Subtotal',
+      'Discount',
+      'Net Sales',
+      'FIFO COGS',
+      'Gross Profit',
+      'Margin %',
+      'Grand Total',
+      'Payment',
+    ]],
+    body: tableRows,
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2,
+      overflow: 'linebreak',
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: 255,
+      fontStyle: 'bold',
+    },
+    columnStyles: {
+      0: { cellWidth: 24, fontStyle: 'bold' },
+      1: { cellWidth: 26 },
+      2: { cellWidth: 20 },
+      3: { cellWidth: 32 },
+      4: { cellWidth: 20, halign: 'right' },
+      5: { cellWidth: 18, halign: 'right' },
+      6: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
+      7: { cellWidth: 22, halign: 'right' },
+      8: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+      9: { cellWidth: 18, halign: 'center' },
+      10: { cellWidth: 22, halign: 'right' },
+      11: { cellWidth: 22, halign: 'center' },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    margin: { left: 14, right: 14 },
+    didParseCell: function(data) {
+      if (data.section === 'body' && data.column.index === 8) {
+        const raw = String(data.cell.raw);
+        if (raw.includes('-')) {
+          data.cell.styles.textColor = [220, 38, 38];
+        } else {
+          data.cell.styles.textColor = [22, 163, 74];
+        }
+      }
+    }
+  });
+
+  attachFooter(doc);
+  doc.save(`Bill_Wise_Profit_Loss_${dates.startDate}_${dates.endDate}.pdf`);
+}

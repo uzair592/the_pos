@@ -615,7 +615,298 @@ export async function financialRoutes(fastify: FastifyInstance) {
     return reply.send({ dailyProfit: rows });
   });
 
+    /**
+   * Dedicated Sub-Reports: Bill-Wise Profit and Loss Report
+   * Exact order-by-order financial reconciliation: Net Sales, FIFO COGS, Gross Profit, and Margin %
+   */
+  fastify.get('/api/financial/reports/bill-profit-loss', {
+    preHandler: [requirePermission(Permission.REPORTS_SALES)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate, orderType, search } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+      orderType?: string;
+      search?: string;
+    };
+
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    let sql = `
+      SELECT
+        o.id,
+        o.order_number,
+        o.created_at,
+        o.order_type,
+        o.status,
+        o.payment_status,
+        o.customer_name,
+        o.customer_phone,
+        o.rider_name,
+        o.rider_phone,
+        o.table_number,
+        b.name as branch_name,
+        o.cashier_name,
+        COALESCE(o.subtotal, 0)::numeric as subtotal,
+        COALESCE(o.total_discount, 0)::numeric as total_discount,
+        (COALESCE(o.subtotal, 0) - COALESCE(o.total_discount, 0))::numeric as net_sales,
+        COALESCE(o.delivery_fee, 0)::numeric as delivery_fee,
+        COALESCE(o.tax_amount, 0)::numeric as tax_amount,
+        COALESCE(o.service_charge_amount, 0)::numeric as service_charge_amount,
+        COALESCE(o.grand_total, 0)::numeric as grand_total,
+        COALESCE(cogs_sub.total_cogs, 0)::numeric as fifo_cogs,
+        ((COALESCE(o.subtotal, 0) - COALESCE(o.total_discount, 0)) - COALESCE(cogs_sub.total_cogs, 0))::numeric as gross_profit,
+        CASE
+          WHEN (COALESCE(o.subtotal, 0) - COALESCE(o.total_discount, 0)) > 0
+          THEN (((COALESCE(o.subtotal, 0) - COALESCE(o.total_discount, 0)) - COALESCE(cogs_sub.total_cogs, 0)) / (COALESCE(o.subtotal, 0) - COALESCE(o.total_discount, 0)) * 100)::numeric(5,2)
+          ELSE 0
+        END as gross_margin_percent,
+        COALESCE((SELECT STRING_AGG(DISTINCT method, ', ') FROM order_payments WHERE order_id = o.id), 'UNPAID') as payment_methods,
+        (SELECT COUNT(*)::int FROM order_items WHERE order_id = o.id) as item_count
+      FROM orders o
+      JOIN branches b ON b.id = o.branch_id
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(COALESCE(cogs, cost_price * quantity, 0)), 0) as total_cogs
+        FROM order_items
+        WHERE order_id = o.id
+      ) cogs_sub ON true
+      WHERE o.tenant_id = $1 AND o.status = 'COMPLETED'
+        AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+    `;
+    const params: any[] = [tenantId, start, end];
+
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND o.branch_id = $${params.length}`;
+    }
+
+    if (orderType && orderType !== 'ALL') {
+      params.push(orderType);
+      sql += ` AND o.order_type = $${params.length}`;
+    }
+
+    if (search && search.trim()) {
+      params.push(`%${search.trim()}%`);
+      sql += ` AND (o.order_number ILIKE $${params.length} OR o.customer_name ILIKE $${params.length} OR o.customer_phone ILIKE $${params.length})`;
+    }
+
+    sql += ` ORDER BY o.created_at DESC`;
+
+    const { rows: billRows } = await query(sql, params, { tenantId });
+
+    // Fetch items for all matched bills
+    const orderIds = billRows.map((r: any) => r.id);
+    const itemsByOrderId: Record<string, any[]> = {};
+
+    if (orderIds.length > 0) {
+      const { rows: itemRows } = await query(
+        `
+        SELECT
+          oi.id,
+          oi.order_id,
+          oi.product_id,
+          oi.product_name,
+          oi.variant_name,
+          oi.quantity,
+          oi.unit_price,
+          oi.total_price,
+          COALESCE(oi.cogs, oi.cost_price * oi.quantity, 0)::numeric as cogs,
+          (oi.total_price - COALESCE(oi.cogs, oi.cost_price * oi.quantity, 0))::numeric as gross_profit,
+          CASE
+            WHEN oi.total_price > 0
+            THEN ((oi.total_price - COALESCE(oi.cogs, oi.cost_price * oi.quantity, 0)) / oi.total_price * 100)::numeric(5,2)
+            ELSE 0
+          END as gross_margin_percent,
+          oi.modifiers
+        FROM order_items oi
+        WHERE oi.order_id = ANY($1) AND oi.tenant_id = $2
+        ORDER BY oi.id ASC
+        `,
+        [orderIds, tenantId],
+        { tenantId }
+      );
+
+      for (const item of itemRows) {
+        if (!itemsByOrderId[item.order_id]) {
+          itemsByOrderId[item.order_id] = [];
+        }
+        itemsByOrderId[item.order_id].push({
+          id: item.id,
+          productId: item.product_id,
+          productName: item.product_name,
+          variantName: item.variant_name,
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.unit_price),
+          totalPrice: Number(item.total_price),
+          cogs: Number(item.cogs),
+          grossProfit: Number(item.gross_profit),
+          grossMarginPercent: Number(item.gross_margin_percent),
+          modifiers: item.modifiers,
+        });
+      }
+    }
+
+    // Format bills with items
+    const bills = billRows.map((b: any) => ({
+      id: b.id,
+      orderNumber: b.order_number,
+      createdAt: b.created_at,
+      orderType: b.order_type,
+      status: b.status,
+      paymentStatus: b.payment_status,
+      customerName: b.customer_name,
+      customerPhone: b.customer_phone,
+      riderName: b.rider_name,
+      riderPhone: b.rider_phone,
+      tableNumber: b.table_number,
+      branchName: b.branch_name,
+      cashierName: b.cashier_name,
+      subtotal: Number(b.subtotal),
+      totalDiscount: Number(b.total_discount),
+      netSales: Number(b.net_sales),
+      deliveryFee: Number(b.delivery_fee),
+      taxAmount: Number(b.tax_amount),
+      serviceChargeAmount: Number(b.service_charge_amount),
+      grandTotal: Number(b.grand_total),
+      fifoCogs: Number(b.fifo_cogs),
+      grossProfit: Number(b.gross_profit),
+      grossMarginPercent: Number(b.gross_margin_percent),
+      paymentMethods: b.payment_methods,
+      itemCount: Number(b.item_count),
+      items: itemsByOrderId[b.id] || [],
+    }));
+
+    // Aggregate summary statistics
+    const totalBills = bills.length;
+    const totalNetSales = bills.reduce((acc: number, b: any) => acc + b.netSales, 0);
+    const totalGrandTotal = bills.reduce((acc: number, b: any) => acc + b.grandTotal, 0);
+    const totalCogs = bills.reduce((acc: number, b: any) => acc + b.fifoCogs, 0);
+    const totalGrossProfit = bills.reduce((acc: number, b: any) => acc + b.grossProfit, 0);
+    const averageProfitPerBill = totalBills > 0 ? Number((totalGrossProfit / totalBills).toFixed(2)) : 0;
+    const averageMarginPercent = totalNetSales > 0 ? Number(((totalGrossProfit / totalNetSales) * 100).toFixed(2)) : 0;
+    const profitableBillsCount = bills.filter((b: any) => b.grossProfit >= 0).length;
+    const lossBillsCount = bills.filter((b: any) => b.grossProfit < 0).length;
+
+    return reply.send({
+      summary: {
+        totalBills,
+        totalNetSales,
+        totalGrandTotal,
+        totalCogs,
+        totalGrossProfit,
+        averageProfitPerBill,
+        averageMarginPercent,
+        profitableBillsCount,
+        lossBillsCount,
+      },
+      bills,
+      startDate: start,
+      endDate: end,
+    });
+  });
+
   /**
+   * Export Bill-Wise Profit and Loss Report to CSV
+   */
+  fastify.get('/api/financial/reports/bill-profit-loss/export', {
+    preHandler: [requirePermission(Permission.REPORTS_SALES)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate, orderType } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+      orderType?: string;
+    };
+
+    const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    const end = endDate || new Date(new Date().setHours(23, 59, 59, 999)).toISOString();
+
+    let sql = `
+      SELECT
+        o.order_number,
+        o.created_at,
+        o.order_type,
+        o.customer_name,
+        o.customer_phone,
+        b.name as branch_name,
+        COALESCE(o.subtotal, 0)::numeric as subtotal,
+        COALESCE(o.total_discount, 0)::numeric as total_discount,
+        (COALESCE(o.subtotal, 0) - COALESCE(o.total_discount, 0))::numeric as net_sales,
+        COALESCE(o.tax_amount, 0)::numeric as tax_amount,
+        COALESCE(o.delivery_fee, 0)::numeric as delivery_fee,
+        COALESCE(o.grand_total, 0)::numeric as grand_total,
+        COALESCE(cogs_sub.total_cogs, 0)::numeric as fifo_cogs,
+        ((COALESCE(o.subtotal, 0) - COALESCE(o.total_discount, 0)) - COALESCE(cogs_sub.total_cogs, 0))::numeric as gross_profit,
+        CASE
+          WHEN (COALESCE(o.subtotal, 0) - COALESCE(o.total_discount, 0)) > 0
+          THEN (((COALESCE(o.subtotal, 0) - COALESCE(o.total_discount, 0)) - COALESCE(cogs_sub.total_cogs, 0)) / (COALESCE(o.subtotal, 0) - COALESCE(o.total_discount, 0)) * 100)::numeric(5,2)
+          ELSE 0
+        END as gross_margin_percent,
+        COALESCE((SELECT STRING_AGG(DISTINCT method, ', ') FROM order_payments WHERE order_id = o.id), 'UNPAID') as payment_methods,
+        (SELECT COUNT(*)::int FROM order_items WHERE order_id = o.id) as item_count
+      FROM orders o
+      JOIN branches b ON b.id = o.branch_id
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(COALESCE(cogs, cost_price * quantity, 0)), 0) as total_cogs
+        FROM order_items
+        WHERE order_id = o.id
+      ) cogs_sub ON true
+      WHERE o.tenant_id = $1 AND o.status = 'COMPLETED'
+        AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+    `;
+    const params: any[] = [tenantId, start, end];
+
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND o.branch_id = $${params.length}`;
+    }
+
+    if (orderType && orderType !== 'ALL') {
+      params.push(orderType);
+      sql += ` AND o.order_type = $${params.length}`;
+    }
+
+    sql += ` ORDER BY o.created_at DESC`;
+
+    const { rows } = await query(sql, params, { tenantId });
+
+    let csv = 'Order Number,Date,Time,Channel,Branch,Customer Name,Customer Phone,Items Count,Subtotal,Discount,Net Sales,FIFO COGS,Gross Profit,Gross Margin %,Tax,Delivery Fee,Grand Total,Payment Methods\n';
+
+    for (const r of rows) {
+      const dt = new Date(r.created_at);
+      const dateStr = dt.toISOString().split('T')[0];
+      const timeStr = dt.toTimeString().split(' ')[0];
+      const line = [
+        `"${r.order_number}"`,
+        `"${dateStr}"`,
+        `"${timeStr}"`,
+        `"${r.order_type}"`,
+        `"${(r.customer_name || 'Walk-in').replace(/"/g, '""')}"`,
+        `"${r.customer_phone || ''}"`,
+        r.item_count,
+        Number(r.subtotal).toFixed(2),
+        Number(r.total_discount).toFixed(2),
+        Number(r.net_sales).toFixed(2),
+        Number(r.fifo_cogs).toFixed(2),
+        Number(r.gross_profit).toFixed(2),
+        `${Number(r.gross_margin_percent).toFixed(2)}%`,
+        Number(r.tax_amount).toFixed(2),
+        Number(r.delivery_fee).toFixed(2),
+        Number(r.grand_total).toFixed(2),
+        `"${r.payment_methods || 'CASH'}"`,
+      ].join(',');
+      csv += line + '\n';
+    }
+
+    reply.header('Content-Type', 'text/csv');
+    reply.header('Content-Disposition', `attachment; filename="bill_wise_profit_loss_${start.substring(0, 10)}_${end.substring(0, 10)}.csv"`);
+    return reply.send(csv);
+  });
+
+/**
    * Head Office Consolidated Organization Summary
    * Compares all branches under the tenant and provides consolidated totals
    */
