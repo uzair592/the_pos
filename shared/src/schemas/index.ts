@@ -35,7 +35,7 @@ export const CreateUserSchema = z.object({
 export const UpdateUserSchema = z.object({
   fullName: z.string().min(2).optional(),
   email: z.string().email().optional(),
-  password: z.string().min(6).optional(),
+  password: z.string().min(6).optional().or(z.literal('')),
   role: z.nativeEnum(SystemRole).optional(),
   branchId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),

@@ -338,10 +338,19 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
       updateSql += `, full_name = $${params.length}`;
     }
     if (email !== undefined) {
-      params.push(email.toLowerCase().trim());
+      const cleanEmail = email.toLowerCase().trim();
+      const existing = await query(
+        'SELECT id FROM users WHERE tenant_id = $1 AND email = $2 AND id != $3',
+        [tenantId, cleanEmail, id],
+        { tenantId }
+      );
+      if (existing.rows.length > 0) {
+        return reply.status(400).send({ error: 'A user with this email/username already exists in this restaurant' });
+      }
+      params.push(cleanEmail);
       updateSql += `, email = $${params.length}`;
     }
-    if (password !== undefined) {
+    if (password !== undefined && password.trim().length > 0) {
       const hash = await bcrypt.hash(password, 10);
       params.push(hash);
       updateSql += `, password_hash = $${params.length}`;
@@ -355,6 +364,9 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
       updateSql += `, branch_id = $${params.length}`;
     }
     if (isActive !== undefined) {
+      if (id === req.user!.id && isActive === false) {
+        return reply.status(400).send({ error: 'You cannot deactivate your own active session account' });
+      }
       params.push(isActive);
       updateSql += `, is_active = $${params.length}`;
     }
@@ -369,6 +381,27 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
     const { rows } = await query(updateSql, params, { tenantId });
     if (rows.length === 0) return reply.status(404).send({ error: 'User not found' });
     return reply.send({ user: rows[0] });
+  });
+
+  fastify.delete('/api/restaurant/users/:id', {
+    preHandler: [requirePermission(Permission.STAFF_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    if (id === req.user!.id) {
+      return reply.status(400).send({ error: 'You cannot deactivate your own active session account' });
+    }
+
+    const existing = await query('SELECT id, role FROM users WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+    if (existing.rows.length === 0) return reply.status(404).send({ error: 'User not found' });
+
+    if (existing.rows[0].role === SystemRole.RESTAURANT_OWNER) {
+      return reply.status(403).send({ error: 'Restaurant Owner account cannot be removed' });
+    }
+
+    await query('UPDATE users SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+    return reply.send({ success: true, message: 'Employee deactivated successfully' });
   });
 
   /**

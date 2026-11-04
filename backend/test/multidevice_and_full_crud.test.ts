@@ -12,6 +12,7 @@ describe('Multi-Device Real-Time Order & KDS Flow and Complete CRUD Verification
   let waiterToken: string;
   let kitchenToken: string;
   let cashierToken: string;
+  let ownerEmail: string;
 
   let tenantId: string;
   let branchId: string;
@@ -70,6 +71,7 @@ describe('Multi-Device Real-Time Order & KDS Flow and Complete CRUD Verification
     });
     expect(ownerLogin.statusCode).toBe(200);
     ownerToken = JSON.parse(ownerLogin.payload).token;
+    ownerEmail = tenantPayload.ownerUser.email;
 
     // 4. Onboard Restaurant
     const onboardRes = await app.inject({
@@ -453,6 +455,114 @@ describe('Multi-Device Real-Time Order & KDS Flow and Complete CRUD Verification
     doubleVariantId = defVariant.id;
     expect(prod.modifierGroups.length).toBe(1);
     expect(prod.modifierGroups[0].id).toBe(modifierGroupId);
+  });
+
+  it('CRUD 5: Staff & Employee Management - update full name, update login username/email, reset password, and verify new credentials', async () => {
+    // 1. Create a staff member
+    const origEmail = `bilal_${Date.now()}@lahorekarahi.com`;
+    const newEmail = `bilal.senior_${Date.now()}@lahorekarahi.com`;
+    const createStaffRes = await app.inject({
+      method: 'POST',
+      url: '/api/restaurant/users',
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        fullName: 'Junior Cashier Bilal',
+        email: origEmail,
+        password: 'InitialPassword123!',
+        role: SystemRole.CASHIER,
+        branchId: branchId,
+      },
+    });
+    expect(createStaffRes.statusCode).toBe(201);
+    const createdUser = JSON.parse(createStaffRes.payload).user;
+    expect(createdUser.id).toBeDefined();
+    const staffId = createdUser.id;
+
+    // Verify initial login works
+    const loginInitial = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: {
+        email: origEmail,
+        password: 'InitialPassword123!',
+      },
+    });
+    expect(loginInitial.statusCode).toBe(200);
+
+    // 2. Edit Employee: Update Full Name, Email/Username, and Reset Password
+    const editStaffRes = await app.inject({
+      method: 'PUT',
+      url: `/api/restaurant/users/${staffId}`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        fullName: 'Senior Cashier Bilal Ahmad',
+        email: newEmail,
+        password: 'NewStrongPassword2026!',
+        role: SystemRole.CASHIER,
+        branchId: branchId,
+        isActive: true,
+      },
+    });
+    expect(editStaffRes.statusCode).toBe(200);
+    const updatedUser = JSON.parse(editStaffRes.payload).user;
+    expect(updatedUser.full_name).toBe('Senior Cashier Bilal Ahmad');
+    expect(updatedUser.email).toBe(newEmail);
+
+    // 3. Verify that old credentials FAIL
+    const oldLoginAttempt = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: {
+        email: origEmail,
+        password: 'InitialPassword123!',
+      },
+    });
+    expect(oldLoginAttempt.statusCode).toBe(401);
+
+    // 4. Verify that new credentials SUCCEED
+    const newLoginAttempt = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: {
+        email: newEmail,
+        password: 'NewStrongPassword2026!',
+      },
+    });
+    expect(newLoginAttempt.statusCode).toBe(200);
+    const newLoginBody = JSON.parse(newLoginAttempt.payload);
+    expect(newLoginBody.token).toBeDefined();
+    expect(newLoginBody.user.fullName).toBe('Senior Cashier Bilal Ahmad');
+    expect(newLoginBody.user.email).toBe(newEmail);
+
+    // 5. Verify duplicate email check returns 400
+    const duplicateEmailAttempt = await app.inject({
+      method: 'PUT',
+      url: `/api/restaurant/users/${staffId}`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        email: ownerEmail, // already belongs to owner
+      },
+    });
+    expect(duplicateEmailAttempt.statusCode).toBe(400);
+
+    // 6. Test soft deactivation via DELETE /api/restaurant/users/:id
+    const deactivateRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/restaurant/users/${staffId}`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(deactivateRes.statusCode).toBe(200);
+
+    // Deactivated user cannot log in
+    const deactivatedLogin = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: {
+        email: newEmail,
+        password: 'NewStrongPassword2026!',
+      },
+    });
+    expect(deactivatedLogin.statusCode).toBe(401);
   });
 
   // =========================================================================
