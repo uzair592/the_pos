@@ -952,7 +952,14 @@ export const Daybook: React.FC = () => {
                               {
                                 label: 'Print Receipt',
                                 icon: Printer,
-                                onClick: () => setReceiptOrder(ord),
+                                onClick: async () => {
+                                  try {
+                                    const receiptRes = await api.get(`/orders/${ord.id}/receipt`);
+                                    setReceiptOrder(receiptRes.receipt || ord);
+                                  } catch {
+                                    setReceiptOrder(ord);
+                                  }
+                                },
                               },
                             ]}
                           />

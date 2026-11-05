@@ -717,8 +717,8 @@ export async function orderRoutes(fastify: FastifyInstance) {
              t.name as restaurant_name, t.logo_url as restaurant_logo,
              rs.receipt_settings, rs.currency_symbol, rs.tax_registration_number
       FROM orders o
-      JOIN branches b ON b.id = o.branch_id
-      JOIN tenants t ON t.id = o.tenant_id
+      LEFT JOIN branches b ON b.id = o.branch_id
+      LEFT JOIN tenants t ON t.id = o.tenant_id
       LEFT JOIN restaurant_settings rs ON rs.tenant_id = o.tenant_id
       WHERE o.id = $1 AND o.tenant_id = $2
       `,
@@ -743,12 +743,12 @@ export async function orderRoutes(fastify: FastifyInstance) {
 
     return reply.send({
       receipt: {
-        restaurantName: order.restaurant_name,
+        restaurantName: order.restaurant_name || 'Restaurant POS',
         restaurantLogo: order.restaurant_logo,
-        branchName: order.branch_name,
-        branchPhone: order.branch_phone,
-        branchAddress: `${order.branch_address}, ${order.branch_city}`,
-        taxRegistrationNumber: order.tax_registration_number,
+        branchName: order.branch_name || 'Main Branch',
+        branchPhone: order.branch_phone || '',
+        branchAddress: order.branch_address ? `${order.branch_address}${order.branch_city ? ', ' + order.branch_city : ''}` : '',
+        taxRegistrationNumber: order.tax_registration_number || '',
         orderNumber: order.order_number,
         orderType: order.order_type,
         tableNumber: order.table_number,
@@ -759,8 +759,8 @@ export async function orderRoutes(fastify: FastifyInstance) {
         deliveryAddress: order.delivery_address,
         riderName: order.rider_name,
         riderPhone: order.rider_phone,
-        cashierName: order.cashier_name,
-        serverName: order.waiter_name || order.cashier_name,
+        cashierName: order.cashier_name || 'Staff',
+        serverName: order.waiter_name || order.cashier_name || 'Staff',
         orderNotes: order.order_notes,
         date: order.created_at,
         currencySymbol: order.currency_symbol || 'Rs.',

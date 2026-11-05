@@ -36,20 +36,20 @@ export const Modal: React.FC<ModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-50 overflow-y-auto print:static print:overflow-visible">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity no-print"
         onClick={onClose}
       />
 
       {/* Modal Dialog */}
-      <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
+      <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0 print:p-0 print:block">
         <div
-          className={`relative transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 text-left shadow-2xl transition-all sm:my-8 w-full ${maxWidthMap[maxWidth]} border border-slate-200 dark:border-slate-800`}
+          className={`relative transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 text-left shadow-2xl transition-all sm:my-8 w-full ${maxWidthMap[maxWidth]} border border-slate-200 dark:border-slate-800 print:transform-none print:shadow-none print:border-none print:static print:max-w-none print:overflow-visible print:bg-transparent print:p-0`}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
+          <div className="no-print flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">{title}</h3>
             <button
               onClick={onClose}
@@ -60,7 +60,7 @@ export const Modal: React.FC<ModalProps> = ({
           </div>
 
           {/* Body */}
-          <div className="px-6 py-5 max-h-[80vh] overflow-y-auto dark:text-slate-200">{children}</div>
+          <div className="px-6 py-5 max-h-[80vh] overflow-y-auto dark:text-slate-200 print:max-h-none print:overflow-visible print:p-0">{children}</div>
         </div>
       </div>
     </div>

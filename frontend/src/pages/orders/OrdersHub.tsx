@@ -270,7 +270,12 @@ export const OrdersHub: React.FC = () => {
       });
 
       success(`Payment settled for Order #${settleOrder.order_number}! Completed.`);
-      setReceiptOrder(settleOrder);
+      try {
+        const receiptRes = await api.get(`/orders/${settleOrder.id}/receipt`);
+        setReceiptOrder(receiptRes.receipt || settleOrder);
+      } catch {
+        setReceiptOrder(settleOrder);
+      }
       setSettleOrder(null);
       fetchActiveOrders(true);
 
@@ -1031,7 +1036,14 @@ export const OrdersHub: React.FC = () => {
                               {
                                 label: 'Print / Reprint Receipt',
                                 icon: Printer,
-                                onClick: () => setReceiptOrder(ord),
+                                onClick: async () => {
+                                  try {
+                                    const receiptRes = await api.get(`/orders/${ord.id}/receipt`);
+                                    setReceiptOrder(receiptRes.receipt || ord);
+                                  } catch {
+                                    setReceiptOrder(ord);
+                                  }
+                                },
                               },
                               ord.payment_status === 'PENDING' && ord.status !== 'CANCELLED' && {
                                 label: 'Take Payment / Settle',
@@ -1204,8 +1216,13 @@ export const OrdersHub: React.FC = () => {
             {/* Modal Actions */}
             <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end space-x-2.5">
               <button
-                onClick={() => {
-                  setReceiptOrder(selectedOrder);
+                onClick={async () => {
+                  try {
+                    const receiptRes = await api.get(`/orders/${selectedOrder.id}/receipt`);
+                    setReceiptOrder(receiptRes.receipt || selectedOrder);
+                  } catch {
+                    setReceiptOrder(selectedOrder);
+                  }
                 }}
                 className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-sm"
               >

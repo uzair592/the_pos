@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal.js';
 import {
   Printer,
@@ -6,8 +6,10 @@ import {
   Check,
   Receipt,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import { ReceiptTemplateType } from '@pos/shared';
+import { api } from '../../api/client.js';
 
 export interface ReceiptThemeConfig {
   id: ReceiptTemplateType;
@@ -129,6 +131,251 @@ export const renderBarcodeSvg = (value: string) => (
   </div>
 );
 
+/**
+ * Universal Normalizer for Receipt Payloads.
+ * Robustly adapts backend API payloads (both snake_case from Postgres queries and camelCase
+ * from specialized receipt endpoints), POS cart items, Daybook rows, and preview samples.
+ * Guarantees that item details, quantities, prices, taxes, and totals always render completely.
+ */
+export function normalizeReceiptData(raw: any) {
+  if (!raw) return null;
+
+  // Support nested { receipt: ... } or direct order object
+  const src = raw.receipt || raw;
+
+  const currency = src.currencySymbol || src.currency_symbol || 'Rs.';
+  const restaurantName = src.restaurantName || src.restaurant_name || src.tenant_name || 'Restaurant POS';
+  const restaurantLogo = src.restaurantLogo || src.restaurant_logo || '';
+  const branchName = src.branchName || src.branch_name || 'Main Branch';
+  const branchAddress = src.branchAddress || src.branch_address || '';
+  const branchPhone = src.branchPhone || src.branch_phone || '';
+  const taxRegistrationNumber = src.taxRegistrationNumber || src.tax_registration_number || src.strn || src.ntn || '';
+  const orderNumber = src.orderNumber || src.order_number || (src.id ? `ORD-${String(src.id).slice(0, 8).toUpperCase()}` : 'ORD-001');
+  const date = src.date || src.created_at || src.createdAt || new Date().toISOString();
+  const orderType = src.orderType || src.order_type || 'DINE_IN';
+  const tableNumber = src.tableNumber !== undefined ? src.tableNumber : (src.table_number !== undefined ? src.table_number : null);
+  const floorName = src.floorName || src.floor_name || '';
+  const cashierName = src.cashierName || src.cashier_name || src.serverName || src.server_name || src.waiter_name || 'Staff';
+  const serverName = src.serverName || src.server_name || src.waiter_name || cashierName;
+  const customerName = src.customerName || src.customer_name || '';
+  const customerPhone = src.customerPhone || src.customer_phone || '';
+  const deliveryAddress = src.deliveryAddress || src.delivery_address || '';
+  const riderName = src.riderName || src.rider_name || '';
+  const riderPhone = src.riderPhone || src.rider_phone || '';
+  const coverCount = Number(src.coverCount || src.cover_count || 1);
+  const orderNotes = src.orderNotes || src.order_notes || src.notes || '';
+  const receiptSettings = src.receiptSettings || src.receipt_settings || {};
+
+  // Extract raw line items from all potential sources
+  const rawItems: any[] = Array.isArray(src.items)
+    ? src.items
+    : Array.isArray(src.order_items)
+    ? src.order_items
+    : Array.isArray(src.orderItems)
+    ? src.orderItems
+    : Array.isArray(src.cartItems)
+    ? src.cartItems
+    : [];
+
+  const items = rawItems.map((item: any, idx: number) => {
+    const productName =
+      item.productName ||
+      item.product_name ||
+      item.name ||
+      item.title ||
+      item.product?.name ||
+      `Item #${idx + 1}`;
+
+    const variantName =
+      item.variantName ||
+      item.variant_name ||
+      item.variant?.name ||
+      item.variant ||
+      '';
+
+    const quantity = Number(item.quantity !== undefined ? item.quantity : 1) || 1;
+
+    const unitPrice = Number(
+      item.unitPrice !== undefined
+        ? item.unitPrice
+        : item.unit_price !== undefined
+        ? item.unit_price
+        : item.price !== undefined
+        ? item.price
+        : 0
+    );
+
+    const totalPrice = Number(
+      item.totalPrice !== undefined
+        ? item.totalPrice
+        : item.total_price !== undefined
+        ? item.total_price
+        : item.amount !== undefined
+        ? item.amount
+        : quantity * unitPrice
+    );
+
+    let rawModifiers = item.modifiers;
+    if (typeof rawModifiers === 'string') {
+      try {
+        rawModifiers = JSON.parse(rawModifiers);
+      } catch {
+        rawModifiers = [];
+      }
+    }
+    if (!Array.isArray(rawModifiers)) rawModifiers = [];
+
+    const modifiers = rawModifiers.map((m: any) => ({
+      name: m.name || m.modifier_name || 'Extra',
+      unitPrice: Number(m.unitPrice !== undefined ? m.unitPrice : (m.unit_price || m.price || 0)),
+    }));
+
+    const notes = item.notes || item.special_instructions || item.instruction || '';
+
+    return {
+      id: item.id || `item-${idx}`,
+      productName,
+      variantName,
+      station: item.station || 'KITCHEN',
+      quantity,
+      unitPrice,
+      totalPrice,
+      itemDiscount: Number(item.itemDiscount || item.item_discount || 0),
+      modifiers,
+      notes,
+    };
+  });
+
+  const subtotal = Number(
+    src.subtotal !== undefined
+      ? src.subtotal
+      : src.gross_sales !== undefined
+      ? src.gross_sales
+      : src.items_subtotal !== undefined
+      ? src.items_subtotal
+      : items.reduce((sum, it) => sum + it.totalPrice, 0)
+  );
+
+  const discount = Number(
+    src.discount !== undefined
+      ? src.discount
+      : src.total_discount !== undefined
+      ? src.total_discount
+      : src.discount_amount !== undefined
+      ? src.discount_amount
+      : 0
+  );
+
+  const taxPercent = Number(
+    src.taxPercent !== undefined
+      ? src.taxPercent
+      : src.tax_percent !== undefined
+      ? src.tax_percent
+      : src.tax_rate_percent !== undefined
+      ? src.tax_rate_percent
+      : 0
+  );
+
+  const taxAmount = Number(
+    src.taxAmount !== undefined
+      ? src.taxAmount
+      : src.tax_amount !== undefined
+      ? src.tax_amount
+      : 0
+  );
+
+  const serviceChargeAmount = Number(
+    src.serviceChargeAmount !== undefined
+      ? src.serviceChargeAmount
+      : src.service_charge_amount !== undefined
+      ? src.service_charge_amount
+      : src.service_charge !== undefined
+      ? src.service_charge
+      : 0
+  );
+
+  const deliveryFee = Number(
+    src.deliveryFee !== undefined
+      ? src.deliveryFee
+      : src.delivery_fee !== undefined
+      ? src.delivery_fee
+      : 0
+  );
+
+  const grandTotal = Number(
+    src.grandTotal !== undefined
+      ? src.grandTotal
+      : src.grand_total !== undefined
+      ? src.grand_total
+      : src.total_amount !== undefined
+      ? src.total_amount
+      : Math.max(0, subtotal - discount + taxAmount + serviceChargeAmount + deliveryFee)
+  );
+
+  const rawPayments = Array.isArray(src.payments)
+    ? src.payments
+    : Array.isArray(src.order_payments)
+    ? src.order_payments
+    : [];
+
+  const payments =
+    rawPayments.length > 0
+      ? rawPayments.map((p: any) => ({
+          method: p.method || p.payment_method || 'CASH',
+          amount: Number(p.amount !== undefined ? p.amount : grandTotal),
+        }))
+      : src.payment_method
+      ? [{ method: src.payment_method, amount: grandTotal }]
+      : [];
+
+  const changeGiven = Number(
+    src.changeGiven !== undefined
+      ? src.changeGiven
+      : src.change_given !== undefined
+      ? src.change_given
+      : src.change_amount !== undefined
+      ? src.change_amount
+      : 0
+  );
+
+  return {
+    ...src,
+    id: src.id,
+    currencySymbol: currency,
+    restaurantName,
+    restaurantLogo,
+    branchName,
+    branchAddress,
+    branchPhone,
+    taxRegistrationNumber,
+    orderNumber,
+    date,
+    orderType,
+    tableNumber,
+    floorName,
+    coverCount,
+    cashierName,
+    serverName,
+    customerName,
+    customerPhone,
+    deliveryAddress,
+    riderName,
+    riderPhone,
+    orderNotes,
+    receiptSettings,
+    items,
+    subtotal,
+    discount,
+    taxPercent,
+    taxAmount,
+    serviceChargeAmount,
+    deliveryFee,
+    grandTotal,
+    payments,
+    changeGiven,
+  };
+}
+
 export interface ReceiptPreviewProps {
   template: ReceiptTemplateType;
   receiptData: any;
@@ -145,13 +392,15 @@ export interface ReceiptPreviewProps {
  */
 export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
   template,
-  receiptData,
+  receiptData: rawReceiptData,
   showQrCode = true,
   showTaxDetails = true,
   showCustomer = true,
   showTipGuide = true,
   isPrintable = true,
 }) => {
+  if (!rawReceiptData) return null;
+  const receiptData = normalizeReceiptData(rawReceiptData);
   if (!receiptData) return null;
   const currency = receiptData.currencySymbol || 'Rs.';
 
@@ -243,7 +492,12 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
               <span className="w-1/3 text-right">Amount</span>
             </div>
             <div className="divide-y divide-dotted divide-slate-200">
-              {receiptData.items?.map((item: any, idx: number) => {
+              {receiptData.items?.length === 0 ? (
+                <div className="py-2.5 text-center text-[10px] text-slate-500 italic">
+                  No line items on this order
+                </div>
+              ) : (
+                receiptData.items?.map((item: any, idx: number) => {
                 let mods: any[] = [];
                 try {
                   mods = Array.isArray(item.modifiers) ? item.modifiers : JSON.parse(item.modifiers || '[]');
@@ -286,7 +540,7 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
                     )}
                   </div>
                 );
-              })}
+              }))}
             </div>
           </div>
 
@@ -425,7 +679,12 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
             </div>
 
             <div className="divide-y divide-slate-200">
-              {receiptData.items?.map((item: any, idx: number) => {
+              {receiptData.items?.length === 0 ? (
+                <div className="py-2.5 text-center text-[10px] text-slate-500 italic font-sans">
+                  No line items on this order
+                </div>
+              ) : (
+                receiptData.items?.map((item: any, idx: number) => {
                 let mods: any[] = [];
                 try {
                   mods = Array.isArray(item.modifiers) ? item.modifiers : JSON.parse(item.modifiers || '[]');
@@ -468,7 +727,7 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
                     )}
                   </div>
                 );
-              })}
+              }))}
             </div>
           </div>
 
@@ -587,7 +846,12 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
 
           {/* Items */}
           <div className="border-b border-dashed border-slate-400 pb-1 mb-1 space-y-1">
-            {receiptData.items?.map((item: any, idx: number) => {
+            {receiptData.items?.length === 0 ? (
+              <div className="py-1 text-center text-[9px] text-slate-500 italic">
+                No line items on this order
+              </div>
+            ) : (
+              receiptData.items?.map((item: any, idx: number) => {
               let mods: any[] = [];
               try {
                 mods = Array.isArray(item.modifiers) ? item.modifiers : JSON.parse(item.modifiers || '[]');
@@ -612,7 +876,7 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
                   )}
                 </div>
               );
-            })}
+            }))}
           </div>
 
           {/* Compact Totals */}
@@ -743,7 +1007,14 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-xs">
-              {receiptData.items?.map((item: any, idx: number) => {
+              {receiptData.items?.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-4 text-center text-slate-500 italic">
+                    No line items recorded on this invoice
+                  </td>
+                </tr>
+              ) : (
+                receiptData.items?.map((item: any, idx: number) => {
                 let mods: any[] = [];
                 try {
                   mods = Array.isArray(item.modifiers) ? item.modifiers : JSON.parse(item.modifiers || '[]');
@@ -777,7 +1048,7 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
 
@@ -892,7 +1163,12 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
               Items to Prepare / Pack:
             </span>
 
-            {receiptData.items?.map((item: any, idx: number) => {
+            {receiptData.items?.length === 0 ? (
+              <div className="p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-center text-[11px] text-slate-500 italic">
+                No line items to prepare
+              </div>
+            ) : (
+              receiptData.items?.map((item: any, idx: number) => {
               let mods: any[] = [];
               try {
                 mods = Array.isArray(item.modifiers) ? item.modifiers : JSON.parse(item.modifiers || '[]');
@@ -935,7 +1211,7 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
                   )}
                 </div>
               );
-            })}
+            }))}
           </div>
 
           {receiptData.orderNotes && (
@@ -967,9 +1243,48 @@ export interface ReceiptModalProps {
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   isOpen,
   onClose,
-  receiptData,
+  receiptData: rawReceiptData,
   initialTemplate,
 }) => {
+  const [activeReceipt, setActiveReceipt] = useState<any>(rawReceiptData);
+  const [isLoadingDetails, setIsLoadingDetails] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!rawReceiptData) {
+      setActiveReceipt(null);
+      return;
+    }
+
+    const orderId = rawReceiptData.id || rawReceiptData.order_id || rawReceiptData.orderId;
+    const items = rawReceiptData.items || rawReceiptData.order_items || rawReceiptData.orderItems;
+    const hasItems = Array.isArray(items) && items.length > 0;
+
+    // If order has an ID and either has no items or is missing restaurant/branch metadata,
+    // auto-fetch the complete authoritative receipt payload from the server!
+    if (orderId && (!hasItems || !rawReceiptData.restaurantName || !rawReceiptData.branchName)) {
+      setIsLoadingDetails(true);
+      api
+        .get(`/orders/${orderId}/receipt`)
+        .then((res: any) => {
+          if (res?.receipt) {
+            setActiveReceipt(res.receipt);
+          } else {
+            setActiveReceipt(rawReceiptData);
+          }
+        })
+        .catch((err) => {
+          console.warn('Could not auto-fetch full receipt payload:', err);
+          setActiveReceipt(rawReceiptData);
+        })
+        .finally(() => {
+          setIsLoadingDetails(false);
+        });
+    } else {
+      setActiveReceipt(rawReceiptData);
+    }
+  }, [rawReceiptData]);
+
+  const receiptData = normalizeReceiptData(activeReceipt || rawReceiptData);
   if (!receiptData) return null;
 
   // Read active template from restaurant receiptSettings, fallback to initialTemplate or localStorage or default
@@ -1061,22 +1376,36 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               Theme: <strong className="text-slate-900 dark:text-white font-bold">{getTemplateDisplayName(activeTemplate)}</strong>
             </span>
           </div>
-          <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">
-            Manage print theme in Settings
-          </span>
+          {isLoadingDetails ? (
+            <span className="text-[11px] text-brand-600 dark:text-brand-400 font-semibold flex items-center space-x-1 animate-pulse">
+              <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
+              Fetching order items...
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">
+              Manage print theme in Settings
+            </span>
+          )}
         </div>
 
         {/* Printable Bill Area */}
-        <div className="max-h-[64vh] overflow-y-auto p-3.5 bg-slate-200/80 dark:bg-slate-950/80 rounded-2xl flex justify-center shadow-inner">
-          <ReceiptPreview
-            template={activeTemplate}
-            receiptData={receiptData}
-            showQrCode={showQrCode}
-            showTaxDetails={showTaxDetails}
-            showCustomer={showCustomer}
-            showTipGuide={showTipGuide}
-            isPrintable={true}
-          />
+        <div className="max-h-[64vh] overflow-y-auto p-3.5 bg-slate-200/80 dark:bg-slate-950/80 rounded-2xl flex justify-center shadow-inner print:max-h-none print:overflow-visible print:bg-white print:p-0 print:shadow-none">
+          {isLoadingDetails && (!receiptData.items || receiptData.items.length === 0) ? (
+            <div className="flex flex-col items-center justify-center p-12 space-y-3 bg-white rounded-xl shadow border border-slate-200 min-w-[280px]">
+              <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+              <span className="text-xs font-bold text-slate-700">Loading complete bill details...</span>
+            </div>
+          ) : (
+            <ReceiptPreview
+              template={activeTemplate}
+              receiptData={receiptData}
+              showQrCode={showQrCode}
+              showTaxDetails={showTaxDetails}
+              showCustomer={showCustomer}
+              showTipGuide={showTipGuide}
+              isPrintable={true}
+            />
+          )}
         </div>
 
         {/* Action Buttons: WhatsApp Copy, Close, Print */}
@@ -1098,7 +1427,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </button>
             <button
               onClick={handlePrint}
-              className="flex items-center space-x-2 px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-black shadow-lg transition-transform active:scale-95"
+              disabled={isLoadingDetails && (!receiptData.items || receiptData.items.length === 0)}
+              className="flex items-center space-x-2 px-5 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-lg transition-transform active:scale-95"
             >
               <Printer className="w-4 h-4" />
               <span>Print Bill</span>

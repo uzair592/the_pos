@@ -26,6 +26,10 @@
 
 /* Print Specific Rules for Universal Thermal Receipts and A4 Reports */
 @media print {
+  .no-print, .no-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
   body * {
     visibility: hidden !important;
   }
@@ -42,6 +46,9 @@
     margin: 0 !important;
     padding: 0 !important;
     box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: none !important;
   }
   .printable-a4-report {
     position: absolute !important;

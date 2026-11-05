@@ -615,7 +615,14 @@ export const RestaurantDashboard: React.FC = () => {
                         {
                           label: 'Print Bill / Receipt',
                           icon: Printer,
-                          onClick: () => setReceiptOrder(o),
+                          onClick: async () => {
+                            try {
+                              const receiptRes = await api.get(`/orders/${o.id}/receipt`);
+                              setReceiptOrder(receiptRes.receipt || o);
+                            } catch {
+                              setReceiptOrder(o);
+                            }
+                          },
                         },
                       ]}
                     />
