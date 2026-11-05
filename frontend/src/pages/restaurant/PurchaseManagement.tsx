@@ -26,7 +26,15 @@ import {
   Boxes,
   Users,
 } from 'lucide-react';
-import { StockUnit, Permission } from '@pos/shared';
+import {
+  StockUnit,
+  Permission,
+  STANDARD_UNITS,
+  getCompatibleUnits,
+  convertPurchaseQtyToBase,
+  calculateBaseUnitCost,
+  formatDisplayStock,
+} from '@pos/shared';
 import { exportPurchaseVoucherPdf } from '../../utils/pdfExport.js';
 
 export const PurchaseManagement: React.FC = () => {
@@ -64,7 +72,7 @@ export const PurchaseManagement: React.FC = () => {
     paidAmount: 0,
     notes: '',
     items: [
-      { ingredientId: '', unit: StockUnit.KG, quantity: 1, unitPrice: 0 },
+      { ingredientId: '', unit: 'G', purchaseUnit: 'KG', conversionFactor: 1000, quantity: 1, unitPrice: 0 },
     ],
   });
 
@@ -107,14 +115,21 @@ export const PurchaseManagement: React.FC = () => {
       }
       if (ingredientsRes.ingredients?.length > 0 && !invoiceForm.items[0].ingredientId) {
         const firstIng = ingredientsRes.ingredients[0];
+        const bUnit = firstIng.base_unit || firstIng.unit || 'G';
+        const pUnit = firstIng.purchase_unit || firstIng.unit || 'KG';
+        const factor = Number(firstIng.conversion_factor || 1);
+        const pPrice = Number(firstIng.purchase_cost || (Number(firstIng.cost_per_unit || 0) * factor));
+
         setInvoiceForm((prev) => ({
           ...prev,
           items: [
             {
               ingredientId: firstIng.id,
-              unit: firstIng.unit as StockUnit,
+              unit: bUnit,
+              purchaseUnit: pUnit,
+              conversionFactor: factor,
               quantity: 1,
-              unitPrice: Number(firstIng.cost_per_unit || 0),
+              unitPrice: pPrice,
             },
           ],
         }));
@@ -133,15 +148,22 @@ export const PurchaseManagement: React.FC = () => {
   // Handle adding an item row to the invoice
   const addItemRow = () => {
     const firstIng = ingredients[0];
+    const bUnit = firstIng?.base_unit || firstIng?.unit || 'G';
+    const pUnit = firstIng?.purchase_unit || firstIng?.unit || 'KG';
+    const factor = Number(firstIng?.conversion_factor || 1);
+    const pPrice = Number(firstIng?.purchase_cost || (Number(firstIng?.cost_per_unit || 0) * factor));
+
     setInvoiceForm((prev) => ({
       ...prev,
       items: [
         ...prev.items,
         {
           ingredientId: firstIng ? firstIng.id : '',
-          unit: firstIng ? (firstIng.unit as StockUnit) : StockUnit.KG,
+          unit: bUnit,
+          purchaseUnit: pUnit,
+          conversionFactor: factor,
           quantity: 1,
-          unitPrice: firstIng ? Number(firstIng.cost_per_unit || 0) : 0,
+          unitPrice: pPrice,
         },
       ],
     }));
@@ -160,11 +182,37 @@ export const PurchaseManagement: React.FC = () => {
       const newItems = [...prev.items];
       if (field === 'ingredientId') {
         const found = ingredients.find((i) => i.id === value);
+        const bUnit = found?.base_unit || found?.unit || 'G';
+        const pUnit = found?.purchase_unit || found?.unit || 'KG';
+        const factor = Number(found?.conversion_factor || 1);
+        const pPrice = Number(found?.purchase_cost || (Number(found?.cost_per_unit || 0) * factor));
+
         newItems[index] = {
           ...newItems[index],
           ingredientId: value,
-          unit: found ? (found.unit as StockUnit) : newItems[index].unit,
-          unitPrice: found ? Number(found.cost_per_unit || 0) : newItems[index].unitPrice,
+          unit: bUnit,
+          purchaseUnit: pUnit,
+          conversionFactor: factor,
+          unitPrice: pPrice,
+        };
+      } else if (field === 'purchaseUnit') {
+        const found = ingredients.find((i) => i.id === newItems[index].ingredientId);
+        const bUnit = found?.base_unit || found?.unit || 'G';
+        const pUnit = value;
+        let factor = newItems[index].conversionFactor;
+        if (pUnit === found?.purchase_unit && Number(found?.conversion_factor) > 0) {
+          factor = Number(found.conversion_factor);
+        } else if (pUnit === 'KG' && bUnit === 'G') factor = 1000;
+        else if (pUnit === 'L' && bUnit === 'ML') factor = 1000;
+        else if (pUnit === 'DOZEN' && bUnit === 'PCS') factor = 12;
+        else if (pUnit === 'TRAY' && bUnit === 'PCS') factor = 30;
+        else if (pUnit === 'CARTON' && bUnit === 'PCS') factor = 24;
+        else if (pUnit === bUnit) factor = 1;
+
+        newItems[index] = {
+          ...newItems[index],
+          purchaseUnit: pUnit,
+          conversionFactor: factor,
         };
       } else {
         newItems[index] = {
@@ -204,16 +252,30 @@ export const PurchaseManagement: React.FC = () => {
         taxAmount: Number(invoiceForm.taxAmount || 0),
         paidAmount: Number(invoiceForm.paidAmount || 0),
         notes: invoiceForm.notes,
-        items: invoiceForm.items.map((it) => ({
-          ingredientId: it.ingredientId,
-          unit: it.unit,
-          quantity: Number(it.quantity),
-          unitPrice: Number(it.unitPrice),
-        })),
+        items: invoiceForm.items.map((it) => {
+          const ing = ingredients.find((i) => i.id === it.ingredientId);
+          const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (it.unit || 'G');
+          const pUnit = it.purchaseUnit || ing?.purchase_unit || baseU;
+          const factor = Number(it.conversionFactor || ing?.conversion_factor || 1);
+          return {
+            ingredientId: it.ingredientId,
+            unit: baseU,
+            purchaseUnit: pUnit,
+            conversionFactor: factor,
+            quantity: Number(it.quantity),
+            unitPrice: Number(it.unitPrice),
+          };
+        }),
       });
 
-      success('Purchase invoice draft created successfully');
+      success('Purchase invoice draft created successfully with automatic base unit conversion!');
       setIsCreateInvoiceOpen(false);
+      const firstIng = ingredients[0];
+      const bUnit = firstIng?.base_unit || firstIng?.unit || 'G';
+      const pUnit = firstIng?.purchase_unit || firstIng?.unit || 'KG';
+      const factor = Number(firstIng?.conversion_factor || 1);
+      const pPrice = Number(firstIng?.purchase_cost || (Number(firstIng?.cost_per_unit || 0) * factor));
+
       setInvoiceForm({
         branchId: currentBranchId || (branches[0]?.id || ''),
         supplierId: suppliers[0]?.id || '',
@@ -223,10 +285,12 @@ export const PurchaseManagement: React.FC = () => {
         notes: '',
         items: [
           {
-            ingredientId: ingredients[0]?.id || '',
-            unit: (ingredients[0]?.unit as StockUnit) || StockUnit.KG,
+            ingredientId: firstIng?.id || '',
+            unit: bUnit,
+            purchaseUnit: pUnit,
+            conversionFactor: factor,
             quantity: 1,
-            unitPrice: Number(ingredients[0]?.cost_per_unit || 0),
+            unitPrice: pPrice,
           },
         ],
       });
@@ -916,85 +980,105 @@ export const PurchaseManagement: React.FC = () => {
               </button>
             </div>
 
-            <div className="p-2 space-y-2 max-h-56 overflow-y-auto">
-              {invoiceForm.items.map((row, idx) => (
-                <div key={idx} className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-200 dark:border-slate-700/60">
-                  <div className="flex-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Ingredient</label>
-                    <select
-                      value={row.ingredientId}
-                      onChange={(e) => updateItemRow(idx, 'ingredientId', e.target.value)}
-                      className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                      required
-                    >
-                      {ingredients.map((ing) => (
-                        <option key={ing.id} value={ing.id}>
-                          {ing.name} ({ing.unit})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+            <div className="p-2 space-y-2 max-h-72 overflow-y-auto">
+              {invoiceForm.items.map((row, idx) => {
+                const ing = ingredients.find((i) => i.id === row.ingredientId);
+                const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (row.unit || 'G');
+                const purchaseU = row.purchaseUnit || ing?.purchase_unit || baseU;
+                const factor = Number(row.conversionFactor || ing?.conversion_factor || 1);
+                const baseQty = convertPurchaseQtyToBase(row.quantity, purchaseU, baseU, factor);
+                const baseCost = calculateBaseUnitCost(row.unitPrice, factor);
 
-                  <div className="w-24">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Unit</label>
-                    <select
-                      value={row.unit}
-                      onChange={(e) => updateItemRow(idx, 'unit', e.target.value)}
-                      className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono"
-                    >
-                      {Object.values(StockUnit).map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                return (
+                  <div key={idx} className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <div className="flex-1">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Ingredient</label>
+                        <select
+                          value={row.ingredientId}
+                          onChange={(e) => updateItemRow(idx, 'ingredientId', e.target.value)}
+                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                          required
+                        >
+                          {ingredients.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name} (Base: {item.base_unit || item.unit})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                  <div className="w-24">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Quantity</label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.001"
-                      value={row.quantity}
-                      onChange={(e) => updateItemRow(idx, 'quantity', parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold"
-                      required
-                    />
-                  </div>
+                      <div className="w-28">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Purchase Unit</label>
+                        <select
+                          value={row.purchaseUnit}
+                          onChange={(e) => updateItemRow(idx, 'purchaseUnit', e.target.value)}
+                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold"
+                        >
+                          {Object.values(STANDARD_UNITS).map((u) => (
+                            <option key={u.code} value={u.code}>
+                              {u.name} ({u.code})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                  <div className="w-28">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Unit Price ({currencySymbol})</label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      value={row.unitPrice}
-                      onChange={(e) => updateItemRow(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold"
-                      required
-                    />
-                  </div>
+                      <div className="w-24">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Quantity</label>
+                        <input
+                          type="number"
+                          step="any"
+                          min="0.0001"
+                          value={row.quantity}
+                          onChange={(e) => updateItemRow(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold"
+                          required
+                        />
+                      </div>
 
-                  <div className="w-28 text-right">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Total</label>
-                    <div className="py-1.5 font-mono font-bold text-xs text-brand-600 dark:text-brand-400">
-                      {currencySymbol} {(row.quantity * row.unitPrice).toFixed(2)}
+                      <div className="w-28">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Unit Price ({currencySymbol})</label>
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          value={row.unitPrice}
+                          onChange={(e) => updateItemRow(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
+                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold"
+                          required
+                        />
+                      </div>
+
+                      <div className="w-28 text-right">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Total</label>
+                        <div className="py-1.5 font-mono font-bold text-xs text-brand-600 dark:text-brand-400">
+                          {currencySymbol} {(row.quantity * row.unitPrice).toFixed(2)}
+                        </div>
+                      </div>
+
+                      {invoiceForm.items.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeItemRow(idx)}
+                          className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg transition-colors mt-3"
+                          title="Remove Row"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] px-1 text-slate-500 bg-white/60 dark:bg-slate-900/40 p-1.5 rounded-lg border border-slate-200/60 dark:border-slate-800">
+                      <span className="font-mono">
+                        Base Stock Increment: <strong className="text-emerald-600 dark:text-emerald-400 font-bold">{baseQty.toLocaleString()} {baseU}</strong> (1 {purchaseU} = {factor.toLocaleString()} {baseU})
+                      </span>
+                      <span className="font-mono">
+                        Base Unit Cost: <strong className="text-brand-600 dark:text-brand-400 font-bold">{currencySymbol} {baseCost.toFixed(4)} / {baseU}</strong>
+                      </span>
                     </div>
                   </div>
-
-                  {invoiceForm.items.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeItemRow(idx)}
-                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg transition-colors mt-3"
-                      title="Remove Row"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -1131,32 +1215,48 @@ export const PurchaseManagement: React.FC = () => {
                 <thead className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold uppercase text-[10px]">
                   <tr>
                     <th className="px-3 py-2">Ingredient Item</th>
-                    <th className="px-3 py-2 text-center">Unit</th>
-                    <th className="px-3 py-2 text-right">Quantity</th>
-                    <th className="px-3 py-2 text-right">Unit Price</th>
+                    <th className="px-3 py-2 text-right">Purchased Qty</th>
+                    <th className="px-3 py-2 text-right">Inward Base Stock</th>
+                    <th className="px-3 py-2 text-right">Purchase Price</th>
+                    <th className="px-3 py-2 text-right">Base Cost</th>
                     <th className="px-3 py-2 text-right">Total Price</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                  {invoiceItems.map((it: any) => (
-                    <tr key={it.id}>
-                      <td className="px-3 py-2 font-bold text-slate-900 dark:text-white">
-                        {it.ingredient_name}
-                      </td>
-                      <td className="px-3 py-2 text-center font-mono">
-                        {it.unit}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono font-bold">
-                        {Number(it.quantity).toLocaleString()}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono text-slate-500">
-                        {currencySymbol} {Number(it.unit_price).toFixed(2)}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-brand-600 dark:text-brand-400">
-                        {currencySymbol} {Number(it.total_price).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
+                  {invoiceItems.map((it: any) => {
+                    const factor = Number(it.conversion_factor) > 0 ? Number(it.conversion_factor) : 1;
+                    const baseQ = it.base_quantity !== null && it.base_quantity !== undefined ? Number(it.base_quantity) : Number(it.quantity) * factor;
+                    const baseC = it.base_unit_cost !== null && it.base_unit_cost !== undefined ? Number(it.base_unit_cost) : Number(it.unit_price) / factor;
+                    const pUnit = it.purchase_unit || it.unit;
+
+                    return (
+                      <tr key={it.id}>
+                        <td className="px-3 py-2 font-bold text-slate-900 dark:text-white">
+                          {it.ingredient_name}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
+                          {Number(it.quantity).toLocaleString()} {pUnit}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                          {baseQ.toLocaleString()} {it.unit}
+                          {pUnit !== it.unit && factor > 1 && (
+                            <span className="block text-[10px] text-slate-400 font-normal">
+                              (1 {pUnit} = {factor} {it.unit})
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-slate-500">
+                          {currencySymbol} {Number(it.unit_price).toFixed(2)} / {pUnit}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-slate-500">
+                          {currencySymbol} {baseC.toFixed(4)} / {it.unit}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-brand-600 dark:text-brand-400">
+                          {currencySymbol} {Number(it.total_price).toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

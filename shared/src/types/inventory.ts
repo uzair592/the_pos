@@ -1,11 +1,18 @@
 export enum StockUnit {
   KG = 'KG',
   G = 'G',
+  MG = 'MG',
   L = 'L',
   ML = 'ML',
   PCS = 'PCS',
   DOZEN = 'DOZEN',
+  TRAY = 'TRAY',
+  BOX = 'BOX',
+  CARTON = 'CARTON',
   PACK = 'PACK',
+  SACK = 'SACK',
+  BOTTLE = 'BOTTLE',
+  CAN = 'CAN',
 }
 
 export interface Ingredient {
@@ -13,10 +20,17 @@ export interface Ingredient {
   tenantId: string;
   name: string;
   nameUrdu?: string;
+  category?: string;
   sku: string;
-  unit: StockUnit;
-  costPerUnit: number; // weighted average cost
+  unit: StockUnit | string;
+  baseUnit: StockUnit | string;
+  purchaseUnit: StockUnit | string;
+  conversionFactor: number;
+  purchaseCost: number;
+  costPerUnit: number; // cost per base unit (e.g. per gram)
   minStockAlert: number;
+  currentStock?: number;
+  displayStock?: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -28,9 +42,13 @@ export interface BranchStock {
   branchId: string;
   ingredientId: string;
   ingredientName?: string;
-  unit?: StockUnit;
+  unit?: StockUnit | string;
+  baseUnit?: string;
+  purchaseUnit?: string;
+  conversionFactor?: number;
   currentStock: number;
   costPerUnit: number;
+  displayStock?: string;
   lastUpdated: string;
 }
 
@@ -39,9 +57,11 @@ export interface RecipeIngredient {
   recipeId: string;
   ingredientId: string;
   ingredientName?: string;
+  enteredQuantity?: number;
+  recipeUnit?: string;
   quantity: number; // quantity in ingredient's base unit
-  unit: StockUnit;
-  unitCost?: number;
+  unit: StockUnit | string; // base unit
+  unitCost?: number; // cost per base unit
   totalCost?: number;
 }
 
@@ -116,9 +136,13 @@ export interface PurchaseItem {
   purchaseId: string;
   ingredientId: string;
   ingredientName?: string;
-  unit: StockUnit;
+  unit: StockUnit | string;
+  purchaseUnit?: string;
+  conversionFactor?: number;
   quantity: number;
+  baseQuantity?: number;
   unitPrice: number;
+  baseUnitCost?: number;
   totalPrice: number;
 }
 

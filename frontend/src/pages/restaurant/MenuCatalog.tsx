@@ -40,7 +40,14 @@ import {
   ArrowUpDown,
   Flame,
 } from 'lucide-react';
-import { PrepStation } from '@pos/shared';
+import {
+  PrepStation,
+  getCompatibleUnits,
+  convertRecipeQtyToBase,
+  calculateBaseUnitCost,
+  formatDisplayStock,
+  STANDARD_UNITS,
+} from '@pos/shared';
 
 export const MenuCatalog: React.FC = () => {
   const { tenant } = useAuth();
@@ -116,7 +123,13 @@ export const MenuCatalog: React.FC = () => {
     modifierGroupIds: [] as string[],
     recipe: {
       yieldCount: 1,
-      ingredients: [] as Array<{ ingredientId: string; quantity: number; unit: string }>,
+      ingredients: [] as Array<{
+        ingredientId: string;
+        quantity: number;
+        unit: string;
+        enteredQuantity?: number;
+        recipeUnit?: string;
+      }>,
     },
   });
 
@@ -350,8 +363,10 @@ export const MenuCatalog: React.FC = () => {
         ingredients:
           prod.recipe?.ingredients?.map((ri: any) => ({
             ingredientId: ri.ingredientId,
-            quantity: ri.quantity,
+            quantity: Number(ri.quantity),
             unit: ri.unit,
+            enteredQuantity: Number(ri.enteredQuantity || ri.entered_quantity || ri.quantity),
+            recipeUnit: ri.recipeUnit || ri.recipe_unit || ri.unit,
           })) || [],
       },
     });
@@ -365,13 +380,20 @@ export const MenuCatalog: React.FC = () => {
       return;
     }
     const defaultIng = ingredients[0];
+    const baseU = defaultIng ? (defaultIng.base_unit || defaultIng.unit || 'G') : 'G';
     setProductForm({
       ...productForm,
       recipe: {
         ...productForm.recipe,
         ingredients: [
           ...productForm.recipe.ingredients,
-          { ingredientId: defaultIng.id, quantity: 1, unit: defaultIng.unit },
+          {
+            ingredientId: defaultIng.id,
+            quantity: 1,
+            unit: baseU,
+            enteredQuantity: 1,
+            recipeUnit: baseU,
+          },
         ],
       },
     });
@@ -389,15 +411,45 @@ export const MenuCatalog: React.FC = () => {
 
   const updateRecipeIngredient = (index: number, field: string, value: any) => {
     const updated = [...productForm.recipe.ingredients];
+    const curr = updated[index];
     if (field === 'ingredientId') {
       const ing = ingredients.find((i) => i.id === value);
+      const baseU = ing ? (ing.base_unit || ing.unit || 'G') : 'G';
+      const factor = Number(ing?.conversion_factor || 1);
+      const enteredQ = Number(curr.enteredQuantity || curr.quantity || 1);
+      const baseQ = convertRecipeQtyToBase(enteredQ, baseU, baseU, factor);
       updated[index] = {
-        ...updated[index],
+        ...curr,
         ingredientId: value,
-        unit: ing ? ing.unit : updated[index].unit,
+        unit: baseU,
+        recipeUnit: baseU,
+        enteredQuantity: enteredQ,
+        quantity: baseQ,
+      };
+    } else if (field === 'recipeUnit') {
+      const ing = ingredients.find((i) => i.id === curr.ingredientId);
+      const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (curr.unit || 'G');
+      const factor = Number(ing?.conversion_factor || 1);
+      const enteredQ = Number(curr.enteredQuantity || curr.quantity || 0);
+      const baseQ = convertRecipeQtyToBase(enteredQ, value, baseU, factor);
+      updated[index] = {
+        ...curr,
+        recipeUnit: value,
+        quantity: baseQ,
+      };
+    } else if (field === 'enteredQuantity') {
+      const ing = ingredients.find((i) => i.id === curr.ingredientId);
+      const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (curr.unit || 'G');
+      const factor = Number(ing?.conversion_factor || 1);
+      const val = parseFloat(value) || 0;
+      const baseQ = convertRecipeQtyToBase(val, curr.recipeUnit || baseU, baseU, factor);
+      updated[index] = {
+        ...curr,
+        enteredQuantity: val,
+        quantity: baseQ,
       };
     } else {
-      updated[index] = { ...updated[index], [field]: value };
+      updated[index] = { ...curr, [field]: value };
     }
     setProductForm({
       ...productForm,
@@ -408,11 +460,12 @@ export const MenuCatalog: React.FC = () => {
     });
   };
 
-  // Compute live estimated recipe cost in modal
+  // Compute live estimated recipe cost in modal based on base unit quantities
   const modalCalculatedCost = productForm.recipe.ingredients.reduce((acc, it) => {
     const ing = ingredients.find((i) => i.id === it.ingredientId);
     const unitCost = ing ? Number(ing.cost_per_unit || 0) : 0;
-    return acc + (Number(it.quantity) || 0) * unitCost;
+    const baseQ = Number(it.quantity || it.enteredQuantity || 0);
+    return acc + baseQ * unitCost;
   }, 0) / (Number(productForm.recipe.yieldCount) || 1);
 
   // Effective cost price: manual input if set (>0), otherwise fallback to calculated recipe cost
@@ -2006,52 +2059,80 @@ export const MenuCatalog: React.FC = () => {
               <div className="space-y-2">
                 {productForm.recipe.ingredients.map((item, idx) => {
                   const ing = ingredients.find((i) => i.id === item.ingredientId);
-                  const lineCost = ing ? Number(ing.cost_per_unit || 0) * (Number(item.quantity) || 0) : 0;
+                  const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (item.unit || 'G');
+                  const recipeU = item.recipeUnit || baseU;
+                  const enteredQ = Number(item.enteredQuantity !== undefined ? item.enteredQuantity : item.quantity) || 0;
+                  const factor = Number(ing?.conversion_factor || 1);
+                  const baseQ = convertRecipeQtyToBase(enteredQ, recipeU, baseU, factor);
+                  const lineCost = (Number(ing?.cost_per_unit || 0)) * baseQ;
 
                   return (
                     <div
                       key={idx}
-                      className="flex items-center space-x-2 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs"
+                      className="p-2.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs shadow-sm"
                     >
-                      <select
-                        value={item.ingredientId}
-                        onChange={(e) => updateRecipeIngredient(idx, 'ingredientId', e.target.value)}
-                        className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1"
-                      >
-                        {ingredients.map((ingItem) => (
-                          <option key={ingItem.id} value={ingItem.id}>
-                            {ingItem.name} ({ingItem.unit}) - {currencySymbol} {Number(ingItem.cost_per_unit || 0).toFixed(2)}/{ingItem.unit}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex items-center space-x-2">
+                        <select
+                          value={item.ingredientId}
+                          onChange={(e) => updateRecipeIngredient(idx, 'ingredientId', e.target.value)}
+                          className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 font-semibold text-slate-900 dark:text-white"
+                        >
+                          {ingredients.map((ingItem) => (
+                            <option key={ingItem.id} value={ingItem.id}>
+                              {ingItem.name} ({ingItem.category || 'General'} • Base: {ingItem.base_unit || ingItem.unit})
+                            </option>
+                          ))}
+                        </select>
 
-                      <div className="w-24">
-                        <input
-                          type="number"
-                          step="any"
-                          min={0.001}
-                          required
-                          value={item.quantity}
-                          onChange={(e) => updateRecipeIngredient(idx, 'quantity', parseFloat(e.target.value) || 0)}
-                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-right font-mono"
-                          placeholder="Qty"
-                        />
+                        <div className="w-24">
+                          <input
+                            type="number"
+                            step="any"
+                            min={0.0001}
+                            required
+                            value={enteredQ}
+                            onChange={(e) => updateRecipeIngredient(idx, 'enteredQuantity', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-right font-mono font-bold text-slate-900 dark:text-white"
+                            placeholder="Qty"
+                          />
+                        </div>
+
+                        <div className="w-28">
+                          <select
+                            value={recipeU}
+                            onChange={(e) => updateRecipeIngredient(idx, 'recipeUnit', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 font-mono font-bold text-slate-900 dark:text-white"
+                          >
+                            {getCompatibleUnits(baseU).map((u) => (
+                              <option key={u.code} value={u.code}>
+                                {u.code}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="w-24 text-right font-mono text-slate-700 dark:text-slate-300 font-bold">
+                          {currencySymbol} {lineCost.toFixed(2)}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeRecipeIngredient(idx)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                          title="Remove Ingredient"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
 
-                      <span className="w-12 text-slate-500 font-bold text-[11px]">{item.unit}</span>
-
-                      <div className="w-20 text-right font-mono text-slate-600 dark:text-slate-300 font-bold">
-                        {currencySymbol} {lineCost.toFixed(1)}
+                      <div className="flex items-center justify-between text-[11px] px-1 text-slate-500">
+                        <span className="font-mono bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800">
+                          Auto-Converted: <strong className="text-brand-600 dark:text-brand-400 font-bold">{baseQ.toLocaleString()} {baseU}</strong> base stock
+                        </span>
+                        <span className="font-mono text-slate-400">
+                          Cost: {currencySymbol} {Number(ing?.cost_per_unit || 0).toFixed(4)} / {baseU}
+                        </span>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => removeRecipeIngredient(idx)}
-                        className="p-1 text-rose-500 hover:bg-rose-50 rounded"
-                        title="Remove Ingredient"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
                     </div>
                   );
                 })}
@@ -2108,13 +2189,22 @@ export const MenuCatalog: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                {viewingRecipeProduct?.recipe?.ingredients?.map((ri: any, idx: number) => (
-                  <tr key={idx}>
-                    <td className="px-3 py-2 font-bold text-slate-900 dark:text-white">{ri.ingredientName || 'Raw Item'}</td>
-                    <td className="px-3 py-2 text-right font-mono">{ri.quantity} {ri.unit}</td>
-                    <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">{currencySymbol} {ri.unitCost || '—'}</td>
-                  </tr>
-                ))}
+                {viewingRecipeProduct?.recipe?.ingredients?.map((ri: any, idx: number) => {
+                  const enteredQ = ri.enteredQuantity !== undefined ? ri.enteredQuantity : ri.entered_quantity;
+                  const recipeU = ri.recipeUnit || ri.recipe_unit;
+                  const isConverted = enteredQ && recipeU && recipeU !== ri.unit;
+                  const qtyDisplay = isConverted
+                    ? `${enteredQ} ${recipeU} (${ri.quantity} ${ri.unit})`
+                    : `${ri.quantity} ${ri.unit}`;
+
+                  return (
+                    <tr key={idx}>
+                      <td className="px-3 py-2 font-bold text-slate-900 dark:text-white">{ri.ingredientName || 'Raw Item'}</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{qtyDisplay}</td>
+                      <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">{currencySymbol} {Number(ri.unitCost || 0).toFixed(4)}/{ri.unit}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

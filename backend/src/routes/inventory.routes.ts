@@ -10,6 +10,10 @@ import {
   Permission,
   FeatureKey,
   StockMovementType,
+  convertRecipeQtyToBase,
+  convertPurchaseQtyToBase,
+  calculateBaseUnitCost,
+  formatDisplayStock,
 } from '@pos/shared';
 import { receivePurchaseInvoice } from '../services/inventoryService.js';
 import { logAuditEvent } from '../services/auditService.js';
@@ -32,6 +36,11 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
 
     let sql = `
       SELECT i.*,
+             COALESCE(i.base_unit, i.unit, 'G') as base_unit,
+             COALESCE(i.purchase_unit, i.unit, 'KG') as purchase_unit,
+             COALESCE(i.conversion_factor, 1.0000)::numeric as conversion_factor,
+             COALESCE(i.purchase_cost, i.cost_per_unit)::numeric as purchase_cost,
+             COALESCE(i.category, 'General') as category,
              COALESCE(bs.current_stock, 0)::numeric as current_stock,
              COALESCE(bs.cost_per_unit, i.cost_per_unit)::numeric as branch_cost_per_unit
       FROM ingredients i
@@ -43,7 +52,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
 
     if (search) {
       params.push(`%${search}%`);
-      sql += ` AND (i.name ILIKE $${params.length} OR i.sku ILIKE $${params.length})`;
+      sql += ` AND (i.name ILIKE $${params.length} OR i.sku ILIKE $${params.length} OR i.category ILIKE $${params.length})`;
     }
 
     if (lowStockOnly === 'true') {
@@ -53,7 +62,17 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     sql += ' ORDER BY i.name ASC';
 
     const { rows } = await query(sql, params, { tenantId });
-    return reply.send({ ingredients: rows });
+    const formatted = rows.map((ing) => ({
+      ...ing,
+      display_stock: formatDisplayStock(
+        Number(ing.current_stock || 0),
+        ing.base_unit || ing.unit || 'G',
+        ing.purchase_unit,
+        Number(ing.conversion_factor || 1)
+      ),
+    }));
+
+    return reply.send({ ingredients: formatted });
   });
 
   /**
@@ -68,7 +87,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     };
 
     let sql = `
-      SELECT b.*, i.name as ingredient_name, i.unit as ingredient_unit, br.name as branch_name
+      SELECT b.*, i.name as ingredient_name, COALESCE(i.base_unit, i.unit) as ingredient_unit, br.name as branch_name
       FROM inventory_batches b
       JOIN ingredients i ON i.id = b.ingredient_id
       JOIN branches br ON br.id = b.branch_id
@@ -105,41 +124,89 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
 
     const tenantId = req.user!.tenantId!;
-    const { name, nameUrdu, sku, unit, costPerUnit, minStockAlert, initialBranchStock } = parsed.data;
+    const {
+      name,
+      nameUrdu,
+      category,
+      sku,
+      unit,
+      baseUnit,
+      purchaseUnit,
+      conversionFactor,
+      purchaseCost,
+      costPerUnit,
+      minStockAlert,
+      initialBranchStock,
+    } = parsed.data;
 
     const existing = await query('SELECT id FROM ingredients WHERE tenant_id = $1 AND sku = $2', [tenantId, sku], { tenantId });
     if (existing.rows.length > 0) return reply.status(400).send({ error: 'Ingredient SKU already exists' });
 
+    const resolvedBaseUnit = baseUnit || unit || 'G';
+    const resolvedPurchaseUnit = purchaseUnit || (baseUnit ? 'KG' : (unit || 'KG'));
+    let resolvedFactor = Number(conversionFactor) > 0 ? Number(conversionFactor) : 1;
+    if (!conversionFactor) {
+      if (resolvedPurchaseUnit === 'KG' && resolvedBaseUnit === 'G') resolvedFactor = 1000;
+      else if (resolvedPurchaseUnit === 'L' && resolvedBaseUnit === 'ML') resolvedFactor = 1000;
+      else if (resolvedPurchaseUnit === 'DOZEN' && resolvedBaseUnit === 'PCS') resolvedFactor = 12;
+      else if (resolvedPurchaseUnit === resolvedBaseUnit) resolvedFactor = 1;
+    }
+    const resolvedPurchaseCost =
+      purchaseCost !== undefined && purchaseCost !== null && Number(purchaseCost) >= 0
+        ? Number(purchaseCost)
+        : Number(costPerUnit || 0) * resolvedFactor;
+    const resolvedBaseCost =
+      resolvedPurchaseCost > 0 && resolvedFactor > 0
+        ? calculateBaseUnitCost(resolvedPurchaseCost, resolvedFactor)
+        : Number(costPerUnit || 0);
+
     const result = await withTransaction(async (client) => {
       const ingRes = await client.query(
         `
-        INSERT INTO ingredients (tenant_id, name, name_urdu, sku, unit, cost_per_unit, min_stock_alert, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+        INSERT INTO ingredients (
+          tenant_id, name, name_urdu, category, sku, unit, base_unit,
+          purchase_unit, conversion_factor, purchase_cost, cost_per_unit, min_stock_alert, is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true)
         RETURNING *
         `,
-        [tenantId, name, nameUrdu || null, sku, unit, costPerUnit, minStockAlert]
+        [
+          tenantId,
+          name,
+          nameUrdu || null,
+          category || 'General',
+          sku,
+          resolvedBaseUnit,
+          resolvedBaseUnit,
+          resolvedPurchaseUnit,
+          resolvedFactor,
+          resolvedPurchaseCost,
+          resolvedBaseCost,
+          minStockAlert,
+        ]
       );
       const ingredient = ingRes.rows[0];
 
       if (initialBranchStock) {
         for (const [branchId, qty] of Object.entries(initialBranchStock)) {
+          const baseQty = Number(qty) || 0;
           await client.query(
             `
             INSERT INTO branch_stocks (tenant_id, branch_id, ingredient_id, current_stock, cost_per_unit)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (branch_id, ingredient_id) DO UPDATE SET current_stock = $4, cost_per_unit = $5
             `,
-            [tenantId, branchId, ingredient.id, qty, costPerUnit]
+            [tenantId, branchId, ingredient.id, baseQty, resolvedBaseCost]
           );
 
-          if (qty > 0) {
+          if (baseQty > 0) {
             await client.query(
               `
               INSERT INTO inventory_batches (
                 tenant_id, branch_id, ingredient_id, quantity_received, quantity_remaining, unit_cost, received_at, status
               ) VALUES ($1, $2, $3, $4, $4, $5, CURRENT_TIMESTAMP, 'ACTIVE')
               `,
-              [tenantId, branchId, ingredient.id, qty, costPerUnit]
+              [tenantId, branchId, ingredient.id, baseQty, resolvedBaseCost]
             );
 
             await client.query(
@@ -149,7 +216,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
                 stock_before, stock_after, unit_cost, total_cost, reference_type, reason, recorded_by_user_id
               ) VALUES ($1, $2, $3, 'PURCHASE_RECEIVE', $4, 0, $4, $5, $6, 'ADJUSTMENT', 'Opening Stock', $7)
               `,
-              [tenantId, branchId, ingredient.id, qty, costPerUnit, qty * costPerUnit, req.user!.id]
+              [tenantId, branchId, ingredient.id, baseQty, resolvedBaseCost, baseQty * resolvedBaseCost, req.user!.id]
             );
           }
         }
@@ -166,21 +233,60 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const tenantId = req.user!.tenantId!;
-    const { name, sku, unit, costPerUnit, minStockAlert } = req.body as any;
+    const {
+      name,
+      sku,
+      category,
+      unit,
+      baseUnit,
+      purchaseUnit,
+      conversionFactor,
+      purchaseCost,
+      costPerUnit,
+      minStockAlert,
+    } = req.body as any;
+
+    const resolvedBaseUnit = baseUnit || unit;
+    const resolvedFactor = conversionFactor !== undefined ? Number(conversionFactor) : undefined;
+    const resolvedPurchaseCost = purchaseCost !== undefined ? Number(purchaseCost) : undefined;
+
+    let computedBaseCost: number | undefined = undefined;
+    if (resolvedPurchaseCost !== undefined && resolvedFactor !== undefined && resolvedFactor > 0) {
+      computedBaseCost = calculateBaseUnitCost(resolvedPurchaseCost, resolvedFactor);
+    } else if (costPerUnit !== undefined) {
+      computedBaseCost = Number(costPerUnit);
+    }
 
     const { rows } = await query(
       `
       UPDATE ingredients
       SET name = COALESCE($1, name),
           sku = COALESCE($2, sku),
-          unit = COALESCE($3, unit),
-          cost_per_unit = COALESCE($4, cost_per_unit),
-          min_stock_alert = COALESCE($5, min_stock_alert),
+          category = COALESCE($3, category),
+          unit = COALESCE($4, unit),
+          base_unit = COALESCE($4, base_unit),
+          purchase_unit = COALESCE($5, purchase_unit),
+          conversion_factor = COALESCE($6, conversion_factor),
+          purchase_cost = COALESCE($7, purchase_cost),
+          cost_per_unit = COALESCE($8, cost_per_unit),
+          min_stock_alert = COALESCE($9, min_stock_alert),
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $6 AND tenant_id = $7
+      WHERE id = $10 AND tenant_id = $11
       RETURNING *
       `,
-      [name, sku, unit, costPerUnit !== undefined ? Number(costPerUnit) : null, minStockAlert !== undefined ? Number(minStockAlert) : null, id, tenantId],
+      [
+        name,
+        sku,
+        category,
+        resolvedBaseUnit,
+        purchaseUnit,
+        resolvedFactor,
+        resolvedPurchaseCost,
+        computedBaseCost,
+        minStockAlert !== undefined ? Number(minStockAlert) : null,
+        id,
+        tenantId,
+      ],
       { tenantId }
     );
 
@@ -228,8 +334,15 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     for (const r of recipes) {
       const { rows: ings } = await query(
         `
-        SELECT ri.*, i.name as ingredient_name, i.cost_per_unit,
-               (ri.quantity * i.cost_per_unit)::numeric as total_cost
+        SELECT ri.*,
+               COALESCE(ri.entered_quantity, ri.quantity) as entered_quantity,
+               COALESCE(ri.recipe_unit, ri.unit) as recipe_unit,
+               COALESCE(ri.unit_cost, i.cost_per_unit)::numeric as unit_cost,
+               COALESCE(ri.total_cost, (ri.quantity * i.cost_per_unit))::numeric as total_cost,
+               i.name as ingredient_name, i.cost_per_unit,
+               COALESCE(i.base_unit, i.unit, 'G') as base_unit,
+               COALESCE(i.purchase_unit, 'KG') as purchase_unit,
+               COALESCE(i.conversion_factor, 1.0000)::numeric as conversion_factor
         FROM recipe_ingredients ri
         JOIN ingredients i ON i.id = ri.ingredient_id
         WHERE ri.recipe_id = $1 AND ri.tenant_id = $2
@@ -238,6 +351,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
         { tenantId }
       );
       r.ingredients = ings;
+      r.items = ings;
     }
 
     return reply.send({ recipes });
@@ -253,12 +367,40 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     const { productId, variantId, yieldCount, ingredients } = parsed.data;
 
     const result = await withTransaction(async (client) => {
-      // Calculate total recipe cost
+      // Calculate total recipe cost with automatic unit conversion
       let totalCost = 0;
+      const normalizedIngredients = [];
+
       for (const ing of ingredients) {
-        const ingRes = await client.query('SELECT cost_per_unit FROM ingredients WHERE id = $1 AND tenant_id = $2', [ing.ingredientId, tenantId]);
-        const cost = ingRes.rows[0]?.cost_per_unit || 0;
-        totalCost += ing.quantity * Number(cost);
+        const ingRes = await client.query(
+          `SELECT cost_per_unit, base_unit, unit, conversion_factor
+           FROM ingredients WHERE id = $1 AND tenant_id = $2`,
+          [ing.ingredientId, tenantId]
+        );
+        const ingRow = ingRes.rows[0];
+        const baseUnit = ingRow?.base_unit || ingRow?.unit || 'G';
+        const costPerBaseUnit = Number(ingRow?.cost_per_unit || 0);
+
+        const enteredQty = ing.enteredQuantity !== undefined ? ing.enteredQuantity : ing.quantity;
+        const recipeUnit = ing.recipeUnit || ing.unit;
+        const baseQty = convertRecipeQtyToBase(
+          enteredQty,
+          recipeUnit,
+          baseUnit,
+          Number(ingRow?.conversion_factor || 1)
+        );
+        const lineCost = baseQty * costPerBaseUnit;
+
+        totalCost += lineCost;
+        normalizedIngredients.push({
+          ingredientId: ing.ingredientId,
+          enteredQuantity: enteredQty,
+          recipeUnit,
+          quantity: baseQty,
+          unit: baseUnit,
+          unitCost: costPerBaseUnit,
+          totalCost: lineCost,
+        });
       }
 
       // Upsert recipe
@@ -287,13 +429,25 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
         recipeId = insertRes.rows[0].id;
       }
 
-      for (const ing of ingredients) {
+      for (const normIng of normalizedIngredients) {
         await client.query(
           `
-          INSERT INTO recipe_ingredients (tenant_id, recipe_id, ingredient_id, quantity, unit)
-          VALUES ($1, $2, $3, $4, $5)
+          INSERT INTO recipe_ingredients (
+            tenant_id, recipe_id, ingredient_id, entered_quantity, recipe_unit, quantity, unit, unit_cost, total_cost
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           `,
-          [tenantId, recipeId, ing.ingredientId, ing.quantity, ing.unit]
+          [
+            tenantId,
+            recipeId,
+            normIng.ingredientId,
+            normIng.enteredQuantity,
+            normIng.recipeUnit,
+            normIng.quantity,
+            normIng.unit,
+            normIng.unitCost,
+            normIng.totalCost,
+          ]
         );
       }
 
@@ -567,7 +721,12 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     }
 
     const { rows: items } = await query(
-      `SELECT pi_item.*, i.name as ingredient_name
+      `SELECT pi_item.*, i.name as ingredient_name,
+              COALESCE(i.base_unit, i.unit, 'G') as base_unit,
+              COALESCE(pi_item.purchase_unit, pi_item.unit) as purchase_unit,
+              COALESCE(pi_item.conversion_factor, 1.0000)::numeric as conversion_factor,
+              COALESCE(pi_item.base_quantity, pi_item.quantity)::numeric as base_quantity,
+              COALESCE(pi_item.base_unit_cost, pi_item.unit_price)::numeric as base_unit_cost
        FROM purchase_items pi_item
        JOIN ingredients i ON i.id = pi_item.ingredient_id
        WHERE pi_item.purchase_id = $1 AND pi_item.tenant_id = $2
@@ -607,12 +766,44 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       const newPurchase = pRes.rows[0];
 
       for (const it of items) {
+        const ingRes = await client.query(
+          `SELECT base_unit, unit, purchase_unit, conversion_factor
+           FROM ingredients WHERE id = $1 AND tenant_id = $2`,
+          [it.ingredientId, tenantId]
+        );
+        const ingRow = ingRes.rows[0];
+        const baseUnit = ingRow?.base_unit || ingRow?.unit || 'G';
+        const purchaseUnit = it.purchaseUnit || it.unit || ingRow?.purchase_unit || 'KG';
+        const conversionFactor =
+          it.conversionFactor && Number(it.conversionFactor) > 0
+            ? Number(it.conversionFactor)
+            : Number(ingRow?.conversion_factor || 1);
+
+        const baseQuantity = convertPurchaseQtyToBase(it.quantity, purchaseUnit, baseUnit, conversionFactor);
+        const baseUnitCost = calculateBaseUnitCost(it.unitPrice, conversionFactor);
+        const totalPrice = it.quantity * it.unitPrice;
+
         await client.query(
           `
-          INSERT INTO purchase_items (tenant_id, purchase_id, ingredient_id, unit, quantity, unit_price, total_price)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          INSERT INTO purchase_items (
+            tenant_id, purchase_id, ingredient_id, unit, purchase_unit, conversion_factor,
+            quantity, base_quantity, unit_price, base_unit_cost, total_price
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           `,
-          [tenantId, newPurchase.id, it.ingredientId, it.unit, it.quantity, it.unitPrice, it.quantity * it.unitPrice]
+          [
+            tenantId,
+            newPurchase.id,
+            it.ingredientId,
+            it.unit,
+            purchaseUnit,
+            conversionFactor,
+            it.quantity,
+            baseQuantity,
+            it.unitPrice,
+            baseUnitCost,
+            totalPrice,
+          ]
         );
       }
 

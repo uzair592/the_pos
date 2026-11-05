@@ -263,11 +263,18 @@ export const UpdateKOTStatusSchema = z.object({
 export const CreateIngredientSchema = z.object({
   name: z.string().min(1),
   nameUrdu: z.string().optional(),
+  category: z.string().default('General'),
   sku: z.string().min(1),
-  unit: z.nativeEnum(StockUnit),
+  unit: z.string().min(1).optional(), // base unit compatibility
+  baseUnit: z.string().min(1).optional(),
+  purchaseUnit: z.string().min(1).optional(),
+  conversionFactor: z.number().positive().optional(),
+  purchaseCost: z.number().min(0).optional(),
   costPerUnit: z.number().min(0).default(0),
   minStockAlert: z.number().min(0).default(5),
   initialBranchStock: z.record(z.string().uuid(), z.number().min(0)).optional(), // branchId -> initial stock
+  initialStock: z.number().min(0).optional(),
+  branchId: z.string().uuid().optional(),
 });
 
 export const CreateRecipeSchema = z.object({
@@ -278,7 +285,9 @@ export const CreateRecipeSchema = z.object({
     z.object({
       ingredientId: z.string().uuid(),
       quantity: z.number().positive(),
-      unit: z.nativeEnum(StockUnit),
+      unit: z.string().min(1),
+      enteredQuantity: z.number().positive().optional(),
+      recipeUnit: z.string().min(1).optional(),
     })
   ).min(1),
 });
@@ -314,7 +323,9 @@ export const CreatePurchaseInvoiceSchema = z.object({
   items: z.array(
     z.object({
       ingredientId: z.string().uuid(),
-      unit: z.nativeEnum(StockUnit),
+      unit: z.string().min(1),
+      purchaseUnit: z.string().min(1).optional(),
+      conversionFactor: z.number().positive().optional(),
       quantity: z.number().positive(),
       unitPrice: z.number().min(0),
     })

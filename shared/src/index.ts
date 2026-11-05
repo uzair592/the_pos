@@ -8,3 +8,4 @@ export * from './types/inventory.js';
 export * from './types/financial.js';
 export * from './types/customer.js';
 export * from './schemas/index.js';
+export * from './utils/unitConversion.js';

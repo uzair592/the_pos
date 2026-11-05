@@ -508,10 +508,21 @@ export async function receivePurchaseInvoice(
   );
 
   for (const item of itemsRes.rows) {
-    const qty = Number(item.quantity);
-    const unitPrice = Number(item.unit_price);
+    const factor = Number(item.conversion_factor) > 0 ? Number(item.conversion_factor) : 1;
+    const baseQty =
+      item.base_quantity !== null && item.base_quantity !== undefined
+        ? Number(item.base_quantity)
+        : Number(item.quantity) * factor;
 
-    // 1. Create a distinct FIFO batch
+    const baseUnitCost =
+      item.base_unit_cost !== null && item.base_unit_cost !== undefined
+        ? Number(item.base_unit_cost)
+        : Number(item.unit_price) / factor;
+
+    const purchasePrice = Number(item.unit_price);
+    const lineTotal = Number(item.total_price) || Number(item.quantity) * purchasePrice;
+
+    // 1. Create a distinct FIFO batch in BASE UNIT
     await client.query(
       `
       INSERT INTO inventory_batches (
@@ -519,10 +530,10 @@ export async function receivePurchaseInvoice(
         quantity_received, quantity_remaining, unit_cost, received_at, status
       ) VALUES ($1, $2, $3, $4, $5, $5, $6, CURRENT_TIMESTAMP, 'ACTIVE')
       `,
-      [tenantId, invoice.branch_id, item.ingredient_id, item.id, qty, unitPrice]
+      [tenantId, invoice.branch_id, item.ingredient_id, item.id, baseQty, baseUnitCost]
     );
 
-    // 2. Get current stock
+    // 2. Get current stock in base unit
     const stockRes = await client.query(
       `SELECT current_stock, cost_per_unit FROM branch_stocks WHERE tenant_id = $1 AND branch_id = $2 AND ingredient_id = $3 FOR UPDATE`,
       [tenantId, invoice.branch_id, item.ingredient_id]
@@ -536,10 +547,10 @@ export async function receivePurchaseInvoice(
       oldCost = Number(stockRes.rows[0].cost_per_unit);
     }
 
-    const newStock = currentStock + qty;
-    const newCost = newStock > 0 ? (currentStock * oldCost + qty * unitPrice) / newStock : unitPrice;
+    const newStock = currentStock + baseQty;
+    const newCost = newStock > 0 ? (currentStock * oldCost + baseQty * baseUnitCost) / newStock : baseUnitCost;
 
-    // 3. Upsert branch stock
+    // 3. Upsert branch stock in base unit
     await client.query(
       `
       INSERT INTO branch_stocks (tenant_id, branch_id, ingredient_id, current_stock, cost_per_unit, last_updated)
@@ -552,13 +563,17 @@ export async function receivePurchaseInvoice(
       [tenantId, invoice.branch_id, item.ingredient_id, newStock, newCost]
     );
 
-    // 4. Update master ingredient cost per unit
+    // 4. Update master ingredient: cost per base unit and purchase cost
     await client.query(
-      `UPDATE ingredients SET cost_per_unit = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
-      [newCost, item.ingredient_id, tenantId]
+      `UPDATE ingredients
+       SET cost_per_unit = $1,
+           purchase_cost = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3 AND tenant_id = $4`,
+      [newCost, purchasePrice, item.ingredient_id, tenantId]
     );
 
-    // 5. Record stock movement
+    // 5. Record stock movement in base unit
     await client.query(
       `
       INSERT INTO stock_movements (
@@ -572,14 +587,14 @@ export async function receivePurchaseInvoice(
         invoice.branch_id,
         item.ingredient_id,
         StockMovementType.PURCHASE_RECEIVE,
-        qty,
+        baseQty,
         currentStock,
         newStock,
-        unitPrice,
-        qty * unitPrice,
+        baseUnitCost,
+        lineTotal,
         'PURCHASE',
         purchaseId,
-        `Received purchase invoice #${invoice.invoice_number}`,
+        `Inward Purchase #${invoice.invoice_number} received (${item.quantity} ${item.purchase_unit || item.unit} = ${baseQty} base units)`,
         userId,
       ]
     );

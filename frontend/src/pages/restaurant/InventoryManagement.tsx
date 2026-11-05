@@ -29,7 +29,16 @@ import {
   Send,
   Download,
 } from 'lucide-react';
-import { StockUnit, StockMovementType } from '@pos/shared';
+import {
+  StockUnit,
+  StockMovementType,
+  INGREDIENT_CATEGORIES,
+  STANDARD_UNITS,
+  getCompatibleUnits,
+  convertRecipeQtyToBase,
+  calculateBaseUnitCost,
+  formatDisplayStock,
+} from '@pos/shared';
 
 export const InventoryManagement: React.FC = () => {
   const { tenant, branches, currentBranchId } = useAuth();
@@ -56,24 +65,38 @@ export const InventoryManagement: React.FC = () => {
   const [isAdjustmentOpen, setIsAdjustmentOpen] = useState(false);
   const [isAddTransferOpen, setIsAddTransferOpen] = useState(false);
 
+  // Stock filters
+  const [stockSearchTerm, setStockSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+
   // Edit Ingredient Form
   const [editIngForm, setEditIngForm] = useState({
     id: '',
     name: '',
+    nameUrdu: '',
+    category: 'Meat & Poultry',
     sku: '',
-    unit: StockUnit.KG,
-    costPerUnit: 0,
-    minStockAlert: 5,
+    baseUnit: 'G',
+    purchaseUnit: 'KG',
+    conversionFactor: 1000,
+    purchaseCost: 1000,
+    costPerUnit: 1,
+    minStockAlert: 500,
   });
 
   // Ingredient Form
   const [ingForm, setIngForm] = useState({
     name: '',
+    nameUrdu: '',
+    category: 'Meat & Poultry',
     sku: '',
-    unit: StockUnit.KG,
-    costPerUnit: 100,
-    minStockAlert: 5,
-    initialStock: 10,
+    baseUnit: 'G',
+    purchaseUnit: 'KG',
+    conversionFactor: 1000,
+    purchaseCost: 1000,
+    costPerUnit: 1,
+    minStockAlert: 500,
+    initialStock: 5000,
   });
 
   // Adjustment Form
@@ -88,7 +111,7 @@ export const InventoryManagement: React.FC = () => {
   const [recipeForm, setRecipeForm] = useState({
     productId: '',
     yieldCount: 1,
-    ingredients: [{ ingredientId: '', quantity: 1, unit: StockUnit.PCS }],
+    ingredients: [{ ingredientId: '', quantity: 1, enteredQuantity: 1, recipeUnit: 'G', unit: 'G' }],
   });
 
   // Transfer Form
@@ -147,19 +170,38 @@ export const InventoryManagement: React.FC = () => {
   const handleCreateIngredient = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const factor = Number(ingForm.conversionFactor) > 0 ? Number(ingForm.conversionFactor) : 1;
+      const pCost = Number(ingForm.purchaseCost) >= 0 ? Number(ingForm.purchaseCost) : 0;
+      const bCost = calculateBaseUnitCost(pCost, factor);
+
       await api.post('/inventory/ingredients', {
-        ...ingForm,
+        name: ingForm.name,
+        nameUrdu: ingForm.nameUrdu || undefined,
+        category: ingForm.category || 'General',
+        sku: ingForm.sku,
+        baseUnit: ingForm.baseUnit,
+        purchaseUnit: ingForm.purchaseUnit,
+        conversionFactor: factor,
+        purchaseCost: pCost,
+        costPerUnit: bCost,
+        minStockAlert: Number(ingForm.minStockAlert) || 0,
+        initialStock: Number(ingForm.initialStock) || 0,
         branchId: currentBranchId || undefined,
       });
-      success('Ingredient added and initial FIFO batch registered!');
+      success('Ingredient registered with automatic unit conversion and FIFO batch!');
       setIsAddIngredientOpen(false);
       setIngForm({
         name: '',
+        nameUrdu: '',
+        category: 'Meat & Poultry',
         sku: '',
-        unit: StockUnit.KG,
-        costPerUnit: 100,
-        minStockAlert: 5,
-        initialStock: 10,
+        baseUnit: 'G',
+        purchaseUnit: 'KG',
+        conversionFactor: 1000,
+        purchaseCost: 1000,
+        costPerUnit: 1,
+        minStockAlert: 500,
+        initialStock: 5000,
       });
       fetchData();
     } catch (err: any) {
@@ -170,12 +212,21 @@ export const InventoryManagement: React.FC = () => {
   const handleUpdateIngredient = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const factor = Number(editIngForm.conversionFactor) > 0 ? Number(editIngForm.conversionFactor) : 1;
+      const pCost = Number(editIngForm.purchaseCost) >= 0 ? Number(editIngForm.purchaseCost) : 0;
+      const bCost = calculateBaseUnitCost(pCost, factor);
+
       await api.put(`/inventory/ingredients/${editIngForm.id}`, {
         name: editIngForm.name,
+        nameUrdu: editIngForm.nameUrdu || undefined,
+        category: editIngForm.category || 'General',
         sku: editIngForm.sku,
-        unit: editIngForm.unit,
-        costPerUnit: editIngForm.costPerUnit,
-        minStockAlert: editIngForm.minStockAlert,
+        baseUnit: editIngForm.baseUnit,
+        purchaseUnit: editIngForm.purchaseUnit,
+        conversionFactor: factor,
+        purchaseCost: pCost,
+        costPerUnit: bCost,
+        minStockAlert: Number(editIngForm.minStockAlert) || 0,
       });
       setIsEditIngredientOpen(false);
       success('Ingredient updated successfully');
@@ -242,7 +293,28 @@ export const InventoryManagement: React.FC = () => {
   const handleCreateRecipe = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/inventory/recipes', recipeForm);
+      const processedItems = recipeForm.ingredients.map((it) => {
+        const ing = ingredients.find((i) => i.id === it.ingredientId);
+        const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (it.unit || 'G');
+        const rUnit = it.recipeUnit || baseU;
+        const enteredQ = Number(it.enteredQuantity || it.quantity) || 0;
+        const factor = Number(ing?.conversion_factor || 1);
+        const baseQ = convertRecipeQtyToBase(enteredQ, rUnit, baseU, factor);
+
+        return {
+          ingredientId: it.ingredientId,
+          quantity: baseQ,
+          unit: baseU,
+          enteredQuantity: enteredQ,
+          recipeUnit: rUnit,
+        };
+      });
+
+      await api.post('/inventory/recipes', {
+        productId: recipeForm.productId,
+        yieldCount: Number(recipeForm.yieldCount) || 1,
+        ingredients: processedItems,
+      });
       success('Recipe saved for automatic FIFO stock deduction!');
       setIsAddRecipeOpen(false);
       fetchData();
@@ -422,113 +494,232 @@ export const InventoryManagement: React.FC = () => {
 
       {/* Tab: Stock List */}
       {activeTab === 'STOCK' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase font-semibold">
-                <tr>
-                  <th className="px-6 py-3.5">Ingredient Name</th>
-                  <th className="px-6 py-3.5">SKU</th>
-                  <th className="px-6 py-3.5">Unit</th>
-                  <th className="px-6 py-3.5">Total Current Stock</th>
-                  <th className="px-6 py-3.5">Active FIFO Batches</th>
-                  <th className="px-6 py-3.5">Latest Unit Cost</th>
-                  <th className="px-6 py-3.5">Alert Threshold</th>
-                  <th className="px-6 py-3.5">Stock Status</th>
-                  <th className="px-6 py-3.5 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {ingredients.map((ing) => {
-                  const stock = Number(ing.current_stock || 0);
-                  const alertThreshold = Number(ing.min_stock_alert || 0);
-                  const isLow = stock <= alertThreshold;
-                  const activeBatchCount = batches.filter(
-                    (b) => b.ingredient_id === ing.id && b.status === 'ACTIVE'
-                  ).length;
+        <div className="space-y-4">
+          {/* Search & Category Filter Bar */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+            <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
+              <div className="relative w-full md:w-96">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={stockSearchTerm}
+                  onChange={(e) => setStockSearchTerm(e.target.value)}
+                  placeholder="Search raw ingredient name, SKU, or category..."
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
 
-                  return (
-                    <tr key={ing.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="px-6 py-3.5 font-bold text-slate-900 dark:text-white">{ing.name}</td>
-                      <td className="px-6 py-3.5 font-mono text-slate-500 dark:text-slate-400">{ing.sku}</td>
-                      <td className="px-6 py-3.5 font-semibold text-slate-700 dark:text-slate-300">{ing.unit}</td>
-                      <td className="px-6 py-3.5 font-black text-sm text-slate-900 dark:text-white">
-                        {stock.toLocaleString()} {ing.unit}
-                      </td>
-                      <td className="px-6 py-3.5">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                          {activeBatchCount} lot(s) active
-                        </span>
-                      </td>
-                      <td className="px-6 py-3.5 text-slate-700 dark:text-slate-300 font-semibold">
-                        {currencySymbol} {Number(ing.cost_per_unit).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-3.5 text-slate-500">
-                        {alertThreshold} {ing.unit}
-                      </td>
-                      <td className="px-6 py-3.5">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                            isLow
-                              ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900'
-                              : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
-                          }`}
-                        >
-                          {isLow ? 'Low Stock Alert' : 'Healthy'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3.5 text-center whitespace-nowrap">
-                        <ActionMenu
-                          items={[
-                            {
-                              label: 'Adjust Stock / Write-off',
-                              icon: Scale,
-                              onClick: () => {
-                                setAdjForm((prev) => ({
-                                  ...prev,
-                                  ingredientId: ing.id,
-                                }));
-                                setIsAdjustmentOpen(true);
-                              },
-                            },
-                            {
-                              label: 'Edit Ingredient',
-                              icon: Edit2,
-                              onClick: () => {
-                                setEditIngForm({
-                                  id: ing.id,
-                                  name: ing.name,
-                                  sku: ing.sku,
-                                  unit: ing.unit,
-                                  costPerUnit: Number(ing.cost_per_unit || 0),
-                                  minStockAlert: Number(ing.min_stock_alert || 5),
-                                });
-                                setIsEditIngredientOpen(true);
-                              },
-                            },
-                            {
-                              label: 'View FIFO Batches',
-                              icon: Layers,
-                              onClick: () => {
-                                setBatchIngredientFilter(ing.id);
-                                setActiveTab('BATCHES');
-                              },
-                            },
-                            {
-                              label: 'Delete Ingredient',
-                              icon: Trash2,
-                              variant: 'danger',
-                              divider: true,
-                              onClick: () => handleDeleteIngredient(ing.id, ing.name),
-                            },
-                          ]}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              <div className="flex items-center space-x-2 text-xs font-semibold text-slate-500">
+                <span>Total Items:</span>
+                <span className="font-bold text-slate-900 dark:text-white">
+                  {ingredients.filter((ing) => {
+                    const q = stockSearchTerm.toLowerCase().trim();
+                    const matchesSearch =
+                      !q ||
+                      ing.name?.toLowerCase().includes(q) ||
+                      ing.sku?.toLowerCase().includes(q) ||
+                      ing.category?.toLowerCase().includes(q);
+                    const matchesCat =
+                      selectedCategory === 'ALL' || (ing.category || 'General') === selectedCategory;
+                    return matchesSearch && matchesCat;
+                  }).length} of {ingredients.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Category Pills */}
+            <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setSelectedCategory('ALL')}
+                className={`px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all ${
+                  selectedCategory === 'ALL'
+                    ? 'bg-brand-500 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                All Categories
+              </button>
+              {INGREDIENT_CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all ${
+                    selectedCategory === cat
+                      ? 'bg-brand-500 text-white shadow-sm'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase font-semibold">
+                  <tr>
+                    <th className="px-6 py-3.5">Raw Ingredient</th>
+                    <th className="px-6 py-3.5">SKU</th>
+                    <th className="px-6 py-3.5">UOM & Ratio</th>
+                    <th className="px-6 py-3.5">Available Stock (Dual Display)</th>
+                    <th className="px-6 py-3.5">Active FIFO Lots</th>
+                    <th className="px-6 py-3.5">Unit Valuation</th>
+                    <th className="px-6 py-3.5">Alert Level</th>
+                    <th className="px-6 py-3.5">Stock Status</th>
+                    <th className="px-6 py-3.5 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {ingredients
+                    .filter((ing) => {
+                      const q = stockSearchTerm.toLowerCase().trim();
+                      const matchesSearch =
+                        !q ||
+                        ing.name?.toLowerCase().includes(q) ||
+                        ing.sku?.toLowerCase().includes(q) ||
+                        ing.category?.toLowerCase().includes(q);
+                      const matchesCat =
+                        selectedCategory === 'ALL' || (ing.category || 'General') === selectedCategory;
+                      return matchesSearch && matchesCat;
+                    })
+                    .map((ing) => {
+                      const stock = Number(ing.current_stock || 0);
+                      const alertThreshold = Number(ing.min_stock_alert || 0);
+                      const isLow = stock <= alertThreshold;
+                      const activeBatchCount = batches.filter(
+                        (b) => b.ingredient_id === ing.id && b.status === 'ACTIVE'
+                      ).length;
+                      const baseU = ing.base_unit || ing.unit || 'G';
+                      const purchaseU = ing.purchase_unit || ing.unit || 'KG';
+                      const factor = Number(ing.conversion_factor || 1);
+                      const displayStr =
+                        ing.display_stock || formatDisplayStock(stock, baseU, purchaseU, factor);
+
+                      return (
+                        <tr key={ing.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                          <td className="px-6 py-3.5">
+                            <span className="font-bold text-slate-900 dark:text-white block text-sm">
+                              {ing.name}
+                            </span>
+                            <span className="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                              {ing.category || 'General'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 font-mono text-slate-500 dark:text-slate-400 font-semibold">
+                            {ing.sku}
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                              {baseU}
+                            </span>
+                            <span className="text-[10px] text-slate-400 block">
+                              Base Unit
+                            </span>
+                            {purchaseU !== baseU && factor > 1 && (
+                              <span className="inline-block text-[10px] text-brand-600 dark:text-brand-400 font-bold bg-brand-50 dark:bg-brand-950/40 px-1.5 py-0.5 rounded mt-0.5">
+                                1 {purchaseU} = {factor.toLocaleString()} {baseU}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <span className="font-black text-sm text-slate-900 dark:text-white block font-mono">
+                              {displayStr}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              ({stock.toLocaleString()} {baseU} in base inventory)
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                              {activeBatchCount} lot(s) active
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 text-slate-700 dark:text-slate-300 font-mono">
+                            <div className="font-bold">
+                              {currencySymbol} {Number(ing.cost_per_unit || 0).toFixed(4)} / {baseU}
+                            </div>
+                            {Number(ing.purchase_cost) > 0 && purchaseU !== baseU && (
+                              <div className="text-[10px] text-slate-400">
+                                {currencySymbol} {Number(ing.purchase_cost || 0).toLocaleString()} / {purchaseU}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-3.5 font-mono text-slate-500">
+                            {alertThreshold.toLocaleString()} {baseU}
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                isLow
+                                  ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900'
+                                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
+                              }`}
+                            >
+                              {isLow ? 'Low Stock Alert' : 'Healthy'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 text-center whitespace-nowrap">
+                            <ActionMenu
+                              items={[
+                                {
+                                  label: 'Adjust Stock / Write-off',
+                                  icon: Scale,
+                                  onClick: () => {
+                                    setAdjForm((prev) => ({
+                                      ...prev,
+                                      ingredientId: ing.id,
+                                    }));
+                                    setIsAdjustmentOpen(true);
+                                  },
+                                },
+                                {
+                                  label: 'Edit Ingredient',
+                                  icon: Edit2,
+                                  onClick: () => {
+                                    setEditIngForm({
+                                      id: ing.id,
+                                      name: ing.name,
+                                      nameUrdu: ing.name_urdu || '',
+                                      category: ing.category || 'General',
+                                      sku: ing.sku,
+                                      baseUnit: ing.base_unit || ing.unit || 'G',
+                                      purchaseUnit: ing.purchase_unit || ing.unit || 'KG',
+                                      conversionFactor: Number(ing.conversion_factor || 1),
+                                      purchaseCost: Number(ing.purchase_cost || ing.cost_per_unit || 0),
+                                      costPerUnit: Number(ing.cost_per_unit || 0),
+                                      minStockAlert: Number(ing.min_stock_alert || 5),
+                                    });
+                                    setIsEditIngredientOpen(true);
+                                  },
+                                },
+                                {
+                                  label: 'View FIFO Batches',
+                                  icon: Layers,
+                                  onClick: () => {
+                                    setBatchIngredientFilter(ing.id);
+                                    setActiveTab('BATCHES');
+                                  },
+                                },
+                                {
+                                  label: 'Delete Ingredient',
+                                  icon: Trash2,
+                                  variant: 'danger',
+                                  divider: true,
+                                  onClick: () => handleDeleteIngredient(ing.id, ing.name),
+                                },
+                              ]}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -863,22 +1054,39 @@ export const InventoryManagement: React.FC = () => {
       )}
 
       {/* Modal: Add Ingredient */}
-      <Modal isOpen={isAddIngredientOpen} onClose={() => setIsAddIngredientOpen(false)} title="Register Raw Ingredient">
+      <Modal isOpen={isAddIngredientOpen} onClose={() => setIsAddIngredientOpen(false)} title="Register Raw Ingredient (UOM & Conversion)" maxWidth="lg">
         <form onSubmit={handleCreateIngredient} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Ingredient Name</label>
-            <input
-              type="text"
-              required
-              value={ingForm.name}
-              onChange={(e) => setIngForm({ ...ingForm, name: e.target.value })}
-              placeholder="e.g. Chicken Boneless, Basmati Rice, Mozzarella"
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">SKU / Code</label>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Ingredient Name *</label>
+              <input
+                type="text"
+                required
+                value={ingForm.name}
+                onChange={(e) => setIngForm({ ...ingForm, name: e.target.value })}
+                placeholder="e.g. Chicken Boneless, Cooking Oil, Eggs"
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Category *</label>
+              <select
+                value={ingForm.category}
+                onChange={(e) => setIngForm({ ...ingForm, category: e.target.value })}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+              >
+                {INGREDIENT_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">SKU / Code *</label>
               <input
                 type="text"
                 required
@@ -888,61 +1096,372 @@ export const InventoryManagement: React.FC = () => {
                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white uppercase"
               />
             </div>
+
             <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Unit of Measure</label>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Base Unit (Inventory Storage) *
+              </label>
               <select
-                value={ingForm.unit}
-                onChange={(e) => setIngForm({ ...ingForm, unit: e.target.value as any })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+                value={ingForm.baseUnit}
+                onChange={(e) => {
+                  const bUnit = e.target.value;
+                  let pUnit = 'KG';
+                  let factor = 1000;
+                  if (bUnit === 'G') {
+                    pUnit = 'KG';
+                    factor = 1000;
+                  } else if (bUnit === 'ML') {
+                    pUnit = 'L';
+                    factor = 1000;
+                  } else if (bUnit === 'PCS') {
+                    pUnit = 'DOZEN';
+                    factor = 12;
+                  } else if (bUnit === 'MG') {
+                    pUnit = 'G';
+                    factor = 1000;
+                  } else if (bUnit === 'KG') {
+                    pUnit = 'KG';
+                    factor = 1;
+                  } else if (bUnit === 'L') {
+                    pUnit = 'L';
+                    factor = 1;
+                  }
+                  setIngForm({
+                    ...ingForm,
+                    baseUnit: bUnit,
+                    purchaseUnit: pUnit,
+                    conversionFactor: factor,
+                  });
+                }}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
               >
-                {Object.values(StockUnit).map((u) => (
-                  <option key={u} value={u}>
-                    {u}
+                <option value="G">G - Gram (Weight Base)</option>
+                <option value="ML">ML - Milliliter (Volume Base)</option>
+                <option value="PCS">PCS - Piece / Unit (Count Base)</option>
+                <option value="KG">KG - Kilogram</option>
+                <option value="L">L - Liter</option>
+                <option value="MG">MG - Milligram</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Default Purchase Unit *
+              </label>
+              <select
+                value={ingForm.purchaseUnit}
+                onChange={(e) => {
+                  const pUnit = e.target.value;
+                  const def = STANDARD_UNITS[pUnit];
+                  let factor = ingForm.conversionFactor;
+                  if (pUnit === 'KG' && ingForm.baseUnit === 'G') factor = 1000;
+                  else if (pUnit === 'L' && ingForm.baseUnit === 'ML') factor = 1000;
+                  else if (pUnit === 'DOZEN' && ingForm.baseUnit === 'PCS') factor = 12;
+                  else if (pUnit === 'TRAY' && ingForm.baseUnit === 'PCS') factor = 30;
+                  else if (pUnit === 'CARTON' && ingForm.baseUnit === 'PCS') factor = 24;
+                  else if (pUnit === 'BOX' && ingForm.baseUnit === 'PCS') factor = 10;
+                  else if (pUnit === ingForm.baseUnit) factor = 1;
+                  else if (def?.defaultFactor) factor = def.defaultFactor;
+
+                  setIngForm({ ...ingForm, purchaseUnit: pUnit, conversionFactor: factor });
+                }}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
+              >
+                {Object.values(STANDARD_UNITS).map((u) => (
+                  <option key={u.code} value={u.code}>
+                    {u.name} ({u.code})
                   </option>
                 ))}
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Unit Cost ({currencySymbol})</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                required
-                value={ingForm.costPerUnit}
-                onChange={(e) => setIngForm({ ...ingForm, costPerUnit: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
-              />
+
+          <div className="p-3 bg-brand-50/50 dark:bg-brand-950/20 rounded-xl border border-brand-200 dark:border-brand-900/60 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+              <div>
+                <label className="block font-bold text-brand-900 dark:text-brand-300 mb-1">
+                  Conversion Factor (Ratio to Base Unit) *
+                </label>
+                <input
+                  type="number"
+                  min="0.0001"
+                  step="any"
+                  required
+                  value={ingForm.conversionFactor}
+                  onChange={(e) =>
+                    setIngForm({ ...ingForm, conversionFactor: parseFloat(e.target.value) || 1 })
+                  }
+                  className="w-full bg-white dark:bg-slate-800 border border-brand-300 dark:border-brand-800 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-brand-200 dark:border-brand-800 text-xs">
+                <span className="text-slate-500 block font-semibold">Automatic Conversion Rule:</span>
+                <span className="font-extrabold text-brand-600 dark:text-brand-400 font-mono text-sm">
+                  1 {ingForm.purchaseUnit} = {Number(ingForm.conversionFactor).toLocaleString()} {ingForm.baseUnit}
+                </span>
+              </div>
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+              <div>
+                <label className="block font-bold text-brand-900 dark:text-brand-300 mb-1">
+                  Purchase Cost per {ingForm.purchaseUnit} ({currencySymbol}) *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  value={ingForm.purchaseCost}
+                  onChange={(e) =>
+                    setIngForm({ ...ingForm, purchaseCost: parseFloat(e.target.value) || 0 })
+                  }
+                  className="w-full bg-white dark:bg-slate-800 border border-brand-300 dark:border-brand-800 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-brand-200 dark:border-brand-800 text-xs">
+                <span className="text-slate-500 block font-semibold">Calculated Base Unit Cost:</span>
+                <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm">
+                  {currencySymbol}{' '}
+                  {calculateBaseUnitCost(
+                    Number(ingForm.purchaseCost) || 0,
+                    Number(ingForm.conversionFactor) || 1
+                  ).toFixed(4)}{' '}
+                  / {ingForm.baseUnit}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Initial Stock</label>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Initial Stock in Base Unit ({ingForm.baseUnit}) *
+              </label>
               <input
                 type="number"
                 min="0"
-                step="0.1"
+                step="any"
                 required
                 value={ingForm.initialStock}
-                onChange={(e) => setIngForm({ ...ingForm, initialStock: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+                onChange={(e) =>
+                  setIngForm({ ...ingForm, initialStock: parseFloat(e.target.value) || 0 })
+                }
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 dark:text-white"
               />
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Displays as:{' '}
+                {formatDisplayStock(
+                  Number(ingForm.initialStock) || 0,
+                  ingForm.baseUnit,
+                  ingForm.purchaseUnit,
+                  Number(ingForm.conversionFactor) || 1
+                )}
+              </span>
             </div>
+
             <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Low Alert Qty</label>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Low Stock Alert Threshold ({ingForm.baseUnit}) *
+              </label>
               <input
                 type="number"
                 min="0"
-                step="0.1"
+                step="any"
                 required
                 value={ingForm.minStockAlert}
-                onChange={(e) => setIngForm({ ...ingForm, minStockAlert: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+                onChange={(e) =>
+                  setIngForm({ ...ingForm, minStockAlert: parseFloat(e.target.value) || 0 })
+                }
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 dark:text-white"
               />
             </div>
           </div>
-          <button type="submit" className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold py-2.5 rounded-lg shadow-md transition-all">
-            Save Ingredient & Register FIFO Lot
+
+          <button
+            type="submit"
+            className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold py-2.5 rounded-lg shadow-md transition-all text-xs"
+          >
+            Save Ingredient & Register Initial FIFO Lot
+          </button>
+        </form>
+      </Modal>
+
+      {/* Modal: Edit Ingredient */}
+      <Modal isOpen={isEditIngredientOpen} onClose={() => setIsEditIngredientOpen(false)} title="Edit Raw Ingredient (UOM & Conversion)" maxWidth="lg">
+        <form onSubmit={handleUpdateIngredient} className="space-y-4 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Ingredient Name *</label>
+              <input
+                type="text"
+                required
+                value={editIngForm.name}
+                onChange={(e) => setEditIngForm({ ...editIngForm, name: e.target.value })}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Category *</label>
+              <select
+                value={editIngForm.category}
+                onChange={(e) => setEditIngForm({ ...editIngForm, category: e.target.value })}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+              >
+                {INGREDIENT_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">SKU / Code *</label>
+              <input
+                type="text"
+                required
+                value={editIngForm.sku}
+                onChange={(e) => setEditIngForm({ ...editIngForm, sku: e.target.value })}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white uppercase"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Base Unit (Inventory Storage) *
+              </label>
+              <select
+                value={editIngForm.baseUnit}
+                onChange={(e) => setEditIngForm({ ...editIngForm, baseUnit: e.target.value })}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
+              >
+                <option value="G">G - Gram (Weight Base)</option>
+                <option value="ML">ML - Milliliter (Volume Base)</option>
+                <option value="PCS">PCS - Piece / Unit (Count Base)</option>
+                <option value="KG">KG - Kilogram</option>
+                <option value="L">L - Liter</option>
+                <option value="MG">MG - Milligram</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Default Purchase Unit *
+              </label>
+              <select
+                value={editIngForm.purchaseUnit}
+                onChange={(e) => {
+                  const pUnit = e.target.value;
+                  const def = STANDARD_UNITS[pUnit];
+                  let factor = editIngForm.conversionFactor;
+                  if (pUnit === 'KG' && editIngForm.baseUnit === 'G') factor = 1000;
+                  else if (pUnit === 'L' && editIngForm.baseUnit === 'ML') factor = 1000;
+                  else if (pUnit === 'DOZEN' && editIngForm.baseUnit === 'PCS') factor = 12;
+                  else if (pUnit === 'TRAY' && editIngForm.baseUnit === 'PCS') factor = 30;
+                  else if (pUnit === 'CARTON' && editIngForm.baseUnit === 'PCS') factor = 24;
+                  else if (pUnit === 'BOX' && editIngForm.baseUnit === 'PCS') factor = 10;
+                  else if (pUnit === editIngForm.baseUnit) factor = 1;
+                  else if (def?.defaultFactor) factor = def.defaultFactor;
+
+                  setEditIngForm({ ...editIngForm, purchaseUnit: pUnit, conversionFactor: factor });
+                }}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
+              >
+                {Object.values(STANDARD_UNITS).map((u) => (
+                  <option key={u.code} value={u.code}>
+                    {u.name} ({u.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="p-3 bg-brand-50/50 dark:bg-brand-950/20 rounded-xl border border-brand-200 dark:border-brand-900/60 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+              <div>
+                <label className="block font-bold text-brand-900 dark:text-brand-300 mb-1">
+                  Conversion Factor (Ratio to Base Unit) *
+                </label>
+                <input
+                  type="number"
+                  min="0.0001"
+                  step="any"
+                  required
+                  value={editIngForm.conversionFactor}
+                  onChange={(e) =>
+                    setEditIngForm({ ...editIngForm, conversionFactor: parseFloat(e.target.value) || 1 })
+                  }
+                  className="w-full bg-white dark:bg-slate-800 border border-brand-300 dark:border-brand-800 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-brand-200 dark:border-brand-800 text-xs">
+                <span className="text-slate-500 block font-semibold">Automatic Conversion Rule:</span>
+                <span className="font-extrabold text-brand-600 dark:text-brand-400 font-mono text-sm">
+                  1 {editIngForm.purchaseUnit} = {Number(editIngForm.conversionFactor).toLocaleString()} {editIngForm.baseUnit}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+              <div>
+                <label className="block font-bold text-brand-900 dark:text-brand-300 mb-1">
+                  Purchase Cost per {editIngForm.purchaseUnit} ({currencySymbol}) *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  value={editIngForm.purchaseCost}
+                  onChange={(e) =>
+                    setEditIngForm({ ...editIngForm, purchaseCost: parseFloat(e.target.value) || 0 })
+                  }
+                  className="w-full bg-white dark:bg-slate-800 border border-brand-300 dark:border-brand-800 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-brand-200 dark:border-brand-800 text-xs">
+                <span className="text-slate-500 block font-semibold">Calculated Base Unit Cost:</span>
+                <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm">
+                  {currencySymbol}{' '}
+                  {calculateBaseUnitCost(
+                    Number(editIngForm.purchaseCost) || 0,
+                    Number(editIngForm.conversionFactor) || 1
+                  ).toFixed(4)}{' '}
+                  / {editIngForm.baseUnit}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Low Stock Alert Threshold ({editIngForm.baseUnit}) *
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              required
+              value={editIngForm.minStockAlert}
+              onChange={(e) =>
+                setEditIngForm({ ...editIngForm, minStockAlert: parseFloat(e.target.value) || 0 })
+              }
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 dark:text-white"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold py-2.5 rounded-lg shadow-md transition-all text-xs"
+          >
+            Update Ingredient
           </button>
         </form>
       </Modal>
@@ -1058,62 +1577,127 @@ export const InventoryManagement: React.FC = () => {
           </div>
 
           <div className="space-y-2">
-            <label className="block font-semibold text-slate-700 dark:text-slate-300">Required Ingredients</label>
-            {recipeForm.ingredients.map((item, idx) => (
-              <div key={idx} className="flex space-x-2">
-                <select
-                  value={item.ingredientId}
-                  onChange={(e) => {
-                    const next = [...recipeForm.ingredients];
-                    next[idx].ingredientId = e.target.value;
-                    setRecipeForm({ ...recipeForm, ingredients: next });
-                  }}
-                  className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
-                >
-                  <option value="">Select ingredient</option>
-                  {ingredients.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name} ({i.unit})
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  placeholder="Qty"
-                  value={item.quantity}
-                  onChange={(e) => {
-                    const next = [...recipeForm.ingredients];
-                    next[idx].quantity = parseFloat(e.target.value) || 0;
-                    setRecipeForm({ ...recipeForm, ingredients: next });
-                  }}
-                  className="w-24 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = recipeForm.ingredients.filter((_, i) => i !== idx);
-                    setRecipeForm({ ...recipeForm, ingredients: next });
-                  }}
-                  className="px-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setRecipeForm({
-                  ...recipeForm,
-                  ingredients: [...recipeForm.ingredients, { ingredientId: '', quantity: 1, unit: StockUnit.PCS }],
-                })
-              }
-              className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline"
-            >
-              + Add Ingredient to Recipe
-            </button>
+            <div className="flex items-center justify-between">
+              <label className="block font-semibold text-slate-700 dark:text-slate-300">
+                Required Recipe Ingredients
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  setRecipeForm({
+                    ...recipeForm,
+                    ingredients: [
+                      ...recipeForm.ingredients,
+                      { ingredientId: ingredients[0]?.id || '', quantity: 1, enteredQuantity: 1, recipeUnit: ingredients[0]?.base_unit || 'G', unit: ingredients[0]?.base_unit || 'G' },
+                    ],
+                  })
+                }
+                className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline"
+              >
+                + Add Ingredient
+              </button>
+            </div>
+
+            {recipeForm.ingredients.map((item, idx) => {
+              const ing = ingredients.find((i) => i.id === item.ingredientId);
+              const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (item.unit || 'G');
+              const recipeU = item.recipeUnit || baseU;
+              const enteredQ = Number(item.enteredQuantity || item.quantity) || 0;
+              const factor = Number(ing?.conversion_factor || 1);
+              const baseQ = convertRecipeQtyToBase(enteredQ, recipeU, baseU, factor);
+              const lineCost = (Number(ing?.cost_per_unit || 0)) * baseQ;
+
+              return (
+                <div key={idx} className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <div className="flex-1">
+                      <select
+                        value={item.ingredientId}
+                        onChange={(e) => {
+                          const next = [...recipeForm.ingredients];
+                          const selectedIng = ingredients.find((i) => i.id === e.target.value);
+                          const newBaseU = selectedIng?.base_unit || selectedIng?.unit || 'G';
+                          next[idx] = {
+                            ...next[idx],
+                            ingredientId: e.target.value,
+                            unit: newBaseU,
+                            recipeUnit: newBaseU,
+                          };
+                          setRecipeForm({ ...recipeForm, ingredients: next });
+                        }}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white"
+                      >
+                        <option value="">Select ingredient</option>
+                        {ingredients.map((i) => (
+                          <option key={i.id} value={i.id}>
+                            {i.name} (Base: {i.base_unit || i.unit})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="w-24">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.0001"
+                        placeholder="Qty"
+                        value={item.enteredQuantity || item.quantity}
+                        onChange={(e) => {
+                          const next = [...recipeForm.ingredients];
+                          const val = parseFloat(e.target.value) || 0;
+                          next[idx].enteredQuantity = val;
+                          next[idx].quantity = convertRecipeQtyToBase(val, next[idx].recipeUnit || baseU, baseU, factor);
+                          setRecipeForm({ ...recipeForm, ingredients: next });
+                        }}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+
+                    <div className="w-28">
+                      <select
+                        value={item.recipeUnit || baseU}
+                        onChange={(e) => {
+                          const next = [...recipeForm.ingredients];
+                          const newRecipeU = e.target.value;
+                          next[idx].recipeUnit = newRecipeU;
+                          next[idx].quantity = convertRecipeQtyToBase(next[idx].enteredQuantity || next[idx].quantity, newRecipeU, baseU, factor);
+                          setRecipeForm({ ...recipeForm, ingredients: next });
+                        }}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-white"
+                      >
+                        {getCompatibleUnits(baseU).map((u) => (
+                          <option key={u.code} value={u.code}>
+                            {u.code}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = recipeForm.ingredients.filter((_, i) => i !== idx);
+                        setRecipeForm({ ...recipeForm, ingredients: next });
+                      }}
+                      className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                      title="Remove Row"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] px-1 text-slate-500">
+                    <span className="font-mono bg-white dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800">
+                      Converts to: <strong className="text-brand-600 dark:text-brand-400">{baseQ} {baseU}</strong> base
+                    </span>
+                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                      Line Cost: {currencySymbol} {lineCost.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex justify-end space-x-2 pt-2">
