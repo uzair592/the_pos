@@ -4,7 +4,7 @@ import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
-import { ReceiptModal } from '../../components/common/ReceiptModal.js';
+import { executeThermalPrint } from '../../utils/receiptPrinter.js';
 import { Modal } from '../../components/common/Modal.js';
 import {
   Search,
@@ -173,9 +173,6 @@ export const PosTerminal: React.FC = () => {
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
   const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>('');
   const [paymentReference, setPaymentReference] = useState<string>('');
-
-  // Receipt Modal State
-  const [completedReceipt, setCompletedReceipt] = useState<any | null>(null);
 
   // Station Lock State
   const [isStationLocked, setIsStationLocked] = useState(false);
@@ -740,16 +737,23 @@ export const PosTerminal: React.FC = () => {
         reference: p.method !== PaymentMethod.CASH ? paymentReference || p.reference : undefined,
       }));
 
-      await api.post(`/orders/${orderIdToComplete}/checkout`, {
+      const checkoutRes = await api.post(`/orders/${orderIdToComplete}/checkout`, {
         payments: paymentPayload,
         changeGiven,
       });
 
-      // Fetch printable thermal receipt
-      const receiptRes = await api.get(`/orders/${orderIdToComplete}/receipt`);
-      setCompletedReceipt(receiptRes.receipt);
+      // Direct thermal printing (Fast POS workflow without in-app preview modal)
+      try {
+        const printPayload = checkoutRes?.receipt || (await api.get(`/orders/${orderIdToComplete}/receipt`))?.receipt;
+        await executeThermalPrint(printPayload || orderIdToComplete, {
+          isReprint: false,
+          context: { tenant, branch: branches?.find((b) => b.id === (currentBranchId || user?.branchId)), user },
+        });
+      } catch (printErr: any) {
+        console.warn('Direct thermal print warning:', printErr);
+      }
 
-      success(`Payment complete! Order is now COMPLETED and moved to Orders History.`);
+      success(`Payment complete! Order is now COMPLETED.`);
 
       // Reset state
       setCartItems([]);
@@ -2085,10 +2089,17 @@ export const PosTerminal: React.FC = () => {
                     <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                       <button
                         onClick={async () => {
-                          const receiptRes = await api.get(`/orders/${ord.id}/receipt`);
-                          setCompletedReceipt(receiptRes.receipt);
+                          try {
+                            await executeThermalPrint(ord, {
+                              isReprint: false,
+                              context: { tenant, branch: branches?.find((b) => b.id === (currentBranchId || user?.branchId)), user },
+                            });
+                            success(`Receipt sent to printer for Order #${ord.order_number}`);
+                          } catch (err: any) {
+                            error(`Failed to print bill: ${err.message || 'Unknown error'}`);
+                          }
                         }}
-                        className="flex items-center space-x-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-lg font-bold text-xs"
+                        className="flex items-center space-x-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-lg font-bold text-xs transition-colors"
                       >
                         <Printer className="w-3.5 h-3.5" />
                         <span>Print Bill</span>
@@ -2487,11 +2498,6 @@ export const PosTerminal: React.FC = () => {
           </div>
         </div>
       </Modal>
-      <ReceiptModal
-        isOpen={!!completedReceipt}
-        onClose={() => setCompletedReceipt(null)}
-        receiptData={completedReceipt}
-      />
     </div>
   );
 };

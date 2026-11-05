@@ -10,7 +10,7 @@ import {
   exportExpenseVoucherPdf,
   exportShiftZReportPdf,
 } from '../../utils/pdfExport.js';
-import { ReceiptModal } from '../../components/common/ReceiptModal.js';
+import { executeThermalPrint } from '../../utils/receiptPrinter.js';
 import {
   Calendar,
   CalendarDays,
@@ -62,7 +62,7 @@ const formatLocalYMD = (d: Date): string => {
 };
 
 export const Daybook: React.FC = () => {
-  const { tenant, branches, currentBranchId } = useAuth();
+  const { tenant, branches, currentBranchId, user } = useAuth();
   const { success, error, info } = useToast();
 
   // Filters State
@@ -81,7 +81,6 @@ export const Daybook: React.FC = () => {
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isWastageModalOpen, setIsWastageModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [receiptOrder, setReceiptOrder] = useState<any | null>(null);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<any | null>(null);
   const [selectedDaybookPurchase, setSelectedDaybookPurchase] = useState<any | null>(null);
   const [selectedDaybookExpense, setSelectedDaybookExpense] = useState<any | null>(null);
@@ -953,11 +952,18 @@ export const Daybook: React.FC = () => {
                                 label: 'Print Receipt',
                                 icon: Printer,
                                 onClick: async () => {
+                                  const currentBranch = branches?.find((b: any) => b.id === (currentBranchId || user?.branchId));
                                   try {
                                     const receiptRes = await api.get(`/orders/${ord.id}/receipt`);
-                                    setReceiptOrder(receiptRes.receipt || ord);
+                                    executeThermalPrint(receiptRes.receipt || ord, {
+                                      isReprint: true,
+                                      context: { tenant, branch: currentBranch, user },
+                                    });
                                   } catch {
-                                    setReceiptOrder(ord);
+                                    executeThermalPrint(ord, {
+                                      isReprint: true,
+                                      context: { tenant, branch: currentBranch, user },
+                                    });
                                   }
                                 },
                               },
@@ -1824,17 +1830,6 @@ export const Daybook: React.FC = () => {
             </div>
           </div>
         </Modal>
-      )}
-
-      {/* ======================================================== */}
-      {/* RECEIPT MODAL */}
-      {/* ======================================================== */}
-      {receiptOrder && (
-        <ReceiptModal
-          isOpen={!!receiptOrder}
-          receiptData={receiptOrder}
-          onClose={() => setReceiptOrder(null)}
-        />
       )}
 
       {/* ======================================================== */}

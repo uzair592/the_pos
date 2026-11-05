@@ -10,6 +10,11 @@ import {
 } from 'lucide-react';
 import { ReceiptTemplateType } from '@pos/shared';
 import { api } from '../../api/client.js';
+import {
+  normalizeAndValidateReceiptData,
+  formatReceiptPlainText,
+  executeThermalPrint,
+} from '../../utils/receiptPrinter.js';
 
 export interface ReceiptThemeConfig {
   id: ReceiptTemplateType;
@@ -139,241 +144,7 @@ export const renderBarcodeSvg = (value: string) => (
  */
 export function normalizeReceiptData(raw: any) {
   if (!raw) return null;
-
-  // Support nested { receipt: ... } or direct order object
-  const src = raw.receipt || raw;
-
-  const currency = src.currencySymbol || src.currency_symbol || 'Rs.';
-  const restaurantName = src.restaurantName || src.restaurant_name || src.tenant_name || 'Restaurant POS';
-  const restaurantLogo = src.restaurantLogo || src.restaurant_logo || '';
-  const branchName = src.branchName || src.branch_name || 'Main Branch';
-  const branchAddress = src.branchAddress || src.branch_address || '';
-  const branchPhone = src.branchPhone || src.branch_phone || '';
-  const taxRegistrationNumber = src.taxRegistrationNumber || src.tax_registration_number || src.strn || src.ntn || '';
-  const orderNumber = src.orderNumber || src.order_number || (src.id ? `ORD-${String(src.id).slice(0, 8).toUpperCase()}` : 'ORD-001');
-  const date = src.date || src.created_at || src.createdAt || new Date().toISOString();
-  const orderType = src.orderType || src.order_type || 'DINE_IN';
-  const tableNumber = src.tableNumber !== undefined ? src.tableNumber : (src.table_number !== undefined ? src.table_number : null);
-  const floorName = src.floorName || src.floor_name || '';
-  const cashierName = src.cashierName || src.cashier_name || src.serverName || src.server_name || src.waiter_name || 'Staff';
-  const serverName = src.serverName || src.server_name || src.waiter_name || cashierName;
-  const customerName = src.customerName || src.customer_name || '';
-  const customerPhone = src.customerPhone || src.customer_phone || '';
-  const deliveryAddress = src.deliveryAddress || src.delivery_address || '';
-  const riderName = src.riderName || src.rider_name || '';
-  const riderPhone = src.riderPhone || src.rider_phone || '';
-  const coverCount = Number(src.coverCount || src.cover_count || 1);
-  const orderNotes = src.orderNotes || src.order_notes || src.notes || '';
-  const receiptSettings = src.receiptSettings || src.receipt_settings || {};
-
-  // Extract raw line items from all potential sources
-  const rawItems: any[] = Array.isArray(src.items)
-    ? src.items
-    : Array.isArray(src.order_items)
-    ? src.order_items
-    : Array.isArray(src.orderItems)
-    ? src.orderItems
-    : Array.isArray(src.cartItems)
-    ? src.cartItems
-    : [];
-
-  const items = rawItems.map((item: any, idx: number) => {
-    const productName =
-      item.productName ||
-      item.product_name ||
-      item.name ||
-      item.title ||
-      item.product?.name ||
-      `Item #${idx + 1}`;
-
-    const variantName =
-      item.variantName ||
-      item.variant_name ||
-      item.variant?.name ||
-      item.variant ||
-      '';
-
-    const quantity = Number(item.quantity !== undefined ? item.quantity : 1) || 1;
-
-    const unitPrice = Number(
-      item.unitPrice !== undefined
-        ? item.unitPrice
-        : item.unit_price !== undefined
-        ? item.unit_price
-        : item.price !== undefined
-        ? item.price
-        : 0
-    );
-
-    const totalPrice = Number(
-      item.totalPrice !== undefined
-        ? item.totalPrice
-        : item.total_price !== undefined
-        ? item.total_price
-        : item.amount !== undefined
-        ? item.amount
-        : quantity * unitPrice
-    );
-
-    let rawModifiers = item.modifiers;
-    if (typeof rawModifiers === 'string') {
-      try {
-        rawModifiers = JSON.parse(rawModifiers);
-      } catch {
-        rawModifiers = [];
-      }
-    }
-    if (!Array.isArray(rawModifiers)) rawModifiers = [];
-
-    const modifiers = rawModifiers.map((m: any) => ({
-      name: m.name || m.modifier_name || 'Extra',
-      unitPrice: Number(m.unitPrice !== undefined ? m.unitPrice : (m.unit_price || m.price || 0)),
-    }));
-
-    const notes = item.notes || item.special_instructions || item.instruction || '';
-
-    return {
-      id: item.id || `item-${idx}`,
-      productName,
-      variantName,
-      station: item.station || 'KITCHEN',
-      quantity,
-      unitPrice,
-      totalPrice,
-      itemDiscount: Number(item.itemDiscount || item.item_discount || 0),
-      modifiers,
-      notes,
-    };
-  });
-
-  const subtotal = Number(
-    src.subtotal !== undefined
-      ? src.subtotal
-      : src.gross_sales !== undefined
-      ? src.gross_sales
-      : src.items_subtotal !== undefined
-      ? src.items_subtotal
-      : items.reduce((sum, it) => sum + it.totalPrice, 0)
-  );
-
-  const discount = Number(
-    src.discount !== undefined
-      ? src.discount
-      : src.total_discount !== undefined
-      ? src.total_discount
-      : src.discount_amount !== undefined
-      ? src.discount_amount
-      : 0
-  );
-
-  const taxPercent = Number(
-    src.taxPercent !== undefined
-      ? src.taxPercent
-      : src.tax_percent !== undefined
-      ? src.tax_percent
-      : src.tax_rate_percent !== undefined
-      ? src.tax_rate_percent
-      : 0
-  );
-
-  const taxAmount = Number(
-    src.taxAmount !== undefined
-      ? src.taxAmount
-      : src.tax_amount !== undefined
-      ? src.tax_amount
-      : 0
-  );
-
-  const serviceChargeAmount = Number(
-    src.serviceChargeAmount !== undefined
-      ? src.serviceChargeAmount
-      : src.service_charge_amount !== undefined
-      ? src.service_charge_amount
-      : src.service_charge !== undefined
-      ? src.service_charge
-      : 0
-  );
-
-  const deliveryFee = Number(
-    src.deliveryFee !== undefined
-      ? src.deliveryFee
-      : src.delivery_fee !== undefined
-      ? src.delivery_fee
-      : 0
-  );
-
-  const grandTotal = Number(
-    src.grandTotal !== undefined
-      ? src.grandTotal
-      : src.grand_total !== undefined
-      ? src.grand_total
-      : src.total_amount !== undefined
-      ? src.total_amount
-      : Math.max(0, subtotal - discount + taxAmount + serviceChargeAmount + deliveryFee)
-  );
-
-  const rawPayments = Array.isArray(src.payments)
-    ? src.payments
-    : Array.isArray(src.order_payments)
-    ? src.order_payments
-    : [];
-
-  const payments =
-    rawPayments.length > 0
-      ? rawPayments.map((p: any) => ({
-          method: p.method || p.payment_method || 'CASH',
-          amount: Number(p.amount !== undefined ? p.amount : grandTotal),
-        }))
-      : src.payment_method
-      ? [{ method: src.payment_method, amount: grandTotal }]
-      : [];
-
-  const changeGiven = Number(
-    src.changeGiven !== undefined
-      ? src.changeGiven
-      : src.change_given !== undefined
-      ? src.change_given
-      : src.change_amount !== undefined
-      ? src.change_amount
-      : 0
-  );
-
-  return {
-    ...src,
-    id: src.id,
-    currencySymbol: currency,
-    restaurantName,
-    restaurantLogo,
-    branchName,
-    branchAddress,
-    branchPhone,
-    taxRegistrationNumber,
-    orderNumber,
-    date,
-    orderType,
-    tableNumber,
-    floorName,
-    coverCount,
-    cashierName,
-    serverName,
-    customerName,
-    customerPhone,
-    deliveryAddress,
-    riderName,
-    riderPhone,
-    orderNotes,
-    receiptSettings,
-    items,
-    subtotal,
-    discount,
-    taxPercent,
-    taxAmount,
-    serviceChargeAmount,
-    deliveryFee,
-    grandTotal,
-    payments,
-    changeGiven,
-  };
+  return normalizeAndValidateReceiptData(raw);
 }
 
 export interface ReceiptPreviewProps {
@@ -1307,54 +1078,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const currency = receiptData.currencySymbol || 'Rs.';
 
   const handlePrint = () => {
-    window.print();
+    executeThermalPrint(receiptData);
   };
 
   // Generate plain-text representation for SMS / WhatsApp sharing
   const handleCopyText = () => {
-    let text = `========================================\n`;
-    text += `${receiptData.restaurantName?.toUpperCase()}\n`;
-    text += `${receiptData.branchName} - Tel: ${receiptData.branchPhone || ''}\n`;
-    if (receiptData.taxRegistrationNumber) {
-      text += `STRN/NTN: ${receiptData.taxRegistrationNumber}\n`;
-    }
-    text += `========================================\n`;
-    text += `Order #: ${receiptData.orderNumber}\n`;
-    text += `Date: ${new Date(receiptData.date).toLocaleString()}\n`;
-    text += `Type: ${receiptData.orderType}${receiptData.tableNumber ? ' (Table ' + receiptData.tableNumber + ')' : ''}\n`;
-    text += `Cashier: ${receiptData.cashierName || 'Staff'}\n`;
-    if (receiptData.customerName) {
-      text += `Customer: ${receiptData.customerName} (${receiptData.customerPhone || ''})\n`;
-    }
-    text += `----------------------------------------\n`;
-    receiptData.items?.forEach((i: any) => {
-      text += `${i.quantity}x ${i.productName}${i.variantName ? ' (' + i.variantName + ')' : ''} - ${currency} ${Number(i.totalPrice).toLocaleString()}\n`;
-      if (i.modifiers && Array.isArray(i.modifiers) && i.modifiers.length > 0) {
-        const mods = i.modifiers.map((m: any) => m.name).join(', ');
-        text += `   + Addons: ${mods}\n`;
-      }
-      if (i.notes) {
-        text += `   * Note: ${i.notes}\n`;
-      }
-    });
-    text += `----------------------------------------\n`;
-    text += `Subtotal: ${currency} ${Number(receiptData.subtotal).toLocaleString()}\n`;
-    if (receiptData.discount > 0) {
-      text += `Discount: -${currency} ${Number(receiptData.discount).toLocaleString()}\n`;
-    }
-    if (receiptData.taxAmount > 0) {
-      text += `Tax (${receiptData.taxPercent}%): ${currency} ${Number(receiptData.taxAmount).toLocaleString()}\n`;
-    }
-    if (receiptData.serviceChargeAmount > 0) {
-      text += `Service Charge: ${currency} ${Number(receiptData.serviceChargeAmount).toLocaleString()}\n`;
-    }
-    if (receiptData.deliveryFee > 0) {
-      text += `Delivery Fee: ${currency} ${Number(receiptData.deliveryFee).toLocaleString()}\n`;
-    }
-    text += `GRAND TOTAL: ${currency} ${Number(receiptData.grandTotal).toLocaleString()}\n`;
-    text += `========================================\n`;
-    text += `${receiptData.receiptSettings?.footerText || 'Thank you for your visit!'}\n`;
-
+    const text = formatReceiptPlainText(receiptData);
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext.js';
 import { StatCard } from '../../components/common/StatCard.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
 import { Modal } from '../../components/common/Modal.js';
-import { ReceiptModal } from '../../components/common/ReceiptModal.js';
+import { executeThermalPrint } from '../../utils/receiptPrinter.js';
 import {
   DollarSign,
   ShoppingBag,
@@ -38,7 +38,7 @@ import { FeatureKey } from '@pos/shared';
 import { getTodayRangeISO } from '../../utils/dateUtils.js';
 
 export const RestaurantDashboard: React.FC = () => {
-  const { tenant, hasFeature, currentBranchId, currentBranch, branches } = useAuth();
+  const { tenant, hasFeature, currentBranchId, currentBranch, branches, user } = useAuth();
   const [summary, setSummary] = useState<any>(null);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [activeOrders, setActiveOrders] = useState<any[]>([]);
@@ -47,7 +47,6 @@ export const RestaurantDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<any | null>(null);
-  const [receiptOrder, setReceiptOrder] = useState<any | null>(null);
 
   const handleViewOrderDetail = async (orderId: string) => {
     try {
@@ -616,11 +615,18 @@ export const RestaurantDashboard: React.FC = () => {
                           label: 'Print Bill / Receipt',
                           icon: Printer,
                           onClick: async () => {
+                            const branchObj = currentBranch || branches?.find((b: any) => b.id === (currentBranchId || user?.branchId));
                             try {
                               const receiptRes = await api.get(`/orders/${o.id}/receipt`);
-                              setReceiptOrder(receiptRes.receipt || o);
+                              executeThermalPrint(receiptRes.receipt || o, {
+                                isReprint: true,
+                                context: { tenant, branch: branchObj, user },
+                              });
                             } catch {
-                              setReceiptOrder(o);
+                              executeThermalPrint(o, {
+                                isReprint: true,
+                                context: { tenant, branch: branchObj, user },
+                              });
                             }
                           },
                         },
@@ -700,8 +706,20 @@ export const RestaurantDashboard: React.FC = () => {
             <div className="flex justify-end space-x-2 pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  setReceiptOrder(selectedOrderDetail);
+                onClick={async () => {
+                  const branchObj = currentBranch || branches?.find((b: any) => b.id === (currentBranchId || user?.branchId));
+                  try {
+                    const receiptRes = await api.get(`/orders/${selectedOrderDetail.id}/receipt`);
+                    executeThermalPrint(receiptRes.receipt || selectedOrderDetail, {
+                      isReprint: true,
+                      context: { tenant, branch: branchObj, user },
+                    });
+                  } catch {
+                    executeThermalPrint(selectedOrderDetail, {
+                      isReprint: true,
+                      context: { tenant, branch: branchObj, user },
+                    });
+                  }
                 }}
                 className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
               >
@@ -718,15 +736,6 @@ export const RestaurantDashboard: React.FC = () => {
             </div>
           </div>
         </Modal>
-      )}
-
-      {/* Receipt Modal */}
-      {receiptOrder && (
-        <ReceiptModal
-          isOpen={!!receiptOrder}
-          receiptData={receiptOrder}
-          onClose={() => setReceiptOrder(null)}
-        />
       )}
     </div>
   );

@@ -55,7 +55,7 @@ const formatDisplayDate = (ymd: string): string => {
   });
 };
 
-import { ReceiptModal } from '../../components/common/ReceiptModal.js';
+import { executeThermalPrint } from '../../utils/receiptPrinter.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
 
 export const OrdersHub: React.FC = () => {
@@ -101,7 +101,6 @@ export const OrdersHub: React.FC = () => {
   // Selected Order for Modal
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
-  const [receiptOrder, setReceiptOrder] = useState<any | null>(null);
 
   // Settle Payment Modal state
   const [settleOrder, setSettleOrder] = useState<any | null>(null);
@@ -270,12 +269,22 @@ export const OrdersHub: React.FC = () => {
       });
 
       success(`Payment settled for Order #${settleOrder.order_number}! Completed.`);
+      
+      // Fast, non-blocking direct thermal print (no preview modal)
+      const currentBranch = branches?.find((b: any) => b.id === (currentBranchId || user?.branchId));
       try {
         const receiptRes = await api.get(`/orders/${settleOrder.id}/receipt`);
-        setReceiptOrder(receiptRes.receipt || settleOrder);
+        executeThermalPrint(receiptRes.receipt || settleOrder, {
+          isReprint: false,
+          context: { tenant, branch: currentBranch, user },
+        });
       } catch {
-        setReceiptOrder(settleOrder);
+        executeThermalPrint(settleOrder, {
+          isReprint: false,
+          context: { tenant, branch: currentBranch, user },
+        });
       }
+
       setSettleOrder(null);
       fetchActiveOrders(true);
 
@@ -1037,11 +1046,18 @@ export const OrdersHub: React.FC = () => {
                                 label: 'Print / Reprint Receipt',
                                 icon: Printer,
                                 onClick: async () => {
+                                  const currentBranch = branches?.find((b: any) => b.id === (currentBranchId || user?.branchId));
                                   try {
                                     const receiptRes = await api.get(`/orders/${ord.id}/receipt`);
-                                    setReceiptOrder(receiptRes.receipt || ord);
+                                    executeThermalPrint(receiptRes.receipt || ord, {
+                                      isReprint: true,
+                                      context: { tenant, branch: currentBranch, user },
+                                    });
                                   } catch {
-                                    setReceiptOrder(ord);
+                                    executeThermalPrint(ord, {
+                                      isReprint: true,
+                                      context: { tenant, branch: currentBranch, user },
+                                    });
                                   }
                                 },
                               },
@@ -1217,11 +1233,18 @@ export const OrdersHub: React.FC = () => {
             <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end space-x-2.5">
               <button
                 onClick={async () => {
+                  const currentBranch = branches?.find((b: any) => b.id === (currentBranchId || user?.branchId));
                   try {
                     const receiptRes = await api.get(`/orders/${selectedOrder.id}/receipt`);
-                    setReceiptOrder(receiptRes.receipt || selectedOrder);
+                    executeThermalPrint(receiptRes.receipt || selectedOrder, {
+                      isReprint: true,
+                      context: { tenant, branch: currentBranch, user },
+                    });
                   } catch {
-                    setReceiptOrder(selectedOrder);
+                    executeThermalPrint(selectedOrder, {
+                      isReprint: true,
+                      context: { tenant, branch: currentBranch, user },
+                    });
                   }
                 }}
                 className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-sm"
@@ -1361,14 +1384,6 @@ export const OrdersHub: React.FC = () => {
         </div>
       )}
 
-      {/* RECEIPT MODAL */}
-      {receiptOrder && (
-        <ReceiptModal
-          isOpen={!!receiptOrder}
-          receiptData={receiptOrder}
-          onClose={() => setReceiptOrder(null)}
-        />
-      )}
     </div>
   );
 };

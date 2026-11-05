@@ -106,9 +106,18 @@ export async function orderRoutes(fastify: FastifyInstance) {
     let sql = `
       SELECT o.*,
              EXTRACT(EPOCH FROM (NOW() - o.created_at)) / 60 as elapsed_minutes,
-             b.name as branch_name
+             b.name as branch_name,
+             b.phone as branch_phone,
+             b.address as branch_address,
+             b.city as branch_city,
+             t.name as restaurant_name,
+             rs.currency_symbol,
+             rs.tax_registration_number,
+             rs.receipt_settings
       FROM orders o
-      JOIN branches b ON b.id = o.branch_id
+      LEFT JOIN branches b ON b.id = o.branch_id
+      LEFT JOIN tenants t ON t.id = o.tenant_id
+      LEFT JOIN restaurant_settings rs ON rs.tenant_id = o.tenant_id
       WHERE o.tenant_id = $1
         AND o.status IN ('PENDING', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'OUT_FOR_DELIVERY', 'ON_HOLD')
     `;
@@ -547,6 +556,81 @@ export async function orderRoutes(fastify: FastifyInstance) {
         idempotencyKey,
       });
 
+      // Attach authoritative receipt payload directly to checkout response
+      try {
+        const { rows: orderRows } = await query(
+          `
+          SELECT o.*, b.name as branch_name, b.phone as branch_phone, b.address as branch_address, b.city as branch_city,
+                 t.name as restaurant_name, t.logo_url as restaurant_logo,
+                 rs.receipt_settings, rs.currency_symbol, rs.tax_registration_number, rs.time_zone
+          FROM orders o
+          LEFT JOIN branches b ON b.id = o.branch_id
+          LEFT JOIN tenants t ON t.id = o.tenant_id
+          LEFT JOIN restaurant_settings rs ON rs.tenant_id = o.tenant_id
+          WHERE o.id = $1 AND o.tenant_id = $2
+          `,
+          [id, tenantId],
+          { tenantId }
+        );
+
+        if (orderRows.length > 0) {
+          const ord = orderRows[0];
+          const { rows: items } = await query(
+            'SELECT * FROM order_items WHERE order_id = $1 AND tenant_id = $2 ORDER BY id ASC',
+            [id, tenantId],
+            { tenantId }
+          );
+          const { rows: pays } = await query(
+            'SELECT * FROM order_payments WHERE order_id = $1 AND tenant_id = $2 ORDER BY created_at ASC',
+            [id, tenantId],
+            { tenantId }
+          );
+
+          (result as any).receipt = {
+            id: ord.id,
+            restaurantName: ord.restaurant_name || 'Restaurant POS',
+            branchName: ord.branch_name || 'Main Branch',
+            branchPhone: ord.branch_phone || '',
+            branchAddress: ord.branch_address ? `${ord.branch_address}${ord.branch_city ? ', ' + ord.branch_city : ''}` : '',
+            taxRegistrationNumber: ord.tax_registration_number || '',
+            orderNumber: ord.order_number,
+            orderType: ord.order_type,
+            tableNumber: ord.table_number,
+            floorName: ord.floor_name,
+            customerName: ord.customer_name,
+            customerPhone: ord.customer_phone,
+            deliveryAddress: ord.delivery_address,
+            riderName: ord.rider_name,
+            riderPhone: ord.rider_phone,
+            cashierName: ord.cashier_name || 'Staff',
+            date: ord.created_at,
+            currencySymbol: ord.currency_symbol || 'Rs.',
+            items: items.map((i) => ({
+              id: i.id,
+              productName: i.product_name || 'Item',
+              variantName: i.variant_name || '',
+              quantity: Number(i.quantity) || 1,
+              unitPrice: Number(i.unit_price) || 0,
+              totalPrice: Number(i.total_price) || 0,
+              itemDiscount: Number(i.item_discount) || 0,
+              modifiers: i.modifiers,
+              notes: i.notes || '',
+            })),
+            subtotal: Number(ord.subtotal) || 0,
+            discount: Number(ord.total_discount) || 0,
+            taxPercent: Number(ord.tax_percent) || 0,
+            taxAmount: Number(ord.tax_amount) || 0,
+            serviceChargeAmount: Number(ord.service_charge_amount) || 0,
+            deliveryFee: Number(ord.delivery_fee) || 0,
+            grandTotal: Number(ord.grand_total) || 0,
+            paidAmount: Number(ord.paid_amount) || 0,
+            changeGiven: Number(ord.change_given) || 0,
+            payments: pays.map((p) => ({ method: p.method || 'CASH', amount: Number(p.amount) || 0 })),
+            receiptSettings: ord.receipt_settings || {},
+          };
+        }
+      } catch (_) {}
+
       return reply.send(result);
     } catch (err: any) {
       return reply.status(400).send({ error: err.message });
@@ -707,94 +791,185 @@ export async function orderRoutes(fastify: FastifyInstance) {
    * Printable Receipt Payload
    */
   fastify.get('/api/orders/:id/receipt', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const tenantId = req.user!.tenantId!;
+    try {
+      const { id } = req.params as { id: string };
+      const tenantId = req.user!.tenantId!;
 
-    // 1. Order details
-    const { rows: orderRows } = await query(
-      `
-      SELECT o.*, b.name as branch_name, b.phone as branch_phone, b.address as branch_address, b.city as branch_city,
-             t.name as restaurant_name, t.logo_url as restaurant_logo,
-             rs.receipt_settings, rs.currency_symbol, rs.tax_registration_number
-      FROM orders o
-      LEFT JOIN branches b ON b.id = o.branch_id
-      LEFT JOIN tenants t ON t.id = o.tenant_id
-      LEFT JOIN restaurant_settings rs ON rs.tenant_id = o.tenant_id
-      WHERE o.id = $1 AND o.tenant_id = $2
-      `,
-      [id, tenantId],
-      { tenantId }
-    );
+      // 1. Order details with all related restaurant and branch metadata
+      const { rows: orderRows } = await query(
+        `
+        SELECT o.*, b.name as branch_name, b.phone as branch_phone, b.address as branch_address, b.city as branch_city,
+               t.name as restaurant_name, t.logo_url as restaurant_logo,
+               rs.receipt_settings, rs.currency_symbol, rs.tax_registration_number, rs.time_zone
+        FROM orders o
+        LEFT JOIN branches b ON b.id = o.branch_id
+        LEFT JOIN tenants t ON t.id = o.tenant_id
+        LEFT JOIN restaurant_settings rs ON rs.tenant_id = o.tenant_id
+        WHERE o.id = $1 AND o.tenant_id = $2
+        `,
+        [id, tenantId],
+        { tenantId }
+      );
 
     if (orderRows.length === 0) return reply.status(404).send({ error: 'Order not found' });
     const order = orderRows[0];
 
     const { rows: items } = await query(
-      'SELECT * FROM order_items WHERE order_id = $1 AND tenant_id = $2',
+      'SELECT * FROM order_items WHERE order_id = $1 AND tenant_id = $2 ORDER BY id ASC',
       [id, tenantId],
       { tenantId }
     );
 
     const { rows: payments } = await query(
-      'SELECT * FROM order_payments WHERE order_id = $1 AND tenant_id = $2',
+      'SELECT * FROM order_payments WHERE order_id = $1 AND tenant_id = $2 ORDER BY paid_at ASC',
       [id, tenantId],
       { tenantId }
     );
 
-    return reply.send({
-      receipt: {
-        restaurantName: order.restaurant_name || 'Restaurant POS',
-        restaurantLogo: order.restaurant_logo,
-        branchName: order.branch_name || 'Main Branch',
-        branchPhone: order.branch_phone || '',
-        branchAddress: order.branch_address ? `${order.branch_address}${order.branch_city ? ', ' + order.branch_city : ''}` : '',
-        taxRegistrationNumber: order.tax_registration_number || '',
-        orderNumber: order.order_number,
-        orderType: order.order_type,
-        tableNumber: order.table_number,
-        floorName: order.floor_name,
-        coverCount: order.cover_count,
-        customerName: order.customer_name,
-        customerPhone: order.customer_phone,
-        deliveryAddress: order.delivery_address,
-        riderName: order.rider_name,
-        riderPhone: order.rider_phone,
-        cashierName: order.cashier_name || 'Staff',
-        serverName: order.waiter_name || order.cashier_name || 'Staff',
-        orderNotes: order.order_notes,
-        date: order.created_at,
-        currencySymbol: order.currency_symbol || 'Rs.',
-        items: items.map((i) => ({
-          id: i.id,
-          productName: i.product_name,
-          variantName: i.variant_name,
-          station: i.station,
-          quantity: i.quantity,
-          unitPrice: Number(i.unit_price),
-          totalPrice: Number(i.total_price),
-          itemDiscount: Number(i.item_discount) || 0,
-          modifiers: i.modifiers,
-          notes: i.notes,
-        })),
-        subtotal: Number(order.subtotal),
-        discount: Number(order.total_discount),
-        billDiscountPercent: Number(order.bill_discount_percent) || 0,
-        billDiscountAmount: Number(order.bill_discount_amount) || 0,
-        itemDiscountsTotal: Number(order.item_discounts_total) || 0,
-        taxPercent: Number(order.tax_percent),
-        taxAmount: Number(order.tax_amount),
-        serviceChargeAmount: Number(order.service_charge_amount),
-        deliveryFee: Number(order.delivery_fee),
-        grandTotal: Number(order.grand_total),
-        paidAmount: Number(order.paid_amount),
-        changeGiven: Number(order.change_given),
-        balanceDue: Number(order.balance_due),
-        payments: payments.map((p) => ({
-          method: p.method,
-          amount: Number(p.amount),
-        })),
-        receiptSettings: order.receipt_settings,
-      },
+    const formattedAddress = order.branch_address
+      ? `${order.branch_address}${order.branch_city ? ', ' + order.branch_city : ''}`
+      : '';
+
+    const safeItems = items.map((i) => {
+      const unitPrice = Number(i.unit_price) || 0;
+      const quantity = Number(i.quantity) || 1;
+      const totalPrice = Number(i.total_price) || (unitPrice * quantity);
+
+      let parsedModifiers: any[] = [];
+      try {
+        parsedModifiers = Array.isArray(i.modifiers)
+          ? i.modifiers
+          : typeof i.modifiers === 'string'
+          ? JSON.parse(i.modifiers)
+          : [];
+      } catch {
+        parsedModifiers = [];
+      }
+
+      return {
+        id: i.id,
+        productId: i.product_id,
+        productName: i.product_name || 'Item',
+        product_name: i.product_name || 'Item',
+        variantName: i.variant_name || '',
+        variant_name: i.variant_name || '',
+        station: i.station || 'KITCHEN',
+        quantity,
+        unitPrice,
+        unit_price: unitPrice,
+        totalPrice,
+        total_price: totalPrice,
+        itemDiscount: Number(i.item_discount) || 0,
+        item_discount: Number(i.item_discount) || 0,
+        modifiers: parsedModifiers,
+        notes: i.notes || '',
+      };
     });
+
+    const safePayments = payments.map((p) => ({
+      id: p.id,
+      method: p.method || 'CASH',
+      amount: Number(p.amount) || 0,
+      reference: p.reference || '',
+      createdAt: p.paid_at || p.created_at || new Date().toISOString(),
+      paidAt: p.paid_at || p.created_at || new Date().toISOString(),
+    }));
+
+    const subtotal = Number(order.subtotal) || 0;
+    const discount = Number(order.total_discount) || 0;
+    const taxPercent = Number(order.tax_percent) || 0;
+    const taxAmount = Number(order.tax_amount) || 0;
+    const serviceChargeAmount = Number(order.service_charge_amount) || 0;
+    const deliveryFee = Number(order.delivery_fee) || 0;
+    const grandTotal = Number(order.grand_total) || 0;
+    const paidAmount = Number(order.paid_amount) || 0;
+    const changeGiven = Number(order.change_given) || 0;
+    const balanceDue = Number(order.balance_due) || 0;
+
+    const receiptPayload = {
+      id: order.id,
+      restaurantName: order.restaurant_name || 'Restaurant POS',
+      restaurant_name: order.restaurant_name || 'Restaurant POS',
+      restaurantLogo: order.restaurant_logo || '',
+      restaurant_logo: order.restaurant_logo || '',
+      branchName: order.branch_name || 'Main Branch',
+      branch_name: order.branch_name || 'Main Branch',
+      branchPhone: order.branch_phone || '',
+      branch_phone: order.branch_phone || '',
+      branchAddress: formattedAddress,
+      branch_address: formattedAddress,
+      taxRegistrationNumber: order.tax_registration_number || '',
+      tax_registration_number: order.tax_registration_number || '',
+      timeZone: order.time_zone || 'Asia/Karachi',
+      orderNumber: order.order_number || (`ORD-${String(order.id).slice(0, 8).toUpperCase()}`),
+      order_number: order.order_number || (`ORD-${String(order.id).slice(0, 8).toUpperCase()}`),
+      orderType: order.order_type || 'DINE_IN',
+      order_type: order.order_type || 'DINE_IN',
+      tableNumber: order.table_number || null,
+      table_number: order.table_number || null,
+      floorName: order.floor_name || '',
+      floor_name: order.floor_name || '',
+      coverCount: Number(order.cover_count) || 1,
+      cover_count: Number(order.cover_count) || 1,
+      customerName: order.customer_name || '',
+      customer_name: order.customer_name || '',
+      customerPhone: order.customer_phone || '',
+      customer_phone: order.customer_phone || '',
+      deliveryAddress: order.delivery_address || '',
+      delivery_address: order.delivery_address || '',
+      riderName: order.rider_name || '',
+      rider_name: order.rider_name || '',
+      riderPhone: order.rider_phone || '',
+      rider_phone: order.rider_phone || '',
+      cashierName: order.cashier_name || 'Staff',
+      cashier_name: order.cashier_name || 'Staff',
+      serverName: order.waiter_name || order.cashier_name || 'Staff',
+      server_name: order.waiter_name || order.cashier_name || 'Staff',
+      orderNotes: order.order_notes || '',
+      order_notes: order.order_notes || '',
+      date: order.created_at || new Date().toISOString(),
+      created_at: order.created_at || new Date().toISOString(),
+      currencySymbol: order.currency_symbol || 'Rs.',
+      currency_symbol: order.currency_symbol || 'Rs.',
+      items: safeItems,
+      subtotal,
+      discount,
+      total_discount: discount,
+      billDiscountPercent: Number(order.bill_discount_percent) || 0,
+      bill_discount_percent: Number(order.bill_discount_percent) || 0,
+      billDiscountAmount: Number(order.bill_discount_amount) || 0,
+      bill_discount_amount: Number(order.bill_discount_amount) || 0,
+      itemDiscountsTotal: Number(order.item_discounts_total) || 0,
+      item_discounts_total: Number(order.item_discounts_total) || 0,
+      taxPercent,
+      tax_percent: taxPercent,
+      taxAmount,
+      tax_amount: taxAmount,
+      serviceChargeAmount,
+      service_charge_amount: serviceChargeAmount,
+      deliveryFee,
+      delivery_fee: deliveryFee,
+      grandTotal,
+      grand_total: grandTotal,
+      paidAmount,
+      paid_amount: paidAmount,
+      changeGiven,
+      change_given: changeGiven,
+      balanceDue,
+      balance_due: balanceDue,
+      paymentStatus: order.payment_status || 'PENDING',
+      payment_status: order.payment_status || 'PENDING',
+      payments: safePayments,
+      receiptSettings: order.receipt_settings || {},
+      receipt_settings: order.receipt_settings || {},
+    };
+
+    return reply.send({
+      receipt: receiptPayload,
+    });
+    } catch (err: any) {
+      console.error('ERROR in /api/orders/:id/receipt:', err);
+      return reply.status(500).send({ error: err.message, stack: err.stack });
+    }
   });
 }
