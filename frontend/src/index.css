@@ -48,3 +48,60 @@
     size: auto;
   }
 }
+
+
+/* Dedicated Independent POS Scrollbars with overscroll containment */
+.pos-menu-scroller {
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(249, 115, 22, 0.6) rgba(0, 0, 0, 0.04);
+}
+.pos-menu-scroller::-webkit-scrollbar {
+  width: 8px;
+}
+.pos-menu-scroller::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 9999px;
+  margin: 4px 0;
+}
+.dark .pos-menu-scroller::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+.pos-menu-scroller::-webkit-scrollbar-thumb {
+  background: rgba(249, 115, 22, 0.6);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.pos-menu-scroller::-webkit-scrollbar-thumb:hover {
+  background: rgba(249, 115, 22, 0.9);
+  border: 1px solid transparent;
+}
+
+.pos-cart-scroller,
+.pos-category-scroller {
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+.pos-cart-scroller::-webkit-scrollbar,
+.pos-category-scroller::-webkit-scrollbar {
+  width: 6px;
+}
+.pos-cart-scroller::-webkit-scrollbar-track,
+.pos-category-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+.pos-cart-scroller::-webkit-scrollbar-thumb,
+.pos-category-scroller::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+.pos-cart-scroller::-webkit-scrollbar-thumb:hover,
+.pos-category-scroller::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
+}

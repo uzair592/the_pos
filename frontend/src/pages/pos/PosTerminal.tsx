@@ -134,6 +134,26 @@ export const PosTerminal: React.FC = () => {
     };
   }, [isDraggingResizer, billingWidth]);
 
+  // Lock body/window scroll so POS terminal has strictly independent contained scrollers
+  useEffect(() => {
+    const originalBodyOverflow = document.body.style.overflow;
+    const originalBodyHeight = document.body.style.height;
+    const originalHtmlOverflow = document.documentElement.style.overflow;
+    const originalHtmlHeight = document.documentElement.style.height;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.height = '100%';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.height = '100%';
+
+    return () => {
+      document.body.style.overflow = originalBodyOverflow;
+      document.body.style.height = originalBodyHeight;
+      document.documentElement.style.overflow = originalHtmlOverflow;
+      document.documentElement.style.height = originalHtmlHeight;
+    };
+  }, []);
+
   // Held Orders
   const [heldOrders, setHeldOrders] = useState<any[]>([]);
   const [isHeldOrdersModalOpen, setIsHeldOrdersModalOpen] = useState(false);
@@ -779,7 +799,7 @@ export const PosTerminal: React.FC = () => {
   });
 
   return (
-    <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950 overflow-hidden font-sans">
+    <div className="fixed inset-0 h-full w-full max-h-screen max-w-screen flex flex-col bg-slate-100 dark:bg-slate-950 overflow-hidden font-sans select-none z-0">
       {/* Top POS Action Header */}
       <header className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between border-b border-slate-800 shrink-0">
         <div className="flex items-center space-x-3">
@@ -882,10 +902,10 @@ export const PosTerminal: React.FC = () => {
       </header>
 
       {/* Main POS Interface (3-Column Layout: Vertical Categories on Left, Menu Items in Middle, Resizable Cart on Right) */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0 h-full">
         {/* ==================== 1. VERTICAL CATEGORIES & SUBCATEGORIES SIDEBAR ==================== */}
         {showCategorySidebar && (
-          <div className="w-56 sm:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-hidden select-none animate-in slide-in-from-left duration-200">
+          <div className="w-56 sm:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-hidden select-none animate-in slide-in-from-left duration-200 min-h-0 h-full">
           {/* Sidebar Header */}
           <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40">
             <div className="flex items-center space-x-2">
@@ -900,7 +920,7 @@ export const PosTerminal: React.FC = () => {
           </div>
 
           {/* Vertical Categories List */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5 min-h-0 overscroll-contain pos-category-scroller">
             {/* ALL MENU ITEMS BUTTON */}
             <button
               onClick={() => {
@@ -1022,7 +1042,7 @@ export const PosTerminal: React.FC = () => {
         )}
 
         {/* ==================== 2. MENU ITEMS SECTION (MIDDLE) ==================== */}
-        <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
+        <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden min-h-0 h-full">
           {/* Top Search, Active Breadcrumb, and View Switcher */}
           <div className="p-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 space-y-2.5 shrink-0 shadow-sm">
             <div className="flex items-center space-x-2">
@@ -1246,7 +1266,7 @@ export const PosTerminal: React.FC = () => {
           </div>
 
           {/* Menu Items List / Grid */}
-          <div className="flex-1 p-3.5 overflow-y-auto">
+          <div className="flex-1 p-3.5 overflow-y-auto min-h-0 overscroll-contain pos-menu-scroller">
             {loading ? (
               <div className="text-center py-12 text-slate-400 text-xs">Loading menu products...</div>
             ) : filteredProducts.length === 0 ? (
@@ -1450,7 +1470,7 @@ export const PosTerminal: React.FC = () => {
         {/* ==================== 3. RESIZABLE BILLING / CART SECTION ==================== */}
         <div
           style={{ width: `${billingWidth}px` }}
-          className="relative bg-white dark:bg-slate-900 flex flex-col justify-between shadow-2xl shrink-0 z-10 border-l border-slate-200 dark:border-slate-800 select-none transition-[width] duration-75"
+          className="relative bg-white dark:bg-slate-900 flex flex-col justify-between shadow-2xl shrink-0 z-10 border-l border-slate-200 dark:border-slate-800 select-none transition-[width] duration-75 min-h-0 h-full overflow-hidden"
         >
           {/* Draggable Resizer Handle on Left Edge */}
           <div
@@ -1466,7 +1486,7 @@ export const PosTerminal: React.FC = () => {
           </div>
 
           {/* Cart Header with Width Size Adjuster & Order Type */}
-          <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 space-y-2.5">
+          <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 space-y-2.5 shrink-0 max-h-[42vh] overflow-y-auto overscroll-contain pos-cart-scroller">
             {/* Top Bar with Resizer Presets */}
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-1.5">
@@ -1732,7 +1752,7 @@ export const PosTerminal: React.FC = () => {
           </div>
 
           {/* Cart Items List */}
-          <div className="flex-1 p-3.5 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+          <div className="flex-1 p-3.5 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 text-xs min-h-0 overscroll-contain pos-cart-scroller">
             {cartItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 space-y-2">
                 <ShoppingBag className="w-8 h-8 opacity-40" />
@@ -1798,7 +1818,7 @@ export const PosTerminal: React.FC = () => {
           </div>
 
           {/* Cart Bottom Summary & Actions */}
-          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-800 space-y-2 text-xs shrink-0">
             <div className="space-y-1">
               <div className="flex justify-between text-slate-500 dark:text-slate-400">
                 <span>Subtotal</span>
