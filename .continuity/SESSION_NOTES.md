@@ -14,6 +14,34 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 48 (commit e424765): Automatic Unit of Measurement (UOM) Conversion and Recipe-Based Inventory Management:
+  1. Complete Multi-Dimensional Unit Engine (`shared/src/utils/unitConversion.ts`):
+     - Dimensions: Weight (`KG`, `G`, `MG`), Volume (`L`, `ML`), Count/Packaging (`PCS`, `DOZEN` [12], `TRAY` [30], `BOX` [10], `CARTON` [24], `PACK`, `SACK`, `BOTTLE`, `CAN`).
+     - Dimension compatibility checks (`areUnitsCompatible`) prevent erroneous conversions between weight and volume without specific density.
+     - Dynamic conversion helper (`convertRecipeQtyToBase`, `convertPurchaseQtyToBase`, `calculateBaseUnitCost`, `formatDisplayStock`).
+  2. Database Schema Migration (`010_unit_conversion_and_recipes.sql`):
+     - Added `category`, `base_unit`, `purchase_unit`, `conversion_factor`, and `purchase_cost` to `ingredients`.
+     - Added `entered_quantity`, `recipe_unit`, `unit_cost`, and `total_cost` to `recipe_ingredients`.
+     - Added `purchase_unit`, `conversion_factor`, `base_quantity`, and `base_unit_cost` to `purchase_items`.
+  3. Raw Material Setup & Management (`InventoryManagement.tsx` & Backend):
+     - Category filter pills (`All Categories`, `Meat & Poultry`, `Dairy & Eggs`, `Produce & Vegetables`, etc.) with real-time category counts and text search.
+     - Dual-unit stock representation: e.g. `10.00 KG (10,000 G)`.
+     - Raw Ingredient Register & Edit modals with live conversion ratio preview (`1 KG = 1000 G`), purchase cost, and calculated base unit cost (`Rs. 1.0000 / G`).
+  4. Purchase Invoice Management (`PurchaseManagement.tsx` & `inventoryService.ts`):
+     - Inward purchase invoice line items allow selecting purchase package unit, quantity, and purchase unit price.
+     - Live conversion indicator: e.g. `10 KG = 10,000 G (@ Rs. 1.0000 / G)`.
+     - Receiving an invoice creates FIFO inventory batches in authoritative base units (`G`, `ML`, `PCS`), updates weighted-average branch base costs, and recalculates ingredient base unit cost.
+  5. Recipe & Menu Item Builder (`MenuCatalog.tsx` & `inventory.routes.ts`):
+     - Recipe builder rows allow selecting consumption unit (`recipeUnit`) from compatible units, entering consumption quantity, and viewing auto-converted base quantity confirmation badge (`-> 150 G`) and line cost (`Rs. 150.00`).
+     - Accurate COGS and menu item profit margin calculations.
+  6. Automatic POS Inventory Deduction & Reversals:
+     - Deducts exact recipe base units once per completed order (idempotent across KOTs).
+     - Stock reversal on order refunds and voids.
+  7. Verification:
+     - 8/8 automated tests in `backend/test/unit_conversion_inventory.test.ts`.
+     - 5/5 automated tests in `backend/test/purchases_and_recipes.test.ts`.
+     - 38/38 QA simulation checks in `backend/test/qa_simulation_suite.ts`.
+     - 0 build errors across `@pos/shared`, `backend`, and `frontend`.
 - Decision 47 (commit 2cccd18): Resolved empty printed bill skeleton by normalizing item fields and auto-fetching complete receipt details:
   1. Universal Receipt Data Normalizer (`ReceiptModal.tsx`):
      - Implemented `normalizeReceiptData` that robustly adapts both snake_case fields (from raw Postgres table rows in `orders` and `order_items`) and camelCase fields (from dedicated receipt endpoints).
