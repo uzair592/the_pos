@@ -14,6 +14,19 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 36 (commit 9401ff5): Redesigned Cash & Bank module following the authentic Vyapar Software UI system:
+  1. Two-Pane Master-Detail Account Explorer & Ledger:
+     - Left Accounts Explorer (w-80): instant search, Consolidated All Accounts book card, Cash in Hand drawer cash card, and bank account cards with active selection states, balances, and 3-dots actions.
+     - Right Account Ledger: Account profile banner with large available balance, Quick Deposit (+ Cash to Bank) and Withdrawal (- Bank to Cash) buttons, preset date filters (Today, Week, Month, All Time, Custom), direction filters (All, Money In/Credit, Money Out/Debit, Contra Transfers), search, period tally, and the trademark Vyapar transaction table with exact RUNNING BALANCE.
+  2. Multi-View Options:
+     - Account Books (Master-Detail, default).
+     - Bank Accounts Cards Grid.
+     - Cash ⇄ Bank Transfers Contra Register.
+  3. PDF Statement Generation:
+     - Built `exportCashBankLedgerPdf` in `frontend/src/utils/pdfExport.ts` producing an official A4 statement with restaurant branding, account details, closing balance, inflow/outflow tallies, and full running balance ledger table.
+  4. Verification:
+     - 100% frontend production build passed (`npm --workspace=frontend run build`).
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
 - Decision 35 (commit dc3f2f6): Resolved Restaurant Dashboard Freeze and Implemented Instant Real-Time Order Reactivity:
   1. Root Cause Diagnosis of Frozen Dashboard:
      - Discovered fatal query string syntax bug in RestaurantDashboard.tsx where /orders/active was queried as `/orders/active${branchParam}` with `branchParam = '&branchId=...'`.
