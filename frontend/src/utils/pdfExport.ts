@@ -859,3 +859,82 @@ export function exportDaybookPdf(
   attachFooter(doc);
   doc.save(`Daily_Daybook_${date}.pdf`);
 }
+
+
+export interface CashBankLedgerPdfParams {
+  accountName: string;
+  accountNumber?: string;
+  currentBalance: number;
+  totalInflow: number;
+  totalOutflow: number;
+  transactions: any[];
+  meta: RestaurantMeta;
+  dates: DateRangeMeta;
+}
+
+export function exportCashBankLedgerPdf(params: CashBankLedgerPdfParams) {
+  const { accountName, accountNumber, currentBalance, totalInflow, totalOutflow, transactions, meta, dates } = params;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || 'Rs.';
+
+  let startY = drawReportHeader(doc, 'Cash & Bank Account Statement', meta, dates);
+
+  // Account Summary Banner
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, startY, doc.internal.pageSize.width - 28, 24, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(accountName, 18, startY + 8);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(accountNumber ? `A/C: ${accountNumber}` : 'Physical Register Drawer Cash', 18, startY + 15);
+
+  // Metrics on right
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(16, 185, 129);
+  doc.text(`Total Inflow (+): ${sym} ${totalInflow.toLocaleString()}`, doc.internal.pageSize.width - 18, startY + 7, { align: 'right' });
+
+  doc.setTextColor(225, 29, 72);
+  doc.text(`Total Outflow (-): ${sym} ${totalOutflow.toLocaleString()}`, doc.internal.pageSize.width - 18, startY + 13, { align: 'right' });
+
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Closing Balance: ${sym} ${currentBalance.toLocaleString()}`, doc.internal.pageSize.width - 18, startY + 19, { align: 'right' });
+
+  startY += 30;
+
+  // Ledger Table
+  const tableRows = transactions.map((t: any) => [
+    new Date(t.date).toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    t.typeLabel || t.type,
+    t.reference || '—',
+    t.notes || t.accountName || '—',
+    t.outflow > 0 ? `${sym} ${Number(t.outflow).toLocaleString()}` : '—',
+    t.inflow > 0 ? `${sym} ${Number(t.inflow).toLocaleString()}` : '—',
+    t.runningBalance !== undefined ? `${sym} ${Number(t.runningBalance).toLocaleString()}` : '—',
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head: [['Date & Time', 'Type / Category', 'Ref / Invoice #', 'Narration / Notes', 'Money Out (-)', 'Money In (+)', 'Running Balance']],
+    body: tableRows,
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+    columnStyles: {
+      4: { textColor: [225, 29, 72], halign: 'right', fontStyle: 'bold' },
+      5: { textColor: [16, 185, 129], halign: 'right', fontStyle: 'bold' },
+      6: { halign: 'right', fontStyle: 'bold' },
+    },
+    bodyStyles: { fontSize: 7.5 },
+    margin: { left: 14, right: 14 },
+  });
+
+  attachFooter(doc);
+  const cleanName = accountName.replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`Statement_${cleanName}_${dates.startDate}_${dates.endDate}.pdf`);
+}

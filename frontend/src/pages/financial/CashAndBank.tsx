@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
 import { StatCard } from '../../components/common/StatCard.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
+import { exportCashBankLedgerPdf } from '../../utils/pdfExport.js';
 import {
   Landmark,
   Wallet,
@@ -25,6 +26,11 @@ import {
   CreditCard,
   FileText,
   Search,
+  FileDown,
+  Layers,
+  ArrowRight,
+  Filter,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { CashBankTransferType } from '@pos/shared';
 
@@ -42,14 +48,17 @@ export const CashAndBank: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Filter States
-  const [activeTab, setActiveTab] = useState<'ACCOUNTS' | 'TRANSFERS' | 'LEDGER'>('ACCOUNTS');
-  const [ledgerAccountFilter, setLedgerAccountFilter] = useState<string>('ALL');
+  // Vyapar Navigation & Account Selection States
+  const [viewMode, setViewMode] = useState<'MASTER_DETAIL' | 'BANK_GRID' | 'TRANSFERS'>('MASTER_DETAIL');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL'); // 'ALL' | 'CASH' | bankAccountId
+  const [accountSearchQuery, setAccountSearchQuery] = useState<string>('');
+
+  // Vyapar Ledger Filter States
+  const [datePreset, setDatePreset] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'ALL' | 'CUSTOM'>('ALL');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [txnDirectionFilter, setTxnDirectionFilter] = useState<'ALL' | 'INFLOW' | 'OUTFLOW' | 'CONTRA'>('ALL');
   const [ledgerSearch, setLedgerSearch] = useState<string>('');
-  const [dateFilter, setDateFilter] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  });
 
   // Modal States
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
@@ -57,13 +66,13 @@ export const CashAndBank: React.FC = () => {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Transfer Form State
+  // Transfer Form State (Contra Voucher)
   const [transferForm, setTransferForm] = useState({
     transferType: CashBankTransferType.CASH_TO_BANK,
     fromBankAccountId: '',
     toBankAccountId: '',
     amount: '',
-    transferDate: dateFilter,
+    transferDate: new Date().toISOString().split('T')[0],
     referenceNumber: '',
     notes: '',
   });
@@ -85,11 +94,15 @@ export const CashAndBank: React.FC = () => {
     else setIsRefreshing(true);
 
     try {
+      const dateQuery = customStartDate && customEndDate
+        ? `&startDate=${customStartDate}&endDate=${customEndDate}`
+        : '';
+
       const [sumRes, accRes, trRes, ledRes] = await Promise.all([
-        api.get(`/financial/cash-bank/summary?date=${dateFilter}`),
+        api.get('/financial/cash-bank/summary'),
         api.get('/financial/bank-accounts'),
-        api.get('/financial/cash-bank/transfers'),
-        api.get(`/financial/cash-bank/ledger?accountId=${ledgerAccountFilter}`),
+        api.get(`/financial/cash-bank/transfers?${dateQuery}`),
+        api.get(`/financial/cash-bank/ledger?accountId=${selectedAccountId}${dateQuery}`),
       ]);
 
       setSummary(sumRes.summary);
@@ -97,7 +110,7 @@ export const CashAndBank: React.FC = () => {
       setTransfers(trRes.transfers || []);
       setLedger(ledRes.ledger || []);
 
-      // Pre-select default bank account in transfer form
+      // Pre-select default bank account in transfer form if not set
       if (accRes.bankAccounts?.length > 0 && !transferForm.toBankAccountId) {
         const def = accRes.bankAccounts.find((b: any) => b.isDefault) || accRes.bankAccounts[0];
         setTransferForm((prev) => ({
@@ -117,9 +130,123 @@ export const CashAndBank: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [dateFilter, ledgerAccountFilter]);
+  }, [selectedAccountId, customStartDate, customEndDate]);
 
-  // Handle Internal Fund Transfer Submit
+  // Handle Quick Date Presets
+  const applyDatePreset = (preset: 'TODAY' | 'WEEK' | 'MONTH' | 'ALL' | 'CUSTOM') => {
+    setDatePreset(preset);
+    const now = new Date();
+    const formatYMD = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    if (preset === 'TODAY') {
+      const todayStr = formatYMD(now);
+      setCustomStartDate(todayStr);
+      setCustomEndDate(todayStr);
+    } else if (preset === 'WEEK') {
+      const weekAgo = new Date();
+      weekAgo.setDate(now.getDate() - 7);
+      setCustomStartDate(formatYMD(weekAgo));
+      setCustomEndDate(formatYMD(now));
+    } else if (preset === 'MONTH') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      setCustomStartDate(formatYMD(startOfMonth));
+      setCustomEndDate(formatYMD(now));
+    } else if (preset === 'ALL') {
+      setCustomStartDate('');
+      setCustomEndDate('');
+    }
+  };
+
+  // Selected Account Object Details
+  const selectedAccountDetails = useMemo(() => {
+    if (selectedAccountId === 'ALL') {
+      return {
+        id: 'ALL',
+        name: 'All Accounts Consolidated',
+        subtitle: 'Cash in Hand + All Bank Accounts Book',
+        currentBalance: Number(summary?.totalLiquidFunds || 0),
+        isCash: false,
+        isAll: true,
+      };
+    }
+    if (selectedAccountId === 'CASH') {
+      return {
+        id: 'CASH',
+        name: 'Cash in Hand',
+        subtitle: 'Physical Register Drawer Cash',
+        currentBalance: Number(summary?.totalCashInHand || 0),
+        isCash: true,
+        isAll: false,
+      };
+    }
+    const bank = bankAccounts.find((b) => b.id === selectedAccountId);
+    return {
+      id: selectedAccountId,
+      name: bank ? `${bank.bankName} - ${bank.accountName}` : 'Bank Account',
+      subtitle: bank ? `A/C # ${bank.accountNumber || 'N/A'} • IBAN: ${bank.iban || 'N/A'}` : '',
+      currentBalance: Number(bank?.currentBalance || 0),
+      isCash: false,
+      isAll: false,
+      rawBank: bank,
+    };
+  }, [selectedAccountId, summary, bankAccounts]);
+
+  // Compute Filtered Ledger & Running Balance (Vyapar trademark calculation)
+  const { processedLedger, totalInflow, totalOutflow, netMovement } = useMemo(() => {
+    // 1. Filter by Direction
+    let rows = ledger.filter((item) => {
+      if (txnDirectionFilter === 'INFLOW') return item.inflow > 0;
+      if (txnDirectionFilter === 'OUTFLOW') return item.outflow > 0;
+      if (txnDirectionFilter === 'CONTRA') {
+        return (
+          item.type.includes('DEPOSIT') ||
+          item.type.includes('WITHDRAWAL') ||
+          item.type.includes('TRANSFER')
+        );
+      }
+      return true;
+    });
+
+    // 2. Filter by Search Query
+    if (ledgerSearch.trim()) {
+      const term = ledgerSearch.toLowerCase();
+      rows = rows.filter(
+        (it) =>
+          it.typeLabel.toLowerCase().includes(term) ||
+          it.accountName.toLowerCase().includes(term) ||
+          (it.reference && it.reference.toLowerCase().includes(term)) ||
+          (it.notes && it.notes.toLowerCase().includes(term)) ||
+          (it.recordedBy && it.recordedBy.toLowerCase().includes(term))
+      );
+    }
+
+    // 3. Compute running balance backwards from current balance
+    const currentBal = selectedAccountDetails.currentBalance;
+    let running = currentBal;
+    const computedRows = rows.map((r, index) => {
+      const rowBal = running;
+      // Adjust running for the next older row
+      running = running - (Number(r.inflow || 0) - Number(r.outflow || 0));
+      return {
+        ...r,
+        runningBalance: rowBal,
+      };
+    });
+
+    // Sum totals for period
+    const inSum = rows.reduce((acc, r) => acc + Number(r.inflow || 0), 0);
+    const outSum = rows.reduce((acc, r) => acc + Number(r.outflow || 0), 0);
+
+    return {
+      processedLedger: computedRows,
+      totalInflow: inSum,
+      totalOutflow: outSum,
+      netMovement: inSum - outSum,
+    };
+  }, [ledger, txnDirectionFilter, ledgerSearch, selectedAccountDetails]);
+
+  // Handle Fund Transfer Submit (Contra Voucher)
   const handleTransferSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(transferForm.amount);
@@ -140,7 +267,9 @@ export const CashAndBank: React.FC = () => {
 
     if (
       transferForm.transferType === CashBankTransferType.BANK_TO_BANK &&
-      (!transferForm.fromBankAccountId || !transferForm.toBankAccountId || transferForm.fromBankAccountId === transferForm.toBankAccountId)
+      (!transferForm.fromBankAccountId ||
+        !transferForm.toBankAccountId ||
+        transferForm.fromBankAccountId === transferForm.toBankAccountId)
     ) {
       toastError('Please select two different bank accounts for an internal transfer');
       return;
@@ -172,7 +301,7 @@ export const CashAndBank: React.FC = () => {
         fromBankAccountId: bankAccounts[0]?.id || '',
         toBankAccountId: bankAccounts[0]?.id || '',
         amount: '',
-        transferDate: dateFilter,
+        transferDate: new Date().toISOString().split('T')[0],
         referenceNumber: '',
         notes: '',
       });
@@ -238,56 +367,82 @@ export const CashAndBank: React.FC = () => {
     }
   };
 
-  // Filtered Ledger List
-  const filteredLedger = ledger.filter((item) => {
-    if (!ledgerSearch.trim()) return true;
-    const term = ledgerSearch.toLowerCase();
-    return (
-      item.typeLabel.toLowerCase().includes(term) ||
-      item.accountName.toLowerCase().includes(term) ||
-      (item.reference && item.reference.toLowerCase().includes(term)) ||
-      (item.notes && item.notes.toLowerCase().includes(term)) ||
-      (item.recordedBy && item.recordedBy.toLowerCase().includes(term))
-    );
-  });
+  // Export PDF Statement
+  const handleExportPdf = () => {
+    try {
+      exportCashBankLedgerPdf({
+        accountName: selectedAccountDetails.name,
+        accountNumber: selectedAccountDetails.subtitle,
+        currentBalance: selectedAccountDetails.currentBalance,
+        totalInflow,
+        totalOutflow,
+        transactions: processedLedger,
+        meta: {
+          name: tenant?.name || 'Restaurant POS',
+          currencySymbol,
+        },
+        dates: {
+          startDate: customStartDate || 'All Time',
+          endDate: customEndDate || 'Present',
+        },
+      });
+      success('Cash & Bank statement PDF downloaded successfully!');
+    } catch (e: any) {
+      toastError('Failed to generate PDF: ' + e.message);
+    }
+  };
 
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center space-y-3">
           <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs font-bold text-slate-400">Loading Cash & Bank Accounts...</span>
+          <span className="text-xs font-bold text-slate-400">Loading Vyapar Cash & Bank Book...</span>
         </div>
       </div>
     );
   }
 
+  // Filter bank accounts by search query in left sidebar
+  const filteredBankAccounts = bankAccounts.filter((b) => {
+    if (!accountSearchQuery.trim()) return true;
+    const q = accountSearchQuery.toLowerCase();
+    return (
+      b.bankName.toLowerCase().includes(q) ||
+      b.accountName.toLowerCase().includes(q) ||
+      (b.accountNumber && b.accountNumber.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <div className="p-6 sm:p-8 space-y-6">
-      {/* Header and Quick Controls */}
+      {/* Vyapar Top Header & Action Controls Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-              Cash & Bank Management
+              Cash & Bank
             </h1>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+              Vyapar System
+            </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Real-time drawer cash, bank accounts balance, cash-to-bank transfers, and fund reconciliation
+            Real-time drawer cash, bank accounts, contra transfers, and ledger books
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Contra Fund Transfer Button */}
           <button
-            onClick={() => {
-              setIsTransferModalOpen(true);
-            }}
-            className="flex items-center space-x-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md transition-all"
+            onClick={() => setIsTransferModalOpen(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-[0.98]"
           >
-            <ArrowRightLeft className="w-4 h-4" />
+            <ArrowRightLeft className="w-4 h-4 text-amber-200" />
             <span>Transfer Cash ⇄ Bank</span>
           </button>
 
+          {/* Add Bank Account */}
           <button
             onClick={() => {
               setAccountForm({
@@ -302,21 +457,33 @@ export const CashAndBank: React.FC = () => {
               });
               setIsAccountModalOpen(true);
             }}
-            className="flex items-center space-x-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-sm"
+            className="flex items-center space-x-2 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-sm"
           >
             <Plus className="w-4 h-4 text-emerald-500" />
             <span>Add Bank Account</span>
           </button>
 
+          {/* Download PDF Statement */}
           <button
-            onClick={() => setIsPrintModalOpen(true)}
-            className="flex items-center space-x-2 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-sm"
-            title="Print Cash & Bank Statement"
+            onClick={handleExportPdf}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-sm"
+            title="Download PDF Ledger Statement"
           >
-            <Printer className="w-4 h-4 text-slate-500" />
-            <span className="hidden sm:inline">Print Statement</span>
+            <FileDown className="w-4 h-4 text-blue-500" />
+            <span className="hidden sm:inline">Download PDF</span>
           </button>
 
+          {/* Print Statement */}
+          <button
+            onClick={() => setIsPrintModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-sm"
+            title="Print Statement Voucher"
+          >
+            <Printer className="w-4 h-4 text-slate-500" />
+            <span className="hidden sm:inline">Print</span>
+          </button>
+
+          {/* Live Refresh */}
           <button
             onClick={() => fetchData(true)}
             disabled={isRefreshing}
@@ -328,7 +495,7 @@ export const CashAndBank: React.FC = () => {
         </div>
       </div>
 
-      {/* Top 4 Financial Metric Cards */}
+      {/* Top Vyapar Financial Summary KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard
           title="Cash in Hand (Drawer)"
@@ -363,47 +530,513 @@ export const CashAndBank: React.FC = () => {
         />
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex space-x-2 border-b border-slate-200 dark:border-slate-800 pb-3 text-xs font-bold overflow-x-auto">
+      {/* Vyapar View Selector Tabs */}
+      <div className="flex items-center space-x-2 border-b border-slate-200 dark:border-slate-800 pb-3 text-xs font-bold overflow-x-auto">
         <button
-          onClick={() => setActiveTab('ACCOUNTS')}
+          onClick={() => setViewMode('MASTER_DETAIL')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
-            activeTab === 'ACCOUNTS'
+            viewMode === 'MASTER_DETAIL'
               ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <Landmark className="w-4 h-4 text-brand-500" />
-          <span>Bank Accounts ({bankAccounts.length})</span>
+          <Layers className="w-4 h-4 text-brand-500" />
+          <span>Account Books (Vyapar Master-Detail)</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('TRANSFERS')}
+          onClick={() => setViewMode('BANK_GRID')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
-            activeTab === 'TRANSFERS'
+            viewMode === 'BANK_GRID'
               ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <ArrowRightLeft className="w-4 h-4 text-blue-500" />
-          <span>Cash ⇄ Bank Transfers ({transfers.length})</span>
+          <Landmark className="w-4 h-4 text-blue-500" />
+          <span>Bank Accounts Cards ({bankAccounts.length})</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('LEDGER')}
+          onClick={() => setViewMode('TRANSFERS')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
-            activeTab === 'LEDGER'
+            viewMode === 'TRANSFERS'
               ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <FileText className="w-4 h-4 text-emerald-500" />
-          <span>Full Cash & Bank Ledger ({ledger.length})</span>
+          <ArrowRightLeft className="w-4 h-4 text-emerald-500" />
+          <span>Cash ⇄ Bank Transfers Contra Register ({transfers.length})</span>
         </button>
       </div>
 
-      {/* TAB 1: BANK ACCOUNTS & BALANCES */}
-      {activeTab === 'ACCOUNTS' && (
+      {/* ========================================================================= */}
+      {/* 1. VYAPAR ICONIC MASTER-DETAIL TWO-PANE ACCOUNT BOOK VIEW */}
+      {/* ========================================================================= */}
+      {viewMode === 'MASTER_DETAIL' && (
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
+          {/* LEFT PANEL: VYAPAR ACCOUNT SELECTOR (30% WIDTH) */}
+          <div className="w-full lg:w-80 shrink-0 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-400">
+                Accounts Explorer
+              </h3>
+              <button
+                onClick={() => {
+                  setAccountForm({
+                    id: '',
+                    accountName: '',
+                    bankName: 'Meezan Bank Ltd',
+                    accountNumber: '',
+                    iban: '',
+                    branchCode: '',
+                    openingBalance: '0',
+                    isDefault: false,
+                  });
+                  setIsAccountModalOpen(true);
+                }}
+                className="text-[11px] font-bold text-brand-600 hover:text-brand-700 flex items-center space-x-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Bank</span>
+              </button>
+            </div>
+
+            {/* Search Accounts */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search accounts..."
+                value={accountSearchQuery}
+                onChange={(e) => setAccountSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+
+            {/* List of Accounts in Vyapar Style */}
+            <div className="space-y-1.5 max-h-[550px] overflow-y-auto pr-1">
+              {/* Option 1: ALL ACCOUNTS (Consolidated Book) */}
+              <button
+                onClick={() => setSelectedAccountId('ALL')}
+                className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between ${
+                  selectedAccountId === 'ALL'
+                    ? 'border-brand-500 bg-brand-50/50 dark:bg-brand-950/40 shadow-sm'
+                    : 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="font-extrabold text-xs text-slate-900 dark:text-white block">
+                      All Accounts
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-semibold">
+                      Consolidated Ledger
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="font-black text-xs text-slate-900 dark:text-white block">
+                    {currencySymbol} {Number(summary?.totalLiquidFunds || 0).toLocaleString()}
+                  </span>
+                  <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold">
+                    Combined
+                  </span>
+                </div>
+              </button>
+
+              {/* SECTION: CASH ACCOUNTS */}
+              <div className="pt-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block px-2 pb-1">
+                  Cash in Hand
+                </span>
+                <button
+                  onClick={() => setSelectedAccountId('CASH')}
+                  className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between ${
+                    selectedAccountId === 'CASH'
+                      ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/40 shadow-sm'
+                      : 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black">
+                      <Wallet className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="font-extrabold text-xs text-slate-900 dark:text-white block">
+                        Cash in Hand
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-semibold">
+                        Drawer Cash
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-black text-xs text-emerald-600 dark:text-emerald-400 block">
+                      {currencySymbol} {Number(summary?.totalCashInHand || 0).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">Physical Cash</span>
+                  </div>
+                </button>
+              </div>
+
+              {/* SECTION: BANK ACCOUNTS */}
+              <div className="pt-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block px-2 pb-1">
+                  Bank Accounts ({filteredBankAccounts.length})
+                </span>
+                <div className="space-y-1">
+                  {filteredBankAccounts.map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => setSelectedAccountId(b.id)}
+                      className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between ${
+                        selectedAccountId === b.id
+                          ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/40 shadow-sm'
+                          : 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black">
+                          <Landmark className="w-4 h-4" />
+                        </div>
+                        <div className="max-w-[130px] truncate">
+                          <span className="font-extrabold text-xs text-slate-900 dark:text-white block truncate">
+                            {b.bankName}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-semibold block truncate">
+                            {b.accountName}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-black text-xs text-slate-900 dark:text-white block">
+                          {currencySymbol} {Number(b.currentBalance).toLocaleString()}
+                        </span>
+                        {b.isDefault && (
+                          <span className="text-[9px] font-bold text-brand-600 dark:text-brand-400 uppercase">
+                            Default
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Total Bar */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+              <span className="font-bold text-slate-500">Total Liquid Funds</span>
+              <span className="font-black text-slate-900 dark:text-white">
+                {currencySymbol} {Number(summary?.totalLiquidFunds || 0).toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          {/* RIGHT PANEL: VYAPAR DETAILED ACCOUNT LEDGER & OPERATIONS (70% WIDTH) */}
+          <div className="flex-1 w-full space-y-4">
+            {/* Selected Account Profile & Quick Action Card */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center font-black shrink-0">
+                    {selectedAccountDetails.isCash ? (
+                      <Wallet className="w-6 h-6 text-emerald-600" />
+                    ) : (
+                      <Landmark className="w-6 h-6 text-blue-600" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                        {selectedAccountDetails.name}
+                      </h2>
+                      {selectedAccountDetails.rawBank?.isDefault && (
+                        <span className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-950/80 text-brand-700 dark:text-brand-300 font-extrabold text-[10px] uppercase">
+                          Default POS Bank
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {selectedAccountDetails.subtitle || 'Active Restaurant Fund Ledger'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Big Balance Callout & Quick Transfer Actions */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="text-left sm:text-right">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Current Available Balance
+                    </span>
+                    <span className="text-2xl font-black text-slate-900 dark:text-white">
+                      {currencySymbol} {selectedAccountDetails.currentBalance.toLocaleString()}
+                    </span>
+                  </div>
+
+                  {/* Transfer / Deposit / Withdrawal Shortcut */}
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => {
+                        setTransferForm({
+                          transferType: CashBankTransferType.CASH_TO_BANK,
+                          fromBankAccountId: '',
+                          toBankAccountId: selectedAccountId !== 'ALL' && selectedAccountId !== 'CASH' ? selectedAccountId : (bankAccounts[0]?.id || ''),
+                          amount: '',
+                          transferDate: new Date().toISOString().split('T')[0],
+                          referenceNumber: '',
+                          notes: `Deposit into ${selectedAccountDetails.name}`,
+                        });
+                        setIsTransferModalOpen(true);
+                      }}
+                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center space-x-1"
+                    >
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                      <span>+ Deposit</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setTransferForm({
+                          transferType: CashBankTransferType.BANK_TO_CASH,
+                          fromBankAccountId: selectedAccountId !== 'ALL' && selectedAccountId !== 'CASH' ? selectedAccountId : (bankAccounts[0]?.id || ''),
+                          toBankAccountId: '',
+                          amount: '',
+                          transferDate: new Date().toISOString().split('T')[0],
+                          referenceNumber: '',
+                          notes: `Withdrawal from ${selectedAccountDetails.name}`,
+                        });
+                        setIsTransferModalOpen(true);
+                      }}
+                      className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center space-x-1"
+                    >
+                      <ArrowDownRight className="w-3.5 h-3.5" />
+                      <span>- Withdraw</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Vyapar Transaction Filter & Period Bar */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {/* Direction Tabs (All, Inflow, Outflow, Contra) */}
+                <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
+                  {[
+                    { id: 'ALL', label: 'All Transactions' },
+                    { id: 'INFLOW', label: 'Money In (Credit +)' },
+                    { id: 'OUTFLOW', label: 'Money Out (Debit -)' },
+                    { id: 'CONTRA', label: 'Bank Transfers (Contra)' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setTxnDirectionFilter(tab.id as any)}
+                      className={`px-3 py-1.5 rounded-lg transition-all ${
+                        txnDirectionFilter === tab.id
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Period Pills */}
+                <div className="flex items-center space-x-1 text-xs font-bold">
+                  {(['ALL', 'TODAY', 'WEEK', 'MONTH', 'CUSTOM'] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => applyDatePreset(p)}
+                      className={`px-2.5 py-1 rounded-lg border transition-all text-[11px] ${
+                        datePreset === p
+                          ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      {p === 'ALL' ? 'All Time' : p === 'TODAY' ? 'Today' : p === 'WEEK' ? 'Last 7 Days' : p === 'MONTH' ? 'This Month' : 'Custom'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Date Range & Search Input Row */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center space-x-2">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Search by party, invoice #, ref, notes..."
+                      value={ledgerSearch}
+                      onChange={(e) => setLedgerSearch(e.target.value)}
+                      className="w-64 pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+                    />
+                  </div>
+
+                  {datePreset === 'CUSTOM' && (
+                    <div className="flex items-center space-x-1.5 text-xs">
+                      <input
+                        type="date"
+                        value={customStartDate}
+                        onChange={(e) => setCustomStartDate(e.target.value)}
+                        className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium"
+                      />
+                      <span className="text-slate-400 font-bold">to</span>
+                      <input
+                        type="date"
+                        value={customEndDate}
+                        onChange={(e) => setCustomEndDate(e.target.value)}
+                        className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Vyapar Inflow & Outflow Movement Tally */}
+                <div className="flex items-center space-x-4 text-xs font-bold">
+                  <div>
+                    <span className="text-slate-400 text-[10px] block font-semibold uppercase">Total Inflow (+)</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-black">
+                      + {currencySymbol} {totalInflow.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="border-l border-slate-200 dark:border-slate-700 pl-4">
+                    <span className="text-slate-400 text-[10px] block font-semibold uppercase">Total Outflow (-)</span>
+                    <span className="text-rose-600 dark:text-rose-400 font-black">
+                      - {currencySymbol} {totalOutflow.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="border-l border-slate-200 dark:border-slate-700 pl-4">
+                    <span className="text-slate-400 text-[10px] block font-semibold uppercase">Net Movement</span>
+                    <span className={`font-black ${netMovement >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {netMovement >= 0 ? '+' : ''} {currencySymbol} {netMovement.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* The Vyapar Transaction Ledger Table with RUNNING BALANCE */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800">
+                      <th className="py-3 px-4">Date & Time</th>
+                      <th className="py-3 px-4">Type / Category</th>
+                      <th className="py-3 px-4">Ref / Invoice #</th>
+                      <th className="py-3 px-4">Party / Narration</th>
+                      <th className="py-3 px-4 text-right">Money Out (Debit -)</th>
+                      <th className="py-3 px-4 text-right">Money In (Credit +)</th>
+                      <th className="py-3 px-4 text-right">Running Balance</th>
+                      <th className="py-3 px-4 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {processedLedger.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="py-12 text-center text-slate-400 italic">
+                          No transactions found in this book matching the filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      processedLedger.map((row) => (
+                        <tr
+                          key={row.id}
+                          className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                        >
+                          {/* Date & Time */}
+                          <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                            {new Date(row.date).toLocaleString([], {
+                              month: 'short',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </td>
+
+                          {/* Type / Category */}
+                          <td className="py-3 px-4">
+                            <span
+                              className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
+                                row.type.includes('SALE')
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                  : row.type.includes('DEPOSIT')
+                                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                  : row.type.includes('WITHDRAWAL')
+                                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                                  : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                              }`}
+                            >
+                              <span>{row.typeLabel}</span>
+                            </span>
+                          </td>
+
+                          {/* Ref / Invoice # */}
+                          <td className="py-3 px-4 font-mono font-bold text-slate-800 dark:text-slate-200">
+                            {row.reference || '—'}
+                          </td>
+
+                          {/* Party / Narration */}
+                          <td className="py-3 px-4 text-slate-600 dark:text-slate-300 max-w-xs truncate" title={row.notes}>
+                            <div className="font-semibold">{row.accountName}</div>
+                            {row.notes && <div className="text-[10px] text-slate-400 truncate">{row.notes}</div>}
+                          </td>
+
+                          {/* Money Out (Debit -) */}
+                          <td className="py-3 px-4 text-right font-black text-rose-600 dark:text-rose-400">
+                            {row.outflow > 0 ? `- ${currencySymbol} ${Number(row.outflow).toLocaleString()}` : '—'}
+                          </td>
+
+                          {/* Money In (Credit +) */}
+                          <td className="py-3 px-4 text-right font-black text-emerald-600 dark:text-emerald-400">
+                            {row.inflow > 0 ? `+ ${currencySymbol} ${Number(row.inflow).toLocaleString()}` : '—'}
+                          </td>
+
+                          {/* Running Balance */}
+                          <td className="py-3 px-4 text-right font-mono font-black text-slate-900 dark:text-white bg-slate-50/50 dark:bg-slate-800/30">
+                            {currencySymbol} {Number(row.runningBalance).toLocaleString()}
+                          </td>
+
+                          {/* 3-Dots Action */}
+                          <td className="py-3 px-4 text-center">
+                            <ActionMenu
+                              items={[
+                                {
+                                  label: 'View Particulars',
+                                  icon: Eye,
+                                  onClick: () => {
+                                    alert(`Transaction Details:\nType: ${row.typeLabel}\nAmount: ${currencySymbol} ${(row.inflow || row.outflow).toLocaleString()}\nRef: ${row.reference}\nStaff: ${row.recordedBy}\nNotes: ${row.notes}`);
+                                  },
+                                },
+                                {
+                                  label: 'Print Voucher',
+                                  icon: Printer,
+                                  onClick: () => setIsPrintModalOpen(true),
+                                },
+                              ]}
+                            />
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. BANK ACCOUNTS CARDS GRID VIEW */}
+      {/* ========================================================================= */}
+      {viewMode === 'BANK_GRID' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {bankAccounts.map((b) => (
@@ -425,7 +1058,7 @@ export const CashAndBank: React.FC = () => {
                   </div>
                   {b.isDefault && (
                     <span className="px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-600 dark:text-brand-400 font-extrabold text-[10px] uppercase border border-brand-500/30">
-                      Default
+                      Default POS
                     </span>
                   )}
                 </div>
@@ -456,11 +1089,11 @@ export const CashAndBank: React.FC = () => {
                   <ActionMenu
                     items={[
                       {
-                        label: 'View Account Ledger',
+                        label: 'View Account Book',
                         icon: Eye,
                         onClick: () => {
-                          setLedgerAccountFilter(b.id);
-                          setActiveTab('LEDGER');
+                          setSelectedAccountId(b.id);
+                          setViewMode('MASTER_DETAIL');
                         },
                       },
                       {
@@ -481,7 +1114,7 @@ export const CashAndBank: React.FC = () => {
                         },
                       },
                       {
-                        label: 'Deposit Cash (+ Cash to Bank)',
+                        label: 'Deposit Cash (+ Drawer to Bank)',
                         icon: ArrowDownRight,
                         variant: 'success',
                         onClick: () => {
@@ -490,15 +1123,15 @@ export const CashAndBank: React.FC = () => {
                             fromBankAccountId: '',
                             toBankAccountId: b.id,
                             amount: '',
-                            transferDate: dateFilter,
+                            transferDate: new Date().toISOString().split('T')[0],
                             referenceNumber: '',
-                            notes: `Deposit to ${b.bankName}`,
+                            notes: `Deposit into ${b.bankName}`,
                           });
                           setIsTransferModalOpen(true);
                         },
                       },
                       {
-                        label: 'Withdraw Float (- Bank to Cash)',
+                        label: 'Withdraw Float (- Bank to Drawer)',
                         icon: ArrowUpRight,
                         variant: 'warning',
                         onClick: () => {
@@ -507,7 +1140,7 @@ export const CashAndBank: React.FC = () => {
                             fromBankAccountId: b.id,
                             toBankAccountId: '',
                             amount: '',
-                            transferDate: dateFilter,
+                            transferDate: new Date().toISOString().split('T')[0],
                             referenceNumber: '',
                             notes: `Withdrawal from ${b.bankName}`,
                           });
@@ -529,16 +1162,18 @@ export const CashAndBank: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: CASH ⇄ BANK TRANSFERS LOG */}
-      {activeTab === 'TRANSFERS' && (
+      {/* ========================================================================= */}
+      {/* 3. CASH ⇄ BANK TRANSFERS CONTRA REGISTER VIEW */}
+      {/* ========================================================================= */}
+      {viewMode === 'TRANSFERS' && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <div>
               <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                Cash & Bank Fund Transfers History
+                Cash & Bank Contra Transfers Register
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Every cash-to-bank deposit and bank-to-cash withdrawal executed in the system
+                Full chronological ledger of all cash-to-bank deposits and bank-to-cash withdrawals
               </p>
             </div>
             <button
@@ -567,7 +1202,7 @@ export const CashAndBank: React.FC = () => {
                 {transfers.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-slate-400 italic">
-                      No fund transfers recorded yet. Click "Transfer Cash ⇄ Bank" to record your first deposit or withdrawal.
+                      No fund transfers recorded yet.
                     </td>
                   </tr>
                 ) : (
@@ -629,110 +1264,8 @@ export const CashAndBank: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: FULL CASH & BANK LEDGER STATEMENT */}
-      {activeTab === 'LEDGER' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden space-y-4">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center space-x-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  placeholder="Search ledger by order, reference, notes..."
-                  value={ledgerSearch}
-                  onChange={(e) => setLedgerSearch(e.target.value)}
-                  className="pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 w-64"
-                />
-              </div>
-
-              <select
-                value={ledgerAccountFilter}
-                onChange={(e) => setLedgerAccountFilter(e.target.value)}
-                className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer"
-              >
-                <option value="ALL">All Accounts (Cash & All Banks)</option>
-                <option value="CASH">💵 Cash in Hand (Drawer)</option>
-                {bankAccounts.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    🏦 {b.bankName} - {b.accountName}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              onClick={() => setIsPrintModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-colors self-start sm:self-auto"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print Ledger</span>
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800">
-                  <th className="py-3 px-4">Date & Time</th>
-                  <th className="py-3 px-4">Transaction Details</th>
-                  <th className="py-3 px-4">Account Affected</th>
-                  <th className="py-3 px-4 text-right">Inflow (Credit +)</th>
-                  <th className="py-3 px-4 text-right">Outflow (Debit -)</th>
-                  <th className="py-3 px-4">Reference</th>
-                  <th className="py-3 px-4">Staff</th>
-                  <th className="py-3 px-4">Notes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredLedger.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-400 italic">
-                      No ledger transactions found matching the filter.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredLedger.map((row) => (
-                    <tr key={row.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        {new Date(row.date).toLocaleString([], {
-                          month: 'short',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </td>
-                      <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
-                        {row.typeLabel}
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-slate-700 dark:text-slate-300">
-                        {row.accountName}
-                      </td>
-                      <td className="py-3 px-4 text-right font-black text-emerald-600 dark:text-emerald-400">
-                        {row.inflow > 0 ? `+ ${currencySymbol} ${row.inflow.toLocaleString()}` : '—'}
-                      </td>
-                      <td className="py-3 px-4 text-right font-black text-rose-600 dark:text-rose-400">
-                        {row.outflow > 0 ? `- ${currencySymbol} ${row.outflow.toLocaleString()}` : '—'}
-                      </td>
-                      <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400">
-                        {row.reference || '—'}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
-                        {row.recordedBy}
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 max-w-xs truncate" title={row.notes}>
-                        {row.notes || '—'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* ========================================================================= */}
-      {/* MODAL: FUND TRANSFER (CASH ⇄ BANK) */}
+      {/* MODAL: FUND TRANSFER CONTRA VOUCHER (CASH ⇄ BANK) */}
       {/* ========================================================================= */}
       <Modal
         isOpen={isTransferModalOpen}
@@ -743,7 +1276,9 @@ export const CashAndBank: React.FC = () => {
         <form onSubmit={handleTransferSubmit} className="space-y-4 text-xs">
           {/* Transfer Type Selector */}
           <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">Transfer Type</label>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+              Select Transfer Mode
+            </label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -820,19 +1355,46 @@ export const CashAndBank: React.FC = () => {
 
           {/* Transfer Amount */}
           <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Transfer Amount ({currencySymbol}) *
-            </label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="font-bold text-slate-700 dark:text-slate-300">
+                Transfer Amount ({currencySymbol}) *
+              </label>
+              <span className="text-[11px] text-slate-400">
+                Drawer Float: {currencySymbol} {Number(summary?.totalCashInHand || 0).toLocaleString()}
+              </span>
+            </div>
             <input
               type="number"
               step="any"
               min="1"
               required
-              placeholder="e.g. 50000"
+              placeholder="e.g. 25000"
               value={transferForm.amount}
               onChange={(e) => setTransferForm({ ...transferForm, amount: e.target.value })}
               className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-base font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
             />
+            {/* Quick Amount Pills */}
+            <div className="flex items-center space-x-1.5 mt-2">
+              {[5000, 10000, 25000, 50000].map((quickAmt) => (
+                <button
+                  key={quickAmt}
+                  type="button"
+                  onClick={() => setTransferForm({ ...transferForm, amount: String(quickAmt) })}
+                  className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300"
+                >
+                  +{quickAmt.toLocaleString()}
+                </button>
+              ))}
+              {transferForm.transferType === CashBankTransferType.CASH_TO_BANK && Number(summary?.totalCashInHand || 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setTransferForm({ ...transferForm, amount: String(summary?.totalCashInHand || 0) })}
+                  className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold"
+                >
+                  All Cash ({Number(summary?.totalCashInHand || 0).toLocaleString()})
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -901,7 +1463,7 @@ export const CashAndBank: React.FC = () => {
             <input
               type="text"
               required
-              placeholder="e.g. Meezan Bank, HBL, MCB, EasyPaisa"
+              placeholder="e.g. Meezan Bank, HBL, MCB, EasyPaisa, JazzCash"
               value={accountForm.bankName}
               onChange={(e) => setAccountForm({ ...accountForm, bankName: e.target.value })}
               className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
@@ -1027,19 +1589,30 @@ export const CashAndBank: React.FC = () => {
           </div>
 
           <div className="space-y-2">
-            <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">Bank Accounts Summary</h4>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 border rounded-xl overflow-hidden">
-              {bankAccounts.map((b) => (
-                <div key={b.id} className="p-3 flex justify-between items-center text-xs">
-                  <div>
-                    <span className="font-bold text-slate-900 dark:text-white">{b.bankName}</span>
-                    <span className="text-slate-400 text-[11px] block">{b.accountName} • {b.accountNumber}</span>
-                  </div>
-                  <span className="font-black text-slate-900 dark:text-white">
-                    {currencySymbol} {Number(b.currentBalance).toLocaleString()}
-                  </span>
-                </div>
-              ))}
+            <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">Selected Book Summary</h4>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 border rounded-xl overflow-hidden p-3 bg-slate-50 dark:bg-slate-800/40">
+              <div className="flex justify-between py-1">
+                <span className="font-semibold text-slate-600 dark:text-slate-300">Account:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{selectedAccountDetails.name}</span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="font-semibold text-slate-600 dark:text-slate-300">Closing Balance:</span>
+                <span className="font-black text-emerald-600 dark:text-emerald-400">
+                  {currencySymbol} {selectedAccountDetails.currentBalance.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="font-semibold text-slate-600 dark:text-slate-300">Total Inflow (Credit):</span>
+                <span className="font-bold text-emerald-600">
+                  + {currencySymbol} {totalInflow.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="font-semibold text-slate-600 dark:text-slate-300">Total Outflow (Debit):</span>
+                <span className="font-bold text-rose-600">
+                  - {currencySymbol} {totalOutflow.toLocaleString()}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1063,4 +1636,3 @@ export const CashAndBank: React.FC = () => {
     </div>
   );
 };
-
