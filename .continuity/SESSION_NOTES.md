@@ -14,6 +14,42 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 42 (commit 24ad8dd): Standardized 3-dots action menu and completed verified CRUD operations across all modules:
+  1. Backend Endpoints Added & Hardened:
+     - financial.routes.ts: DELETE /api/financial/bank-accounts/:id (soft-deactivates account and safely reassigns default) and DELETE /api/financial/cash-bank/transfers/:id (reverses cash/bank balances and deletes contra voucher).
+     - inventory.routes.ts: PUT /api/inventory/ingredients/:id, DELETE /api/inventory/ingredients/:id (with safety check on usage in active recipes), DELETE /api/inventory/recipes/:id, PUT /api/inventory/suppliers/:id, DELETE /api/inventory/suppliers/:id (checks for purchase history), DELETE /api/inventory/purchases/:id (drafts only), and DELETE /api/inventory/transfers/:id (pending transfers only).
+     - restaurant.routes.ts: PUT /api/restaurant/branches/:id (updates branch details and main flagship status), DELETE /api/restaurant/branches/:id (guards primary branch and soft-deactivates if orders exist).
+  2. Cash & Bank Module (CashAndBank.tsx):
+     - Added Delete Bank Account, Set as Default POS Bank, and View Account Book.
+     - Added 3-dots ActionMenu to every account in the Left Sidebar accounts list (MASTER_DETAIL view).
+     - Added 3-dots ActionMenu to TRANSFERS contra register table (View Voucher, Print Voucher, Reverse & Delete Transfer).
+     - Replaced raw alert(...) on the ledger table with a dedicated Transaction Particulars modal.
+     - Added Fund Transfer Voucher Details modal with print voucher and reverse buttons.
+  3. Inventory Management (InventoryManagement.tsx):
+     - Added Edit Ingredient modal and Delete Ingredient action (ActionMenu) on Stock List table.
+     - Added 3-dots ActionMenu on Batches table (Waste / Write-off stock, filter by item).
+     - Added 3-dots ActionMenu on Recipe cards (Delete recipe).
+     - Replaced raw buttons with 3-dots ActionMenu on Inter-Branch Transfers table (Dispatch, Receive, Cancel/Delete transfer).
+  4. Purchases & Suppliers (PurchaseManagement.tsx):
+     - Added 3-dots ActionMenu to Suppliers table with Edit Supplier Details, Record Inward Purchase, and Delete Supplier.
+     - Added Edit Supplier modal.
+     - Added Cancel & Delete Draft Invoice to Inward Purchases ActionMenu.
+  5. Branch Management (BranchManagement.tsx):
+     - Added 3-dots ActionMenu to Branch cards with Edit Branch Details, Set as Main Flagship, and Delete/Deactivate Branch.
+     - Added Edit Branch modal.
+  6. Shift Management (ShiftManagement.tsx):
+     - Added 3-dots ActionMenu on Closed Shift Reconciliation History table.
+     - Added View Shift Breakdown modal with detailed cash float, sales, refunds, expected vs actual cash, and variance.
+     - Added Print Z-Report Slip action.
+  7. Daybook (Daybook.tsx):
+     - Added 3-dots ActionMenu across remaining sub-tables: Inward Purchases (View Invoice, Print Purchase Slip), Operational Expenses (View Voucher, Print Payment Slip), and Cashier Shifts (View Breakdown, Print Z-Report).
+     - Added detailed modals and print formatters for each.
+  8. Restaurant Dashboard (RestaurantDashboard.tsx):
+     - Added 3-dots ActionMenu on Recent Orders with View Order Breakdown (opens modal) and Print Bill / Receipt (opens ReceiptModal).
+  9. Verification & QC:
+     - 100% backend production build passed (npm --workspace=backend run build).
+     - 100% frontend production build passed (npm --workspace=frontend run build).
+     - All 38 simulation checks passed in npx tsx backend/test/qa_simulation_suite.ts.
 - Decision 41 (commit 83e4481): Managed print themes from settings, removed template selector tabs from bill printing modal, and modernized receipt styling:
   1. Receipt Printing Modal Streamlining (`ReceiptModal.tsx`):
      - Removed the template selector tab bar and option toggles that previously cluttered the bill modal during checkout.
