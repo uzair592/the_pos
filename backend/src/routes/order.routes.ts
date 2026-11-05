@@ -471,6 +471,12 @@ export async function orderRoutes(fastify: FastifyInstance) {
     const { id } = req.params as { id: string };
     const tenantId = req.user!.tenantId!;
 
+    // UUID validation check to prevent database 500 error on malformed URL parameters
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return reply.status(404).send({ error: 'Order not found (invalid order ID)' });
+    }
+
     const { rows: orderRows } = await query(
       'SELECT * FROM orders WHERE id = $1 AND tenant_id = $2',
       [id, tenantId],

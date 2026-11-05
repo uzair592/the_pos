@@ -273,6 +273,12 @@ export const OrdersHub: React.FC = () => {
       setReceiptOrder(settleOrder);
       setSettleOrder(null);
       fetchActiveOrders(true);
+
+      // Trigger instant real-time sync for Dashboard and other tabs
+      window.dispatchEvent(new CustomEvent('pos_order_updated'));
+      try {
+        localStorage.setItem('pos_last_order_at', Date.now().toString());
+      } catch (_) {}
     } catch (err: any) {
       toastError(err.message || 'Failed to settle payment');
     } finally {
@@ -287,6 +293,12 @@ export const OrdersHub: React.FC = () => {
       await api.post(`/orders/${orderId}/cancel`, { reason: 'Cancelled via Orders Hub' });
       success(`Order #${orderNumber} cancelled successfully`);
       fetchActiveOrders(true);
+
+      // Trigger instant real-time sync for Dashboard and other tabs
+      window.dispatchEvent(new CustomEvent('pos_order_updated'));
+      try {
+        localStorage.setItem('pos_last_order_at', Date.now().toString());
+      } catch (_) {}
       fetchHistoryOrders();
     } catch (err: any) {
       toastError(err.message || 'Failed to cancel order');
@@ -300,6 +312,12 @@ export const OrdersHub: React.FC = () => {
       await api.delete(`/orders/${orderId}`);
       success(`Order #${orderNumber} deleted successfully`);
       fetchActiveOrders(true);
+
+      // Trigger instant real-time sync for Dashboard and other tabs
+      window.dispatchEvent(new CustomEvent('pos_order_updated'));
+      try {
+        localStorage.setItem('pos_last_order_at', Date.now().toString());
+      } catch (_) {}
       fetchHistoryOrders();
     } catch (err: any) {
       toastError(err.message || 'Failed to delete order');

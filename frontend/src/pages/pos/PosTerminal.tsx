@@ -555,6 +555,12 @@ export const PosTerminal: React.FC = () => {
       // Refresh tables and unpaid orders list
       fetchInitialData();
       fetchUnpaidOrders();
+
+      // Trigger instant real-time sync for Dashboard and other tabs
+      window.dispatchEvent(new CustomEvent('pos_order_updated', { detail: { orderId: order.id, orderNumber: order.order_number } }));
+      try {
+        localStorage.setItem('pos_last_order_at', Date.now().toString());
+      } catch (_) {}
     } catch (err: any) {
       error(err.message || 'Failed to send order to kitchen');
     } finally {
@@ -729,6 +735,12 @@ export const PosTerminal: React.FC = () => {
 
       fetchInitialData();
       fetchUnpaidOrders();
+
+      // Trigger instant real-time sync for Dashboard and other tabs
+      window.dispatchEvent(new CustomEvent('pos_order_updated', { detail: { orderId: orderIdToComplete } }));
+      try {
+        localStorage.setItem('pos_last_order_at', Date.now().toString());
+      } catch (_) {}
     } catch (err: any) {
       error(err.message || 'Checkout failed');
     } finally {

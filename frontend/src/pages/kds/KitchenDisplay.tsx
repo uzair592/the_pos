@@ -119,6 +119,12 @@ export const KitchenDisplay: React.FC = () => {
       await api.put(`/kds/tickets/${ticketId}/status`, { status: nextStatus });
       success(`Ticket status updated to ${nextStatus}`);
       fetchTickets();
+
+      // Trigger instant real-time sync for Dashboard and other tabs
+      window.dispatchEvent(new CustomEvent('pos_order_updated', { detail: { ticketId, status: nextStatus } }));
+      try {
+        localStorage.setItem('pos_last_order_at', Date.now().toString());
+      } catch (_) {}
     } catch (err: any) {
       error(err.message || 'Failed to update ticket status');
     }
