@@ -70,6 +70,10 @@ export const api = {
       headers,
     }),
 
-  delete: <T = any>(endpoint: string, headers?: Record<string, string>) =>
-    request<T>(endpoint, { method: 'DELETE', headers }),
+  delete: <T = any>(endpoint: string, body?: any, headers?: Record<string, string>) =>
+    request<T>(endpoint, {
+      method: 'DELETE',
+      body: body ? JSON.stringify(body) : undefined,
+      headers,
+    }),
 };

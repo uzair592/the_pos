@@ -14,6 +14,45 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 52: Complete Platform Super Admin Panel – Centralized Multi-Tenant Control, Dynamic Concurrency, Backups, Recovery & Operations:
+  1. Complete Database Enhancements (`012_platform_super_admin_enhancements.sql`):
+     - Enhanced `platform_admins`: added `role`, `permissions`, `phone`, `token_version`.
+     - Enhanced `tenants`: added `max_concurrent_devices`, `custom_features`, `deleted_at`, `deletion_reason` for safe soft-deletion/archiving.
+     - Created `active_device_sessions`: tracks live concurrent device sessions with real-time heartbeats (`device_fingerprint`, `device_name`, `device_type`, `ip_address`, `os_info`, `status`, `last_heartbeat_at`).
+     - Created `restoration_history`: full audit trail for database restore operations with mode, records count, status, and error logs.
+     - Created `platform_tickets` & `platform_ticket_messages`: customer support ticketing and reply threading.
+     - Created `platform_announcements`: system maintenance, updates, and notice broadcasting.
+     - Created `platform_api_keys`: external integration key management with sha256 hashing.
+     - Created `platform_settings`: global platform defaults, branding, currency, timezone, trial days, session limits, maintenance mode.
+     - Enhanced `subscription_payments`: added `rejection_reason`, `verified_at`, `verified_by_admin_id`, `invoice_pdf_url`.
+  2. Enterprise Backup & Transactional Recovery Engine (`backupService.ts`):
+     - `generateTenantBackup`: complete relational JSON backup covering all 34 tenant-scoped tables with sanitized staff users.
+     - `generateTenantExcelBackup`: generated formatted multi-sheet `.xlsx` workbook (Overview, Profile, Branches, Users, Settings, Categories, Products, Variants, Modifiers, Ingredients, Recipes, FIFO Batches, Stock, Suppliers, Purchases, Orders, Payments, Bank, Expenses, Customers, Devices) via `xlsx` library.
+     - `validateBackupPackage`: pre-validation checking SHA-256 checksum integrity, metadata, tenant mapping, schema version, and record count summary.
+     - `restoreTenantBackup`: transactional restore with full, selective, and merge modes, pre-restore automatic safety backup, savepoints (`SAVEPOINT row_sp` / `SAVEPOINT clean_sp`) preventing aborted transaction state, and audit logging into `restoration_history`.
+  3. Dynamic Multi-Device Concurrency Control (`deviceService.ts`):
+     - Separated `registered_devices` (hardware inventory) from `active_device_sessions` (live concurrent active sessions).
+     - Solved permanent computer locking: devices dynamically connect, update heartbeats, and if the limit is reached (e.g. 4/4), a fifth device can revoke existing sessions or wait for 5-minute timeout.
+     - 1-Click remote force-logout / session revocation (`POST /api/platform/devices/sessions/:sessionId/revoke`).
+  4. Platform Management Frontend Pages & Navigation:
+     - `PlatformDashboard`: MRR, ARR, active/trial/suspended counts, 12-month revenue bar visualizer, plan distribution, security activity table.
+     - `PlatformTenants`: 3-dot contextual menu on each row (View Details, Edit Restaurant Details, Manage Credentials, Change/Extend Plan, Download JSON, Download Excel, Restore from Backup, Suspend/Reactivate, Archive/Delete), live connected device badge (`X / Y Connected`).
+     - `PlatformPlans`: full CRUD, tier pricing, max branches/staff/devices limits, feature toggles, subscriber safeguard blocking deletion of active plans.
+     - `PlatformPayments`: 3-dot menu, invoice breakdown modal, approve/reject workflow, manual recording.
+     - `PlatformBranches`: outlet overview across all tenants, contact details, status toggle.
+     - `PlatformDevices`: live status indicators (`ONLINE` green pulse, `IDLE` amber, `OFFLINE`), 1-click Revoke Session.
+     - `PlatformBackups`: backup & recovery hub, instant JSON & Excel downloaders, JSON upload pre-validation preview, mode selector, restoration history table.
+     - `PlatformUsers`: platform administrator CRUD, RBAC roles, strong password generator, password reset, self-delete safeguard.
+     - `PlatformTickets`: customer support helpdesk, status and priority filters, thread viewer, internal notes, reply posting.
+     - `PlatformSystemHealth`: live DB connection pool latency, idle/active clients, Node memory heap, CPU specs, 24h error count, auto-refresh.
+     - `PlatformAuditLogs`: forensic security audit logs with JSON payload inspector.
+     - `PlatformSettings`: branding, support info, default trial/grace/devices, maintenance mode, min POS version, API keys manager.
+     - Expanded `Sidebar.tsx` and `App.tsx` routes under `/platform-admin/*`.
+  5. Verification & Testing:
+     - 100% frontend production build passed (`tsc && vite build` in 15s).
+     - 10/10 test suites passed (71/71 tests) in Vitest, including dedicated `platform_super_admin.test.ts`.
+     - 38/38 QA simulation suite checks passed.
+
 - Decision 51 (commit b6d3d3a): Fix POS Receipt Printing Data Binding, NaN/Undefined Glitches & Direct Thermal Printing:
   1. Root Cause Resolution for `undefined`, `NaN`, and `Invalid Date`:
      - Identified missing database joins in `/api/orders/active` and `/api/orders/:id/receipt` which omitted `branch_phone`, `branch_address`, and `restaurant_name`.

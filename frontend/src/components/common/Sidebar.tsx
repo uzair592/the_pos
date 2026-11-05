@@ -29,6 +29,11 @@ import {
   Calculator,
   UtensilsCrossed,
   X,
+  MapPin,
+  HardDrive,
+  LifeBuoy,
+  Activity,
+  ShieldAlert,
 } from 'lucide-react';
 import { FeatureKey, Permission } from '@pos/shared';
 
@@ -82,15 +87,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeBranchName =
     branches?.find((b) => b.id === (currentBranchId || user?.branchId))?.name || 'Main Branch';
 
-  // Super Admin Navigation
+  // Super Admin Categorized Navigation
   const superAdminSections: NavSection[] = [
     {
-      title: 'PLATFORM MANAGEMENT',
+      title: 'BUSINESS & RESTAURANTS',
       items: [
         { to: '/platform-admin', label: 'Platform Dashboard', icon: LayoutDashboard, exact: true },
         { to: '/platform-admin/tenants', label: 'Restaurants & Tenants', icon: Building2 },
         { to: '/platform-admin/plans', label: 'Subscription Plans', icon: CreditCard },
         { to: '/platform-admin/payments', label: 'Subscription Payments', icon: DollarSign },
+        { to: '/platform-admin/branches', label: 'Restaurant Branches', icon: MapPin },
+      ],
+    },
+    {
+      title: 'DEVICES & DATA',
+      items: [
+        { to: '/platform-admin/devices', label: 'Devices & Sessions', icon: Monitor },
+        { to: '/platform-admin/backups', label: 'Backups & Restoration', icon: HardDrive },
+      ],
+    },
+    {
+      title: 'SUPPORT & SERVICE',
+      items: [
+        { to: '/platform-admin/tickets', label: 'Support Tickets', icon: LifeBuoy },
+      ],
+    },
+    {
+      title: 'GOVERNANCE & SYSTEM',
+      items: [
+        { to: '/platform-admin/users', label: 'Platform Admins', icon: Users },
+        { to: '/platform-admin/audit-logs', label: 'Security Audit Logs', icon: ShieldAlert },
+        { to: '/platform-admin/health', label: 'System Health & Infra', icon: Activity },
+        { to: '/platform-admin/settings', label: 'Platform Settings', icon: Settings },
       ],
     },
   ];

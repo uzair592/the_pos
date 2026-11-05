@@ -16,6 +16,14 @@ import { PlatformDashboard } from './pages/platform/PlatformDashboard.js';
 import { PlatformTenants } from './pages/platform/PlatformTenants.js';
 import { PlatformPlans } from './pages/platform/PlatformPlans.js';
 import { PlatformPayments } from './pages/platform/PlatformPayments.js';
+import { PlatformBranches } from './pages/platform/PlatformBranches.js';
+import { PlatformDevices } from './pages/platform/PlatformDevices.js';
+import { PlatformBackups } from './pages/platform/PlatformBackups.js';
+import { PlatformUsers } from './pages/platform/PlatformUsers.js';
+import { PlatformTickets } from './pages/platform/PlatformTickets.js';
+import { PlatformSystemHealth } from './pages/platform/PlatformSystemHealth.js';
+import { PlatformAuditLogs } from './pages/platform/PlatformAuditLogs.js';
+import { PlatformSettings } from './pages/platform/PlatformSettings.js';
 
 // Restaurant Pages
 import { OnboardingWizard } from './pages/restaurant/OnboardingWizard.js';
@@ -346,6 +354,14 @@ export const App: React.FC = () => {
                 <Route path="tenants" element={<PlatformTenants />} />
                 <Route path="plans" element={<PlatformPlans />} />
                 <Route path="payments" element={<PlatformPayments />} />
+                <Route path="branches" element={<PlatformBranches />} />
+                <Route path="devices" element={<PlatformDevices />} />
+                <Route path="backups" element={<PlatformBackups />} />
+                <Route path="tickets" element={<PlatformTickets />} />
+                <Route path="users" element={<PlatformUsers />} />
+                <Route path="audit-logs" element={<PlatformAuditLogs />} />
+                <Route path="health" element={<PlatformSystemHealth />} />
+                <Route path="settings" element={<PlatformSettings />} />
               </Route>
 
               {/* Restaurant Onboarding */}

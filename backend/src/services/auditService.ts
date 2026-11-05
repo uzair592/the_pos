@@ -12,8 +12,17 @@ export interface AuditLogEntry {
   ipAddress?: string;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
   try {
+    const safeActorId = (entry.actorId && UUID_REGEX.test(entry.actorId))
+      ? entry.actorId
+      : '00000000-0000-0000-0000-000000000000';
+    const safeResourceId = (entry.resourceId && UUID_REGEX.test(entry.resourceId))
+      ? entry.resourceId
+      : null;
+
     await query(
       `
       INSERT INTO audit_logs (tenant_id, branch_id, actor_id, actor_role, action, resource_type, resource_id, metadata, ip_address)
@@ -22,11 +31,11 @@ export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
       [
         entry.tenantId || null,
         entry.branchId || null,
-        entry.actorId,
+        safeActorId,
         entry.actorRole,
         entry.action,
         entry.resourceType,
-        entry.resourceId || null,
+        safeResourceId,
         JSON.stringify(entry.metadata || {}),
         entry.ipAddress || null,
       ],

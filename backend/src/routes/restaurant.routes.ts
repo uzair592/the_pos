@@ -624,7 +624,12 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const result = await restoreTenantBackup(tenantId, backupPackage, req.user!.id);
+      const result = await restoreTenantBackup(
+        tenantId,
+        backupPackage,
+        req.user!.id,
+        (req.user as any)?.fullName || 'Restaurant Staff'
+      );
       return reply.send(result);
     } catch (err: any) {
       return reply.status(400).send({ error: err.message || 'Failed to restore backup' });
