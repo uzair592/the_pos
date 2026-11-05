@@ -14,6 +14,15 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 46 (commit 4e17cce): Corrected Top Selling Products sorting on Restaurant Dashboard to prioritize quantity sold:
+  1. Backend API Sorting (`financial.routes.ts`):
+     - Updated `/api/financial/reports/sales-by-product` to sort by `total_quantity DESC, total_sales DESC` by default, ensuring higher volume items rank ahead of higher-priced low-volume items.
+     - Added optional `sortBy=sales` parameter for cases requiring revenue-based sorting.
+  2. Frontend Dashboard Sorting (`RestaurantDashboard.tsx`):
+     - Explicitly sorted `productsRes.products` by `total_quantity DESC` with `total_sales DESC` tie-breaker before taking the top 6.
+  3. Verification:
+     - 100% frontend and backend production builds passed.
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
 - Decision 45 (commit d60c84c): Improved POS terminal product card visual feedback with prominent selected borders and quantity badges:
   1. Prominent Selected-Item Border & Styling:
      - Applied `border-2 border-brand-500 dark:border-brand-400`, subtle warm background tint (`bg-brand-50/25 dark:bg-brand-950/20`), elevated shadow (`shadow-md`), and glowing halo ring (`ring-2 ring-brand-500/20`) whenever an item is added to the active bill.
