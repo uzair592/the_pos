@@ -4,10 +4,12 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
+import { exportDaybookPdf } from '../../utils/pdfExport.js';
 import { ReceiptModal } from '../../components/common/ReceiptModal.js';
 import {
   Calendar,
   CalendarDays,
+  Download,
   BookOpen,
   TrendingUp,
   TrendingDown,
@@ -250,6 +252,21 @@ export const Daybook: React.FC = () => {
   };
 
   // Open Full Order Details
+  const handleDownloadPdf = () => {
+    if (!daybook) return;
+    const branchName = branches.find((b) => b.id === selectedBranchId)?.name || 'Main Branch';
+    exportDaybookPdf(
+      {
+        name: tenant?.name || 'Restaurant POS',
+        currencySymbol,
+        branch: branchName,
+      },
+      selectedDate,
+      daybook
+    );
+    success('Daybook PDF downloaded successfully');
+  };
+
   const handleViewOrderDetail = async (orderId: string) => {
     try {
       const data = await api.get(`/orders/${orderId}`);
@@ -280,10 +297,7 @@ export const Daybook: React.FC = () => {
                 <h1 className="text-xl font-black text-slate-900 dark:text-white">
                   Daily Daybook & Operations Ledger
                 </h1>
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-arabic">
-                  روزنامچہ
-                </span>
-                {isToday && (
+                                {isToday && (
                   <span className="flex items-center space-x-1 text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     <span>Live Today</span>

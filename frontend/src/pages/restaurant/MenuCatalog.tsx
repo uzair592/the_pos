@@ -477,7 +477,7 @@ export const MenuCatalog: React.FC = () => {
     setEditingProduct(null);
     setProductForm({
       name: `${prod.name} (Copy)`,
-      nameUrdu: prod.name_urdu ? `${prod.name_urdu} (کاپی)` : '',
+      nameUrdu: '',
       categoryId: prod.category_id,
       subCategoryId: prod.sub_category_id || '',
       sku: `PROD-${Date.now().toString().slice(-4)}`,
@@ -533,7 +533,6 @@ export const MenuCatalog: React.FC = () => {
 
     const headers = [
       'Product Name',
-      'Urdu Name',
       'SKU',
       'Barcode',
       'Category',
@@ -589,8 +588,7 @@ export const MenuCatalog: React.FC = () => {
     const matchesSearch =
       p.name.toLowerCase().includes(q) ||
       (p.sku && p.sku.toLowerCase().includes(q)) ||
-      (p.barcode && p.barcode.toLowerCase().includes(q)) ||
-      (p.name_urdu && p.name_urdu.includes(search));
+      (p.barcode && p.barcode.toLowerCase().includes(q)) ;
 
     let matchesCategory = true;
     if (selectedCategory !== 'ALL') {
@@ -813,7 +811,7 @@ export const MenuCatalog: React.FC = () => {
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search products by English or Urdu name, SKU, barcode..."
+                  placeholder="Search products by name, SKU, or barcode..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:ring-2 focus:ring-brand-500"
@@ -1014,7 +1012,7 @@ export const MenuCatalog: React.FC = () => {
                                 <div>
                                   <div className="font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
                                     <span>{p.name}</span>
-                                    {p.name_urdu && <span className="text-[11px] font-urdu text-slate-400 font-normal">({p.name_urdu})</span>}
+                                    
                                   </div>
                                   <div className="flex items-center space-x-2 text-[10px] text-slate-400 font-mono">
                                     <span>SKU: {p.sku}</span>
@@ -1275,9 +1273,7 @@ export const MenuCatalog: React.FC = () => {
                             <h3 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
                               {p.name}
                             </h3>
-                            {p.name_urdu && (
-                              <p className="text-xs text-slate-400 font-urdu truncate">{p.name_urdu}</p>
-                            )}
+                            
                             <p className="text-[10px] text-slate-400 font-mono mt-0.5">SKU: {p.sku}</p>
                           </div>
                         </div>
@@ -1382,8 +1378,7 @@ export const MenuCatalog: React.FC = () => {
                   <tr>
                     <th className="px-4 py-3">Category Name</th>
                     <th className="px-4 py-3">Type / Hierarchy</th>
-                    <th className="px-4 py-3">Urdu Name</th>
-                    <th className="px-4 py-3 text-center">Assigned Items</th>
+                                        <th className="px-4 py-3 text-center">Assigned Items</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1424,10 +1419,7 @@ export const MenuCatalog: React.FC = () => {
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-3 font-urdu text-sm text-slate-600 dark:text-slate-400">
-                            {c.name_urdu || '—'}
-                          </td>
-                          <td className="px-4 py-3 text-center">
+                                                    <td className="px-4 py-3 text-center">
                             <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[11px]">
                               {itemCount} Items
                             </span>
@@ -1527,7 +1519,7 @@ export const MenuCatalog: React.FC = () => {
                         <tr key={group.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="px-4 py-3">
                             <span className="font-bold text-slate-900 dark:text-white block">{group.name}</span>
-                            {group.name_urdu && <span className="text-[11px] font-urdu text-slate-400">{group.name_urdu}</span>}
+                            
                           </td>
                           <td className="px-4 py-3">
                             <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-semibold border border-slate-200 dark:border-slate-700">
@@ -1599,18 +1591,7 @@ export const MenuCatalog: React.FC = () => {
             />
           </div>
 
-          <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Category Name (Urdu / Arabic)
-            </label>
-            <input
-              type="text"
-              placeholder="مثلاً کڑاہی، برگر، گرم مشروبات"
-              value={categoryForm.nameUrdu}
-              onChange={(e) => setCategoryForm({ ...categoryForm, nameUrdu: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-urdu text-slate-900 dark:text-white"
-            />
-          </div>
+          
 
           <div>
             <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -1675,18 +1656,7 @@ export const MenuCatalog: React.FC = () => {
               />
             </div>
 
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Addon Group Name (Urdu)
-              </label>
-              <input
-                type="text"
-                placeholder="مثلاً اضافی ساس، پنیر"
-                value={modifierForm.nameUrdu}
-                onChange={(e) => setModifierForm({ ...modifierForm, nameUrdu: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-urdu text-slate-900 dark:text-white"
-              />
-            </div>
+            
           </div>
 
           <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -1808,16 +1778,7 @@ export const MenuCatalog: React.FC = () => {
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
               />
             </div>
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Product Name (Urdu)</label>
-              <input
-                type="text"
-                placeholder="مثلاً اسپیشل مٹن کڑاہی فل"
-                value={productForm.nameUrdu}
-                onChange={(e) => setProductForm({ ...productForm, nameUrdu: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-urdu text-slate-900 dark:text-white"
-              />
-            </div>
+            
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2191,11 +2152,7 @@ export const MenuCatalog: React.FC = () => {
                   <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
                     {previewProduct.name}
                   </h3>
-                  {previewProduct.name_urdu && (
-                    <span className="text-xs text-slate-500 font-urdu">
-                      ({previewProduct.name_urdu})
-                    </span>
-                  )}
+                  
                 </div>
                 <div className="flex items-center space-x-2 mt-1">
                   <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
@@ -2425,9 +2382,7 @@ export const MenuCatalog: React.FC = () => {
                   <h4 className="font-black text-sm text-black leading-tight">
                     {printingBarcodeProduct.name}
                   </h4>
-                  {printingBarcodeProduct.name_urdu && (
-                    <p className="text-xs font-urdu text-gray-700 mt-0.5">{printingBarcodeProduct.name_urdu}</p>
-                  )}
+                  
                 </div>
 
                 {/* Big Price */}
@@ -2520,7 +2475,7 @@ export const MenuCatalog: React.FC = () => {
                 <div>
                   <span className="text-[10px] font-bold text-gray-500 uppercase block">Dish Name</span>
                   <span className="font-extrabold text-sm text-black">{printingSpecProduct.name}</span>
-                  {printingSpecProduct.name_urdu && <span className="font-urdu text-xs text-gray-600 block">{printingSpecProduct.name_urdu}</span>}
+                  
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-gray-500 uppercase block">Category</span>
@@ -2689,9 +2644,7 @@ export const MenuCatalog: React.FC = () => {
                           <h3 className="text-sm font-black uppercase text-black tracking-wide">
                             {mainCat.name}
                           </h3>
-                          {mainCat.name_urdu && (
-                            <span className="text-xs font-urdu text-gray-600 font-bold">{mainCat.name_urdu}</span>
-                          )}
+                          
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
@@ -2700,7 +2653,7 @@ export const MenuCatalog: React.FC = () => {
                               <div className="flex-1 pr-2">
                                 <div className="flex items-center space-x-1.5">
                                   <span className="font-extrabold text-xs text-black">{prod.name}</span>
-                                  {prod.name_urdu && <span className="font-urdu text-[11px] text-gray-600">({prod.name_urdu})</span>}
+                                  
                                 </div>
                                 {prod.modifierGroups && prod.modifierGroups.length > 0 && (
                                   <span className="text-[9px] text-gray-500 italic block mt-0.5">

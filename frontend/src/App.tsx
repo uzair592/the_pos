@@ -306,6 +306,8 @@ export const App: React.FC = () => {
                 <Route path="purchases" element={<PurchaseManagement />} />
                 <Route path="shifts" element={<ShiftManagement />} />
                 <Route path="reports" element={<FinancialReports />} />
+                <Route path="reports/daybook" element={<Daybook />} />
+                <Route path="reports/cash-and-bank" element={<CashAndBank />} />
                 <Route path="reports/bill-profit-loss" element={<FinancialReports defaultTab="BILL_PROFIT_LOSS" />} />
                 <Route path="staff" element={<StaffManagement />} />
                 <Route path="branches" element={<BranchManagement />} />

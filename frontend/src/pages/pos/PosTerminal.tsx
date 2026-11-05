@@ -403,7 +403,6 @@ export const PosTerminal: React.FC = () => {
       const matchesSearch =
         !search ||
         p.name.toLowerCase().includes(search.toLowerCase()) ||
-        (p.name_urdu && p.name_urdu.toLowerCase().includes(search.toLowerCase())) ||
         p.sku.toLowerCase().includes(search.toLowerCase()) ||
         (p.barcode && p.barcode.includes(search));
 
@@ -940,11 +939,7 @@ export const PosTerminal: React.FC = () => {
                   >
                     <div className="flex-1 truncate pr-1">
                       <span className="block truncate">{cat.name}</span>
-                      {cat.name_urdu && (
-                        <span className="block text-[10px] opacity-75 font-urdu truncate" dir="rtl">
-                          {cat.name_urdu}
-                        </span>
-                      )}
+                      
                     </div>
 
                     <div className="flex items-center space-x-1 shrink-0">
@@ -1133,11 +1128,7 @@ export const PosTerminal: React.FC = () => {
                         <h4 className="text-sm font-black text-slate-900 dark:text-white truncate">
                           {p.name}
                         </h4>
-                        {p.name_urdu && (
-                          <p className="font-urdu text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate" dir="rtl">
-                            {p.name_urdu}
-                          </p>
-                        )}
+                        
                       </div>
 
                       {/* Right: Variants pills, Price, and Quick Add */}
@@ -1246,11 +1237,7 @@ export const PosTerminal: React.FC = () => {
                         <h4 className="font-bold text-slate-900 dark:text-white text-xs leading-snug line-clamp-2">
                           {p.name}
                         </h4>
-                        {p.name_urdu && (
-                          <p className="font-urdu text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1" dir="rtl">
-                            {p.name_urdu}
-                          </p>
-                        )}
+                        
                       </div>
 
                       <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">

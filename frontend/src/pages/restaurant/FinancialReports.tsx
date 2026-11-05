@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { StatCard } from '../../components/common/StatCard.js';
+import { Daybook } from './Daybook.js';
+import { CashAndBank } from '../financial/CashAndBank.js';
 import {
   BarChart3,
   Download,
@@ -38,7 +40,7 @@ import {
   exportBillWiseProfitLossPdf,
 } from '../../utils/pdfExport.js';
 
-export type ReportTab = 'OVERVIEW' | 'BILL_PROFIT_LOSS' | 'SALES' | 'PURCHASES' | 'EXPENSES' | 'GROSS_PROFIT';
+export type ReportTab = 'OVERVIEW' | 'DAYBOOK' | 'CASH_BANK' | 'BILL_PROFIT_LOSS' | 'SALES' | 'PURCHASES' | 'EXPENSES' | 'GROSS_PROFIT';
 
 interface FinancialReportsProps {
   defaultTab?: ReportTab;
@@ -336,6 +338,20 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
           <span>Expenses Report</span>
         </button>
       </div>
+
+      {/* ==================== SUB-SECTION: DAILY DAYBOOK ==================== */}
+      {activeTab === 'DAYBOOK' && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2 sm:p-4 shadow-sm">
+          <Daybook />
+        </div>
+      )}
+
+      {/* ==================== SUB-SECTION: CASH & BANK ==================== */}
+      {activeTab === 'CASH_BANK' && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2 sm:p-4 shadow-sm">
+          <CashAndBank />
+        </div>
+      )}
 
       {/* ==================== SUB-SECTION: OVERVIEW (P&L) ==================== */}
       {activeTab === 'OVERVIEW' && (

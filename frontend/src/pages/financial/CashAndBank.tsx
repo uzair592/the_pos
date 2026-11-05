@@ -4,9 +4,12 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
 import { StatCard } from '../../components/common/StatCard.js';
+import { ActionMenu } from '../../components/common/ActionMenu.js';
 import {
   Landmark,
   Wallet,
+  Edit2,
+  Eye,
   ArrowRightLeft,
   ArrowDownRight,
   ArrowUpRight,
@@ -266,7 +269,7 @@ export const CashAndBank: React.FC = () => {
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-              Cash & Bank Management (کیش اور بینک کھاتہ)
+              Cash & Bank Management
             </h1>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -450,44 +453,75 @@ export const CashAndBank: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => {
-                        setTransferForm({
-                          transferType: CashBankTransferType.CASH_TO_BANK,
-                          fromBankAccountId: '',
-                          toBankAccountId: b.id,
-                          amount: '',
-                          transferDate: dateFilter,
-                          referenceNumber: '',
-                          notes: `Deposit to ${b.bankName}`,
-                        });
-                        setIsTransferModalOpen(true);
-                      }}
-                      className="px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 font-bold rounded-lg text-xs transition-colors"
-                      title="Deposit cash into this account"
-                    >
-                      + Deposit Cash
-                    </button>
-                    <button
-                      onClick={() => {
-                        setAccountForm({
-                          id: b.id,
-                          accountName: b.accountName,
-                          bankName: b.bankName,
-                          accountNumber: b.accountNumber || '',
-                          iban: b.iban || '',
-                          branchCode: b.branchCode || '',
-                          openingBalance: String(b.openingBalance),
-                          isDefault: b.isDefault,
-                        });
-                        setIsAccountModalOpen(true);
-                      }}
-                      className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg text-xs transition-colors"
-                    >
-                      Edit
-                    </button>
-                  </div>
+                  <ActionMenu
+                    items={[
+                      {
+                        label: 'View Account Ledger',
+                        icon: Eye,
+                        onClick: () => {
+                          setLedgerAccountFilter(b.id);
+                          setActiveTab('LEDGER');
+                        },
+                      },
+                      {
+                        label: 'Edit Bank Account',
+                        icon: Edit2,
+                        onClick: () => {
+                          setAccountForm({
+                            id: b.id,
+                            accountName: b.accountName,
+                            bankName: b.bankName,
+                            accountNumber: b.accountNumber || '',
+                            iban: b.iban || '',
+                            branchCode: b.branchCode || '',
+                            openingBalance: String(b.openingBalance),
+                            isDefault: b.isDefault,
+                          });
+                          setIsAccountModalOpen(true);
+                        },
+                      },
+                      {
+                        label: 'Deposit Cash (+ Cash to Bank)',
+                        icon: ArrowDownRight,
+                        variant: 'success',
+                        onClick: () => {
+                          setTransferForm({
+                            transferType: CashBankTransferType.CASH_TO_BANK,
+                            fromBankAccountId: '',
+                            toBankAccountId: b.id,
+                            amount: '',
+                            transferDate: dateFilter,
+                            referenceNumber: '',
+                            notes: `Deposit to ${b.bankName}`,
+                          });
+                          setIsTransferModalOpen(true);
+                        },
+                      },
+                      {
+                        label: 'Withdraw Float (- Bank to Cash)',
+                        icon: ArrowUpRight,
+                        variant: 'warning',
+                        onClick: () => {
+                          setTransferForm({
+                            transferType: CashBankTransferType.BANK_TO_CASH,
+                            fromBankAccountId: b.id,
+                            toBankAccountId: '',
+                            amount: '',
+                            transferDate: dateFilter,
+                            referenceNumber: '',
+                            notes: `Withdrawal from ${b.bankName}`,
+                          });
+                          setIsTransferModalOpen(true);
+                        },
+                      },
+                      {
+                        label: 'Print Account Statement',
+                        icon: Printer,
+                        divider: true,
+                        onClick: () => setIsPrintModalOpen(true),
+                      },
+                    ]}
+                  />
                 </div>
               </div>
             ))}
@@ -1029,3 +1063,4 @@ export const CashAndBank: React.FC = () => {
     </div>
   );
 };
+

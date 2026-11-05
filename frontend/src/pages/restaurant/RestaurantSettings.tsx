@@ -348,39 +348,7 @@ export const RestaurantSettings: React.FC = () => {
               />
             </div>
 
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Custom Urdu Header (اردو ہیڈر)</label>
-              <input
-                type="text"
-                dir="rtl"
-                placeholder="خوش آمدید"
-                value={settings?.receipt_settings?.customUrduHeader || ''}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    receipt_settings: { ...settings.receipt_settings, customUrduHeader: e.target.value },
-                  })
-                }
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-urdu text-slate-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Custom Urdu Footer (اردو اختتامیہ)</label>
-              <input
-                type="text"
-                dir="rtl"
-                placeholder="تشریف آوری کا شکریہ"
-                value={settings?.receipt_settings?.customUrduFooter || ''}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    receipt_settings: { ...settings.receipt_settings, customUrduFooter: e.target.value },
-                  })
-                }
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-urdu text-slate-900 dark:text-white"
-              />
-            </div>
+            
           </div>
 
           {/* Toggle Flags */}

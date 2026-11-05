@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { Modal } from '../../components/common/Modal.js';
-import { Clock, Plus, Minus, CheckCircle, AlertTriangle, ArrowRight } from 'lucide-react';
+import { ActionMenu } from '../../components/common/ActionMenu.js';
+import { Clock, Plus, Minus, CheckCircle, AlertTriangle, ArrowRight, Eye, Printer } from 'lucide-react';
 import { CashMovementType } from '@pos/shared';
 
 export const ShiftManagement: React.FC = () => {

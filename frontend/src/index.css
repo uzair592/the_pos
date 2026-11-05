@@ -4,26 +4,27 @@
 
 @layer base {
   body {
-    @apply bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased transition-colors duration-150;
+    @apply antialiased text-slate-800 bg-slate-50 dark:bg-slate-950 dark:text-slate-100;
   }
 }
 
-/* Custom Scrollbar for POS and fast views */
+/* Custom Scrollbar for sleek POS terminals */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-slate-100 dark:bg-slate-900;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-300 dark:bg-slate-700 rounded-full;
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-400 dark:bg-slate-600;
+  background: rgba(148, 163, 184, 0.6);
 }
 
-/* Universal Printer styles for 58mm, 80mm and A4 Invoices */
+/* Print Specific Rules for Universal Thermal Receipts and Reports */
 @media print {
   body * {
     visibility: hidden !important;
@@ -36,21 +37,14 @@
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
-    margin: 0 auto !important;
-    background: #ffffff !important;
-    color: #000000 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
     box-shadow: none !important;
-    border: none !important;
   }
-  .no-print {
-    display: none !important;
-  }
+  /* Remove browser headers and footers for crisp receipts */
   @page {
-    margin: 4mm;
+    margin: 0;
     size: auto;
   }
-}
-
-.font-urdu {
-  font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', serif;
 }

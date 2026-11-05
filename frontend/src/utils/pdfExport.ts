@@ -644,3 +644,218 @@ export function exportBillWiseProfitLossPdf(
   attachFooter(doc);
   doc.save(`Bill_Wise_Profit_Loss_${dates.startDate}_${dates.endDate}.pdf`);
 }
+
+
+/**
+ * 7. Daily Daybook PDF Export
+ */
+export function exportDaybookPdf(
+  meta: RestaurantMeta,
+  date: string,
+  daybook: any
+) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || 'Rs.';
+
+  let startY = drawReportHeader(doc, 'Daily Operations Daybook', meta, { startDate: date, endDate: date });
+
+  const kpis = daybook?.kpis || {};
+  const grossSales = Number(kpis.grossSales || 0);
+  const netSales = Number(kpis.netSales || 0);
+  const totalCollections = Number(kpis.totalCollected || 0);
+  const cogs = Number(kpis.cogs || 0);
+  const expenses = Number(kpis.totalExpenses || 0);
+  const wastage = Number(kpis.totalWastageCost || 0);
+  const netCashFlow = Number(kpis.netCashFlow || 0);
+
+  // Executive KPI summary box
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(14, startY, doc.internal.pageSize.width - 28, 26, 2, 2, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+
+  doc.text(`Daybook Date: ${date}`, 20, startY + 6);
+  doc.text(`Gross Sales: ${sym} ${grossSales.toLocaleString()}`, 80, startY + 6);
+  doc.text(`Net Food Sales: ${sym} ${netSales.toLocaleString()}`, 140, startY + 6);
+
+  doc.text(`Total Collections: ${sym} ${totalCollections.toLocaleString()}`, 20, startY + 13);
+  doc.text(`Ingredient COGS: ${sym} ${cogs.toLocaleString()}`, 80, startY + 13);
+  doc.text(`Daily Expenses: ${sym} ${expenses.toLocaleString()}`, 140, startY + 13);
+
+  doc.text(`Kitchen Wastage: ${sym} ${wastage.toLocaleString()}`, 20, startY + 20);
+  doc.setTextColor(netCashFlow >= 0 ? 22 : 220, netCashFlow >= 0 ? 163 : 38, netCashFlow >= 0 ? 74 : 38);
+  doc.text(`Net Cash Flow: ${sym} ${netCashFlow.toLocaleString()}`, 80, startY + 20);
+
+  startY += 32;
+
+  // Section 1: Payment Method Settlement Breakdown
+  if (daybook?.paymentBreakdown && daybook.paymentBreakdown.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text('1. Payment Settlement Breakdown', 14, startY);
+    startY += 3;
+
+    const paymentRows = daybook.paymentBreakdown.map((pm: any) => [
+      String(pm.method).replace('_', ' '),
+      Number(pm.count || 0),
+      `${sym} ${Number(pm.total || 0).toLocaleString()}`,
+      `${Number(pm.percentage || 0).toFixed(1)}%`,
+    ]);
+
+    autoTable(doc, {
+      startY,
+      head: [['Payment Method', 'Transactions', 'Amount Collected', '% Share']],
+      body: paymentRows,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      margin: { left: 14, right: 14 },
+    });
+
+    startY = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  // Section 2: Completed Sales Orders Summary
+  if (daybook?.orders && daybook.orders.length > 0) {
+    if (startY > doc.internal.pageSize.height - 40) {
+      doc.addPage();
+      startY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`2. Sales Orders (${daybook.orders.length} completed)`, 14, startY);
+    startY += 3;
+
+    const orderRows = daybook.orders.slice(0, 50).map((o: any) => [
+      o.orderNumber,
+      o.orderType,
+      o.customerName || (o.tableName ? `Table ${o.tableName}` : 'Guest'),
+      `${sym} ${Number(o.subtotal || 0).toLocaleString()}`,
+      `${sym} ${Number(o.totalDiscount || 0).toLocaleString()}`,
+      `${sym} ${Number(o.grandTotal || 0).toLocaleString()}`,
+      o.paymentMethod || 'CASH',
+      o.status,
+    ]);
+
+    autoTable(doc, {
+      startY,
+      head: [['Order #', 'Type', 'Table / Guest', 'Subtotal', 'Discount', 'Grand Total', 'Method', 'Status']],
+      body: orderRows,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 7.5 },
+      bodyStyles: { fontSize: 7 },
+      margin: { left: 14, right: 14 },
+    });
+
+    startY = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  // Section 3: Operating Expenses
+  if (daybook?.expenses && daybook.expenses.length > 0) {
+    if (startY > doc.internal.pageSize.height - 40) {
+      doc.addPage();
+      startY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`3. Operating Expenses (${daybook.expenses.length} records)`, 14, startY);
+    startY += 3;
+
+    const expenseRows = daybook.expenses.map((e: any) => [
+      e.categoryName || 'General Expense',
+      e.description || '—',
+      e.paymentMethod || 'CASH',
+      e.recordedByName || 'Staff',
+      `${sym} ${Number(e.amount || 0).toLocaleString()}`,
+    ]);
+
+    autoTable(doc, {
+      startY,
+      head: [['Category', 'Description', 'Paid Via', 'Recorded By', 'Amount']],
+      body: expenseRows,
+      theme: 'grid',
+      headStyles: { fillColor: [71, 85, 105], textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 7.5 },
+      margin: { left: 14, right: 14 },
+    });
+
+    startY = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  // Section 4: Inward Purchases
+  if (daybook?.purchases && daybook.purchases.length > 0) {
+    if (startY > doc.internal.pageSize.height - 40) {
+      doc.addPage();
+      startY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`4. Inward Purchases (${daybook.purchases.length} invoices)`, 14, startY);
+    startY += 3;
+
+    const purchaseRows = daybook.purchases.map((p: any) => [
+      p.invoiceNumber,
+      p.supplierName,
+      `${p.itemsCount} lines`,
+      `${sym} ${Number(p.totalAmount || 0).toLocaleString()}`,
+      `${sym} ${Number(p.paidAmount || 0).toLocaleString()}`,
+      `${sym} ${Number(p.balancePayable || 0).toLocaleString()}`,
+    ]);
+
+    autoTable(doc, {
+      startY,
+      head: [['Invoice #', 'Supplier', 'Items', 'Total', 'Paid', 'Due']],
+      body: purchaseRows,
+      theme: 'grid',
+      headStyles: { fillColor: [51, 65, 85], textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 7.5 },
+      margin: { left: 14, right: 14 },
+    });
+
+    startY = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  // Section 5: Kitchen Wastage
+  if (daybook?.wastage && daybook.wastage.length > 0) {
+    if (startY > doc.internal.pageSize.height - 40) {
+      doc.addPage();
+      startY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`5. Kitchen Wastage Records`, 14, startY);
+    startY += 3;
+
+    const wastageRows = daybook.wastage.map((w: any) => [
+      w.ingredientName,
+      `${w.quantity} ${w.unit}`,
+      `${sym} ${Number(w.totalCost || 0).toLocaleString()}`,
+      w.reason || 'Spoilage',
+      w.recordedByName || 'Chef',
+    ]);
+
+    autoTable(doc, {
+      startY,
+      head: [['Ingredient', 'Quantity', 'Cost Loss', 'Reason', 'Recorded By']],
+      body: wastageRows,
+      theme: 'grid',
+      headStyles: { fillColor: [159, 18, 57], textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 7.5 },
+      margin: { left: 14, right: 14 },
+    });
+  }
+
+  attachFooter(doc);
+  doc.save(`Daily_Daybook_${date}.pdf`);
+}

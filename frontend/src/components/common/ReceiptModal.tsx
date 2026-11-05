@@ -41,9 +41,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const [copied, setCopied] = useState(false);
 
   // Customization options state
-  const [showUrdu, setShowUrdu] = useState<boolean>(
-    receiptData.receiptSettings?.bilingualUrduEnglish !== false
-  );
+  const [showUrdu] = useState<boolean>(false);
   const [showQrCode, setShowQrCode] = useState<boolean>(
     receiptData.receiptSettings?.showQrCode !== false
   );
@@ -261,15 +259,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           </span>
 
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center space-x-1.5 cursor-pointer text-slate-700 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={showUrdu}
-                onChange={(e) => setShowUrdu(e.target.checked)}
-                className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
-              />
-              <span>اردو (Urdu)</span>
-            </label>
+            
 
             <label className="flex items-center space-x-1.5 cursor-pointer text-slate-700 dark:text-slate-300">
               <input
@@ -334,11 +324,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                     {receiptData.receiptSettings.headerText}
                   </p>
                 )}
-                {showUrdu && receiptData.receiptSettings?.customUrduHeader && (
-                  <p className="font-urdu text-sm text-slate-800 mt-1" dir="rtl">
-                    {receiptData.receiptSettings.customUrduHeader}
-                  </p>
-                )}
+                
               </div>
 
               {/* Order Meta */}
@@ -508,11 +494,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               {/* Footer */}
               <div className="text-center pt-2.5 text-[10px] text-slate-600">
                 <p className="font-bold">{receiptData.receiptSettings?.footerText || 'Thank you for your visit!'}</p>
-                {showUrdu && (
-                  <p className="font-urdu text-xs text-slate-800 mt-1" dir="rtl">
-                    {receiptData.receiptSettings?.customUrduFooter || 'تشریف آوری کا بہت شکریہ۔ دوبارہ ضرور تشریف لائیے گا۔'}
-                  </p>
-                )}
+                
                 <p className="mt-1.5 text-[8px] text-slate-400 uppercase tracking-widest">
                   Software Powered by POS SaaS
                 </p>
@@ -704,11 +686,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               {/* Closing Message */}
               <div className="text-center font-serif text-[11px] text-slate-700 italic border-t border-slate-300 pt-2">
                 <p>"{receiptData.receiptSettings?.footerText || 'It was a genuine honor to serve you today.'}"</p>
-                {showUrdu && (
-                  <p className="font-urdu text-xs text-slate-800 not-italic mt-1" dir="rtl">
-                    {receiptData.receiptSettings?.customUrduFooter || 'آپ کی تشریف آوری کا دلی شکریہ۔'}
-                  </p>
-                )}
+                
               </div>
             </div>
           )}

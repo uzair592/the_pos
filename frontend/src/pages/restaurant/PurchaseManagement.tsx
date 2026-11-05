@@ -3,6 +3,7 @@ import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
+import { ActionMenu } from '../../components/common/ActionMenu.js';
 import {
   Truck,
   Plus,
@@ -16,6 +17,7 @@ import {
   Eye,
   Trash2,
   Download,
+  Printer,
   Phone,
   Mail,
   MapPin,
@@ -554,27 +556,28 @@ export const PurchaseManagement: React.FC = () => {
                             {isDraft ? 'Draft / In Transit' : 'Received into Stock'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
-                          <button
-                            onClick={() => handleViewInvoiceDetails(p)}
-                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg font-bold text-[11px] transition-colors inline-flex items-center space-x-1"
-                            title="View Items & Details"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>Details</span>
-                          </button>
-
-                          {isDraft && (
-                            <button
-                              onClick={() => handleReceiveStock(p.id)}
-                              disabled={receivingInvoiceId === p.id}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[11px] transition-colors inline-flex items-center space-x-1 shadow-sm disabled:opacity-50"
-                              title="Receive stock into inventory and create FIFO batches"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>{receivingInvoiceId === p.id ? 'Receiving...' : 'Receive Stock'}</span>
-                            </button>
-                          )}
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <ActionMenu
+                            items={[
+                              {
+                                label: 'Preview Invoice Details',
+                                icon: Eye,
+                                onClick: () => handleViewInvoiceDetails(p),
+                              },
+                              isDraft && {
+                                label: receivingInvoiceId === p.id ? 'Receiving...' : 'Receive Stock into FIFO',
+                                icon: CheckCircle2,
+                                variant: 'success',
+                                disabled: receivingInvoiceId === p.id,
+                                onClick: () => handleReceiveStock(p.id),
+                              },
+                              {
+                                label: 'Print Invoice Slip',
+                                icon: Printer,
+                                onClick: () => handleViewInvoiceDetails(p),
+                              },
+                            ]}
+                          />
                         </td>
                       </tr>
                     );

@@ -4,6 +4,7 @@ import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
+import { ActionMenu } from '../../components/common/ActionMenu.js';
 import {
   Boxes,
   Plus,

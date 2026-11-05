@@ -39,9 +39,7 @@ export const OnboardingWizard: React.FC = () => {
       showTaxBreakdown: true,
       showCashierName: true,
       showCustomerDetails: true,
-      bilingualUrduEnglish: true,
-      customUrduHeader: 'خوش آمدید',
-      customUrduFooter: 'تشریف لانے کا شکریہ',
+      bilingualUrduEnglish: false,
     },
   });
 
@@ -266,36 +264,7 @@ export const OnboardingWizard: React.FC = () => {
                     className="w-full border rounded-lg px-3 py-2"
                   />
                 </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Custom Urdu Header (اردو ہیڈر)</label>
-                  <input
-                    type="text"
-                    dir="rtl"
-                    value={form.receiptSettings.customUrduHeader}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        receiptSettings: { ...form.receiptSettings, customUrduHeader: e.target.value },
-                      })
-                    }
-                    className="w-full border rounded-lg px-3 py-2 font-urdu text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Custom Urdu Footer (اردو اختتامیہ)</label>
-                  <input
-                    type="text"
-                    dir="rtl"
-                    value={form.receiptSettings.customUrduFooter}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        receiptSettings: { ...form.receiptSettings, customUrduFooter: e.target.value },
-                      })
-                    }
-                    className="w-full border rounded-lg px-3 py-2 font-urdu text-sm"
-                  />
-                </div>
+                
               </div>
             </div>
           )}

@@ -35,8 +35,6 @@ export const Sidebar: React.FC = () => {
   const restaurantLinks = [
     { to: '/hub', label: 'Workspace Hub', icon: LayoutGrid },
     { to: '/app', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-    { to: '/app/daybook', label: 'Daily Daybook', icon: BookOpen, permission: Permission.REPORTS_SALES },
-    { to: '/app/cash-and-bank', label: 'Cash & Bank', icon: Landmark, permission: Permission.REPORTS_FINANCIAL },
     { to: '/app/orders', label: 'Orders Hub', icon: ShoppingBag, permission: Permission.ORDERS_VIEW },
     { to: '/pos', label: 'POS Terminal', icon: Monitor },
     { to: '/kds', label: 'Kitchen Display', icon: ChefHat, feature: FeatureKey.KDS },
@@ -45,6 +43,8 @@ export const Sidebar: React.FC = () => {
     { to: '/app/purchases', label: 'Purchases & Vendors', icon: Truck, feature: FeatureKey.INVENTORY, permission: Permission.PURCHASES_VIEW },
     { to: '/app/shifts', label: 'Shifts & Registers', icon: Clock, permission: Permission.SHIFTS_VIEW },
     { to: '/app/reports', label: 'Reports & Analytics', icon: BarChart3, permission: Permission.REPORTS_SALES },
+    { to: '/app/reports/daybook', label: 'Daily Daybook', icon: BookOpen, permission: Permission.REPORTS_SALES },
+    { to: '/app/reports/cash-and-bank', label: 'Cash & Bank', icon: Landmark, permission: Permission.REPORTS_FINANCIAL },
     { to: '/app/staff', label: 'Staff & Roles', icon: Users, permission: Permission.STAFF_MANAGE },
     { to: '/app/settings', label: 'Restaurant Settings', icon: Settings, permission: Permission.SETTINGS_MANAGE },
   ];
