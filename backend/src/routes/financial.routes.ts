@@ -23,6 +23,8 @@ import {
   getBankAccounts,
   createBankAccount,
   updateBankAccount,
+  deleteBankAccount,
+  deleteCashBankTransfer,
   getCashBankSummary,
   getCashBankTransfers,
   createCashBankTransfer,
@@ -1118,6 +1120,22 @@ export async function financialRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * Delete Bank Account
+   */
+  fastify.delete('/api/financial/bank-accounts/:id', {
+    preHandler: [requirePermission(Permission.EXPENSES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    try {
+      const result = await deleteBankAccount(tenantId, id);
+      return reply.send(result);
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  /**
    * Cash and Bank Financial Summary
    */
   fastify.get('/api/financial/cash-bank/summary', {
@@ -1159,6 +1177,22 @@ export async function financialRoutes(fastify: FastifyInstance) {
         userId: req.user!.id,
       });
       return reply.status(201).send({ transfer });
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  /**
+   * Reverse and Delete Fund Transfer Voucher
+   */
+  fastify.delete('/api/financial/cash-bank/transfers/:id', {
+    preHandler: [requirePermission(Permission.CASH_ADJUST)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    try {
+      const result = await deleteCashBankTransfer(tenantId, id);
+      return reply.send(result);
     } catch (err: any) {
       return reply.status(400).send({ error: err.message });
     }

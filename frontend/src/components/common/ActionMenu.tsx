@@ -3,7 +3,7 @@ import { MoreVertical } from 'lucide-react';
 
 export interface ActionMenuItem {
   label: string;
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: React.ComponentType<{ className?: string }> | React.ReactNode;
   onClick: () => void;
   variant?: 'default' | 'danger' | 'warning' | 'success';
   disabled?: boolean;
@@ -123,7 +123,11 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
                     item.disabled ? 'opacity-40 cursor-not-allowed' : variantClasses
                   }`}
                 >
-                  {Icon && <Icon className="w-3.5 h-3.5 shrink-0 opacity-80" />}
+                  {React.isValidElement(item.icon) ? (
+                    item.icon
+                  ) : typeof item.icon === 'function' ? (
+                    <item.icon className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                  ) : null}
                   <span className="truncate">{item.label}</span>
                 </button>
               </React.Fragment>

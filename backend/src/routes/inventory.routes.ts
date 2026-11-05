@@ -161,6 +161,48 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({ ingredient: result });
   });
 
+  fastify.put('/api/inventory/ingredients/:id', {
+    preHandler: [requirePermission(Permission.INVENTORY_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    const { name, sku, unit, costPerUnit, minStockAlert } = req.body as any;
+
+    const { rows } = await query(
+      `
+      UPDATE ingredients
+      SET name = COALESCE($1, name),
+          sku = COALESCE($2, sku),
+          unit = COALESCE($3, unit),
+          cost_per_unit = COALESCE($4, cost_per_unit),
+          min_stock_alert = COALESCE($5, min_stock_alert),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $6 AND tenant_id = $7
+      RETURNING *
+      `,
+      [name, sku, unit, costPerUnit !== undefined ? Number(costPerUnit) : null, minStockAlert !== undefined ? Number(minStockAlert) : null, id, tenantId],
+      { tenantId }
+    );
+
+    if (rows.length === 0) return reply.status(404).send({ error: 'Ingredient not found' });
+    return reply.send({ ingredient: rows[0] });
+  });
+
+  fastify.delete('/api/inventory/ingredients/:id', {
+    preHandler: [requirePermission(Permission.INVENTORY_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    await withTransaction(async (client) => {
+      await client.query('DELETE FROM branch_stocks WHERE ingredient_id = $1 AND tenant_id = $2', [id, tenantId]);
+      await client.query('DELETE FROM recipe_ingredients WHERE ingredient_id = $1 AND tenant_id = $2', [id, tenantId]);
+      await client.query('DELETE FROM ingredients WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+    }, { tenantId });
+
+    return reply.send({ message: 'Ingredient deleted successfully' });
+  });
+
   /**
    * Recipes Management
    */
@@ -438,6 +480,43 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({ supplier: rows[0] });
   });
 
+  fastify.put('/api/inventory/suppliers/:id', {
+    preHandler: [requirePermission(Permission.PURCHASES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    const { name, contactPerson, phone, email, address, taxNumber } = req.body as any;
+
+    const { rows } = await query(
+      `
+      UPDATE suppliers
+      SET name = COALESCE($1, name),
+          contact_person = COALESCE($2, contact_person),
+          phone = COALESCE($3, phone),
+          email = COALESCE($4, email),
+          address = COALESCE($5, address),
+          tax_number = COALESCE($6, tax_number)
+      WHERE id = $7 AND tenant_id = $8
+      RETURNING *
+      `,
+      [name, contactPerson, phone, email, address, taxNumber, id, tenantId],
+      { tenantId }
+    );
+
+    if (rows.length === 0) return reply.status(404).send({ error: 'Supplier not found' });
+    return reply.send({ supplier: rows[0] });
+  });
+
+  fastify.delete('/api/inventory/suppliers/:id', {
+    preHandler: [requirePermission(Permission.PURCHASES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    await query('DELETE FROM suppliers WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+    return reply.send({ message: 'Supplier deleted successfully' });
+  });
+
   /**
    * Purchase Invoices & Receiving
    */
@@ -558,6 +637,26 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       return reply.status(400).send({ error: err.message });
     }
+  });
+
+  fastify.delete('/api/inventory/purchases/:id', {
+    preHandler: [requirePermission(Permission.PURCHASES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    const { rows } = await query('SELECT status FROM purchase_invoices WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+    if (rows.length === 0) return reply.status(404).send({ error: 'Purchase invoice not found' });
+    if (rows[0].status === 'RECEIVED') {
+      return reply.status(400).send({ error: 'Cannot delete received purchase invoice as stock is already posted to FIFO lots' });
+    }
+
+    await withTransaction(async (client) => {
+      await client.query('DELETE FROM purchase_items WHERE purchase_id = $1 AND tenant_id = $2', [id, tenantId]);
+      await client.query('DELETE FROM purchase_invoices WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+    }, { tenantId });
+
+    return reply.send({ message: 'Purchase invoice deleted successfully' });
   });
 
   /**

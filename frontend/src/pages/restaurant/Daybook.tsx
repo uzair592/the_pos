@@ -78,6 +78,97 @@ export const Daybook: React.FC = () => {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState<any | null>(null);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<any | null>(null);
+  const [selectedDaybookPurchase, setSelectedDaybookPurchase] = useState<any | null>(null);
+  const [selectedDaybookExpense, setSelectedDaybookExpense] = useState<any | null>(null);
+  const [selectedDaybookShift, setSelectedDaybookShift] = useState<any | null>(null);
+
+  const handlePrintDaybookPurchase = (p: any) => {
+    const printWindow = window.open('', '_blank', 'width=450,height=600');
+    if (!printWindow) { window.print(); return; }
+    const html = `
+      <html><head><title>Purchase Voucher - ${p.invoiceNumber}</title>
+      <style>body{font-family:monospace;font-size:12px;padding:15px;}.row{display:flex;justify-content:space-between;margin:4px 0;}.bold{font-weight:bold;}.divider{border-bottom:1px dashed #000;margin:8px 0;}</style></head>
+      <body>
+      <h2 style="text-align:center;margin:0;">${tenant?.name || 'RESTAURANT POS'}</h2>
+      <h3 style="text-align:center;margin:4px 0;">INWARD PURCHASE VOUCHER</h3>
+      <div class="divider"></div>
+      <div class="row"><span>Invoice #:</span><span class="bold">${p.invoiceNumber}</span></div>
+      <div class="row"><span>Supplier:</span><span>${p.supplierName}</span></div>
+      <div class="row"><span>Branch:</span><span>${p.branchName}</span></div>
+      <div class="row"><span>Received By:</span><span>${p.receivedByName || 'Inventory Manager'}</span></div>
+      <div class="row"><span>Items Count:</span><span>${p.itemsCount} lines</span></div>
+      <div class="divider"></div>
+      <div class="row bold"><span>Total Amount:</span><span>${currencySymbol} ${Number(p.totalAmount).toLocaleString()}</span></div>
+      <div class="row"><span>Paid Amount:</span><span>${currencySymbol} ${Number(p.paidAmount).toLocaleString()}</span></div>
+      <div class="row bold"><span>Balance Payable:</span><span>${currencySymbol} ${Number(p.balancePayable).toLocaleString()}</span></div>
+      <div class="divider"></div>
+      <p style="text-align:center;font-size:10px;">Daybook Inward Voucher</p>
+      </body></html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+  };
+
+  const handlePrintDaybookExpense = (e: any) => {
+    const printWindow = window.open('', '_blank', 'width=450,height=600');
+    if (!printWindow) { window.print(); return; }
+    const html = `
+      <html><head><title>Expense Voucher</title>
+      <style>body{font-family:monospace;font-size:12px;padding:15px;}.row{display:flex;justify-content:space-between;margin:4px 0;}.bold{font-weight:bold;}.divider{border-bottom:1px dashed #000;margin:8px 0;}</style></head>
+      <body>
+      <h2 style="text-align:center;margin:0;">${tenant?.name || 'RESTAURANT POS'}</h2>
+      <h3 style="text-align:center;margin:4px 0;">EXPENSE PAYMENT VOUCHER</h3>
+      <div class="divider"></div>
+      <div class="row"><span>Category:</span><span class="bold">${e.categoryName}</span></div>
+      <div class="row"><span>Description:</span><span>${e.description}</span></div>
+      <div class="row"><span>Branch:</span><span>${e.branchName}</span></div>
+      <div class="row"><span>Payment Method:</span><span>${e.paymentMethod}</span></div>
+      <div class="row"><span>Recorded By:</span><span>${e.recordedByName || 'Staff'}</span></div>
+      <div class="row"><span>Time:</span><span>${new Date(e.createdAt).toLocaleString()}</span></div>
+      <div class="divider"></div>
+      <div class="row bold"><span>Total Paid:</span><span>${currencySymbol} ${Number(e.amount).toLocaleString()}</span></div>
+      <div class="divider"></div>
+      <p style="text-align:center;font-size:10px;">Daybook Operational Expense Voucher</p>
+      </body></html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+  };
+
+  const handlePrintDaybookShift = (s: any) => {
+    const printWindow = window.open('', '_blank', 'width=450,height=600');
+    if (!printWindow) { window.print(); return; }
+    const html = `
+      <html><head><title>Shift Report - ${s.cashierName}</title>
+      <style>body{font-family:monospace;font-size:12px;padding:15px;}.row{display:flex;justify-content:space-between;margin:4px 0;}.bold{font-weight:bold;}.divider{border-bottom:1px dashed #000;margin:8px 0;}</style></head>
+      <body>
+      <h2 style="text-align:center;margin:0;">${tenant?.name || 'RESTAURANT POS'}</h2>
+      <h3 style="text-align:center;margin:4px 0;">SHIFT RECONCILIATION SUMMARY</h3>
+      <div class="divider"></div>
+      <div class="row"><span>Cashier:</span><span class="bold">${s.cashierName}</span></div>
+      <div class="row"><span>Branch:</span><span>${s.branchName}</span></div>
+      <div class="row"><span>Opened:</span><span>${new Date(s.openedAt).toLocaleTimeString()}</span></div>
+      <div class="row"><span>Closed:</span><span>${s.closedAt ? new Date(s.closedAt).toLocaleTimeString() : 'Open'}</span></div>
+      <div class="divider"></div>
+      <div class="row"><span>Opening Cash:</span><span>${currencySymbol} ${Number(s.openingCash).toLocaleString()}</span></div>
+      <div class="row"><span>Cash Sales:</span><span>+${currencySymbol} ${Number(s.cashSales).toLocaleString()}</span></div>
+      <div class="row"><span>Cash In / Out:</span><span>+${s.cashIn} / -${s.cashOut}</span></div>
+      <div class="row bold"><span>Expected Cash:</span><span>${currencySymbol} ${Number(s.expectedCash).toLocaleString()}</span></div>
+      <div class="row bold"><span>Actual Counted:</span><span>${s.actualCash !== null ? `${currencySymbol} ${Number(s.actualCash).toLocaleString()}` : '—'}</span></div>
+      <div class="row bold"><span>Variance:</span><span>${s.variance !== null ? `${s.variance > 0 ? '+' : ''}${currencySymbol} ${Number(s.variance).toLocaleString()}` : '—'}</span></div>
+      <div class="divider"></div>
+      <p style="text-align:center;font-size:10px;">Daybook Cashier Reconciliation</p>
+      </body></html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+  };
 
   // Catalog helpers for modals
   const [expenseCategories, setExpenseCategories] = useState<any[]>([]);
@@ -799,7 +890,7 @@ export const Daybook: React.FC = () => {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                 {(!daybook?.salesOrders || daybook.salesOrders.length === 0) ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
+                    <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
                       No sales orders found for this date.
                     </td>
                   </tr>
@@ -891,6 +982,7 @@ export const Daybook: React.FC = () => {
                   <th className="px-4 py-3 text-right">Total Amount</th>
                   <th className="px-4 py-3 text-right">Paid Amount</th>
                   <th className="px-4 py-3 text-right">Balance Due</th>
+                  <th className="px-4 py-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
@@ -937,6 +1029,22 @@ export const Daybook: React.FC = () => {
                       </td>
                       <td className="px-4 py-3 text-right font-bold font-mono text-amber-600 dark:text-amber-400">
                         {currencySymbol} {Number(p.balancePayable).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <ActionMenu
+                          items={[
+                            {
+                              label: 'View Invoice Details',
+                              icon: Eye,
+                              onClick: () => setSelectedDaybookPurchase(p),
+                            },
+                            {
+                              label: 'Print Purchase Slip',
+                              icon: Printer,
+                              onClick: () => handlePrintDaybookPurchase(p),
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))
@@ -1057,12 +1165,13 @@ export const Daybook: React.FC = () => {
                     <th className="px-4 py-2.5">Recorded By</th>
                     <th className="px-4 py-2.5">Time</th>
                     <th className="px-4 py-2.5 text-right">Amount</th>
+                    <th className="px-4 py-2.5 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                   {(!daybook?.expenses || daybook.expenses.length === 0) ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                         No operational expenses recorded for this date.
                       </td>
                     </tr>
@@ -1093,6 +1202,22 @@ export const Daybook: React.FC = () => {
                           </td>
                           <td className="px-4 py-3 text-right font-black font-mono text-rose-600 dark:text-rose-400">
                             {currencySymbol} {Number(e.amount).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                            <ActionMenu
+                              items={[
+                                {
+                                  label: 'View Voucher Details',
+                                  icon: Eye,
+                                  onClick: () => setSelectedDaybookExpense(e),
+                                },
+                                {
+                                  label: 'Print Payment Slip',
+                                  icon: Printer,
+                                  onClick: () => handlePrintDaybookExpense(e),
+                                },
+                              ]}
+                            />
                           </td>
                         </tr>
                       );
@@ -1203,12 +1328,13 @@ export const Daybook: React.FC = () => {
                   <th className="px-4 py-3 text-right">Actual Count</th>
                   <th className="px-4 py-3 text-right">Variance</th>
                   <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                 {(!daybook?.shifts || daybook.shifts.length === 0) ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center text-slate-400">
+                    <td colSpan={12} className="px-4 py-8 text-center text-slate-400">
                       No cashier register shifts opened or closed on this date.
                     </td>
                   </tr>
@@ -1260,6 +1386,22 @@ export const Daybook: React.FC = () => {
                           >
                             {s.status}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <ActionMenu
+                            items={[
+                              {
+                                label: 'View Shift Breakdown',
+                                icon: Eye,
+                                onClick: () => setSelectedDaybookShift(s),
+                              },
+                              {
+                                label: 'Print Z-Report Slip',
+                                icon: Printer,
+                                onClick: () => handlePrintDaybookShift(s),
+                              },
+                            ]}
+                          />
                         </td>
                       </tr>
                     );
@@ -1660,6 +1802,212 @@ export const Daybook: React.FC = () => {
           onClose={() => setReceiptOrder(null)}
         />
       )}
+
+      {/* ======================================================== */}
+      {/* MODAL: DAYBOOK PURCHASE DETAILS */}
+      {/* ======================================================== */}
+      {selectedDaybookPurchase && (
+        <Modal
+          isOpen={!!selectedDaybookPurchase}
+          onClose={() => setSelectedDaybookPurchase(null)}
+          title="Inward Purchase Invoice Details"
+          maxWidth="md"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Invoice #</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">{selectedDaybookPurchase.invoiceNumber}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Supplier</span>
+                <span className="font-bold text-slate-900 dark:text-white">{selectedDaybookPurchase.supplierName}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Branch</span>
+                <span className="text-slate-700 dark:text-slate-300">{selectedDaybookPurchase.branchName}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Received By</span>
+                <span className="text-slate-700 dark:text-slate-300">{selectedDaybookPurchase.receivedByName || 'Inventory Manager'}</span>
+              </div>
+            </div>
+
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 p-3 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">Total Purchase Amount:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">{currencySymbol} {Number(selectedDaybookPurchase.totalAmount).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between pt-2">
+                <span className="text-slate-600 dark:text-slate-400">Paid Amount:</span>
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{currencySymbol} {Number(selectedDaybookPurchase.paidAmount).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between pt-2">
+                <span className="text-slate-600 dark:text-slate-400">Outstanding Balance:</span>
+                <span className="font-mono font-bold text-amber-600 dark:text-amber-400">{currencySymbol} {Number(selectedDaybookPurchase.balancePayable).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => handlePrintDaybookPurchase(selectedDaybookPurchase)}
+                className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Slip</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDaybookPurchase(null)}
+                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: DAYBOOK EXPENSE DETAILS */}
+      {/* ======================================================== */}
+      {selectedDaybookExpense && (
+        <Modal
+          isOpen={!!selectedDaybookExpense}
+          onClose={() => setSelectedDaybookExpense(null)}
+          title="Operational Expense Particulars"
+          maxWidth="md"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-400 text-[10px] uppercase font-semibold">Category</span>
+                <span className="font-bold text-rose-600 dark:text-rose-400">{selectedDaybookExpense.categoryName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 text-[10px] uppercase font-semibold">Description</span>
+                <span className="font-medium text-slate-800 dark:text-slate-200">{selectedDaybookExpense.description}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 text-[10px] uppercase font-semibold">Branch</span>
+                <span className="text-slate-700 dark:text-slate-300">{selectedDaybookExpense.branchName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 text-[10px] uppercase font-semibold">Payment Method</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">{selectedDaybookExpense.paymentMethod}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 text-[10px] uppercase font-semibold">Recorded By</span>
+                <span className="text-slate-700 dark:text-slate-300">{selectedDaybookExpense.recordedByName || 'Staff'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 text-[10px] uppercase font-semibold">Time</span>
+                <span className="text-slate-600 dark:text-slate-400">{new Date(selectedDaybookExpense.createdAt).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 dark:border-slate-700 pt-2 font-bold text-sm">
+                <span>Amount Paid:</span>
+                <span className="font-mono text-rose-600 dark:text-rose-400">{currencySymbol} {Number(selectedDaybookExpense.amount).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => handlePrintDaybookExpense(selectedDaybookExpense)}
+                className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Voucher</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDaybookExpense(null)}
+                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: DAYBOOK SHIFT DETAILS */}
+      {/* ======================================================== */}
+      {selectedDaybookShift && (
+        <Modal
+          isOpen={!!selectedDaybookShift}
+          onClose={() => setSelectedDaybookShift(null)}
+          title="Cashier Shift Reconciliation"
+          maxWidth="md"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Cashier</span>
+                <span className="font-bold text-slate-900 dark:text-white">{selectedDaybookShift.cashierName}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Branch</span>
+                <span className="text-slate-700 dark:text-slate-300">{selectedDaybookShift.branchName}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Opened</span>
+                <span className="text-slate-700 dark:text-slate-300 font-mono">{new Date(selectedDaybookShift.openedAt).toLocaleTimeString()}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Closed</span>
+                <span className="text-slate-700 dark:text-slate-300 font-mono">{selectedDaybookShift.closedAt ? new Date(selectedDaybookShift.closedAt).toLocaleTimeString() : 'In Progress'}</span>
+              </div>
+            </div>
+
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 p-3 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-600 dark:text-slate-400">Opening Cash Float:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">{currencySymbol} {Number(selectedDaybookShift.openingCash).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between pt-2">
+                <span className="text-slate-600 dark:text-slate-400">+ Cash Sales Revenue:</span>
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">+{currencySymbol} {Number(selectedDaybookShift.cashSales).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between pt-2">
+                <span className="text-slate-600 dark:text-slate-400">Expected Drawer Cash:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">{currencySymbol} {Number(selectedDaybookShift.expectedCash).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between pt-2">
+                <span className="text-slate-600 dark:text-slate-400">Actual Counted Cash:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">{selectedDaybookShift.actualCash !== null ? `${currencySymbol} ${Number(selectedDaybookShift.actualCash).toLocaleString()}` : '—'}</span>
+              </div>
+              <div className="flex justify-between pt-2 font-bold">
+                <span>Cash Variance:</span>
+                <span className={selectedDaybookShift.variance === 0 ? 'text-emerald-600' : selectedDaybookShift.variance > 0 ? 'text-blue-600' : 'text-rose-600'}>
+                  {selectedDaybookShift.variance !== null ? `${selectedDaybookShift.variance > 0 ? '+' : ''}${currencySymbol} ${Number(selectedDaybookShift.variance).toLocaleString()}` : '—'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => handlePrintDaybookShift(selectedDaybookShift)}
+                className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Z-Report</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDaybookShift(null)}
+                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
     </div>
   );
 };

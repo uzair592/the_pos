@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { StatCard } from '../../components/common/StatCard.js';
+import { ActionMenu } from '../../components/common/ActionMenu.js';
+import { Modal } from '../../components/common/Modal.js';
+import { ReceiptModal } from '../../components/common/ReceiptModal.js';
 import {
   DollarSign,
   ShoppingBag,
@@ -28,6 +31,8 @@ import {
   MapPin,
   Flame,
   CheckCircle,
+  Eye,
+  Printer,
 } from 'lucide-react';
 import { FeatureKey } from '@pos/shared';
 import { getTodayRangeISO } from '../../utils/dateUtils.js';
@@ -41,6 +46,17 @@ export const RestaurantDashboard: React.FC = () => {
   const [topProducts, setTopProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState<any | null>(null);
+  const [receiptOrder, setReceiptOrder] = useState<any | null>(null);
+
+  const handleViewOrderDetail = async (orderId: string) => {
+    try {
+      const data = await api.get(`/orders/${orderId}`);
+      setSelectedOrderDetail(data.order);
+    } catch (err: any) {
+      alert(err.message || 'Failed to fetch order details');
+    }
+  };
 
   const currency = tenant?.currency || 'PKR';
   const currencySymbol = tenant?.currency_symbol || 'Rs.';
@@ -584,6 +600,20 @@ export const RestaurantDashboard: React.FC = () => {
                       {currencySymbol} {Number(o.grand_total).toLocaleString()}
                     </span>
                     {renderStatusBadge(o.status)}
+                    <ActionMenu
+                      items={[
+                        {
+                          label: 'View Order Breakdown',
+                          icon: Eye,
+                          onClick: () => handleViewOrderDetail(o.id),
+                        },
+                        {
+                          label: 'Print Bill / Receipt',
+                          icon: Printer,
+                          onClick: () => setReceiptOrder(o),
+                        },
+                      ]}
+                    />
                   </div>
                 </div>
               ))
@@ -591,6 +621,101 @@ export const RestaurantDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal: Order Details */}
+      {selectedOrderDetail && (
+        <Modal
+          isOpen={!!selectedOrderDetail}
+          onClose={() => setSelectedOrderDetail(null)}
+          title={`Order Breakdown #${selectedOrderDetail.order_number}`}
+          maxWidth="md"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Type & Table</span>
+                <span className="font-bold text-slate-900 dark:text-white">
+                  {selectedOrderDetail.order_type} {selectedOrderDetail.table_name ? `• Table ${selectedOrderDetail.table_name}` : ''}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Status</span>
+                <span className="font-bold uppercase text-brand-600 dark:text-brand-400">
+                  {selectedOrderDetail.status}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Created At</span>
+                <span className="text-slate-700 dark:text-slate-300">
+                  {new Date(selectedOrderDetail.created_at).toLocaleString()}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Server / Cashier</span>
+                <span className="text-slate-700 dark:text-slate-300">
+                  {selectedOrderDetail.server_name || selectedOrderDetail.cashier_name || 'Staff'}
+                </span>
+              </div>
+            </div>
+
+            {selectedOrderDetail.customer_name && (
+              <div className="p-3 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl space-y-1 text-[11px]">
+                <p><strong>Customer:</strong> {selectedOrderDetail.customer_name} ({selectedOrderDetail.customer_phone || ''})</p>
+                {selectedOrderDetail.delivery_address && <p><strong>Address:</strong> {selectedOrderDetail.delivery_address}</p>}
+              </div>
+            )}
+
+            <div>
+              <h5 className="font-bold mb-1.5">Line Items:</h5>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+                {(selectedOrderDetail.items || []).map((it: any) => (
+                  <div key={it.id} className="p-2.5 flex justify-between items-center bg-white dark:bg-slate-900">
+                    <div>
+                      <span className="font-bold text-slate-900 dark:text-white">{it.quantity}x {it.product_name}</span>
+                      {it.variant_name && <span className="text-slate-400 ml-1">({it.variant_name})</span>}
+                    </div>
+                    <span className="font-mono font-bold">{currencySymbol} {Number(it.total_price).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-2 font-bold text-sm border-t border-slate-100 dark:border-slate-800">
+              <span>Grand Total:</span>
+              <span className="font-mono text-emerald-600">{currencySymbol} {Number(selectedOrderDetail.grand_total).toLocaleString()}</span>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setReceiptOrder(selectedOrderDetail);
+                }}
+                className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Bill</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedOrderDetail(null)}
+                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Receipt Modal */}
+      {receiptOrder && (
+        <ReceiptModal
+          isOpen={!!receiptOrder}
+          receiptData={receiptOrder}
+          onClose={() => setReceiptOrder(null)}
+        />
+      )}
     </div>
   );
 };

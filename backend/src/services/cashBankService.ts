@@ -193,6 +193,102 @@ export async function updateBankAccount(dto: UpdateBankAccountDTO): Promise<Bank
 }
 
 /**
+ * 3b. Delete / Deactivate Bank Account
+ */
+export async function deleteBankAccount(tenantId: string, id: string): Promise<{ success: boolean; message: string }> {
+  return await withTransaction(async (client) => {
+    const { rows } = await client.query(
+      `SELECT * FROM bank_accounts WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId]
+    );
+    if (rows.length === 0) {
+      throw new Error('Bank account not found');
+    }
+
+    const account = rows[0];
+
+    // If it was default, reassign default to another active account if exists
+    if (account.is_default) {
+      const otherRes = await client.query(
+        `SELECT id FROM bank_accounts WHERE tenant_id = $1 AND id != $2 AND is_active = true LIMIT 1`,
+        [tenantId, id]
+      );
+      if (otherRes.rows.length > 0) {
+        await client.query(
+          `UPDATE bank_accounts SET is_default = true WHERE id = $1 AND tenant_id = $2`,
+          [otherRes.rows[0].id, tenantId]
+        );
+      }
+    }
+
+    // Soft delete to preserve foreign keys on transactions / transfers
+    await client.query(
+      `UPDATE bank_accounts SET is_active = false, is_default = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId]
+    );
+
+    return { success: true, message: 'Bank account deleted successfully' };
+  }, { tenantId });
+}
+
+/**
+ * 4b. Reverse & Delete Fund Transfer
+ */
+export async function deleteCashBankTransfer(tenantId: string, id: string): Promise<{ success: boolean; message: string }> {
+  return await withTransaction(async (client) => {
+    const { rows } = await client.query(
+      `SELECT * FROM cash_bank_transfers WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId]
+    );
+
+    if (rows.length === 0) {
+      throw new Error('Fund transfer voucher not found');
+    }
+
+    const t = rows[0];
+    const amount = Number(t.amount);
+
+    // Reverse balances
+    if (t.transfer_type === CashBankTransferType.CASH_TO_BANK) {
+      if (t.to_bank_account_id) {
+        await client.query(
+          `UPDATE bank_accounts SET current_balance = current_balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+          [amount, t.to_bank_account_id, tenantId]
+        );
+      }
+    } else if (t.transfer_type === CashBankTransferType.BANK_TO_CASH) {
+      if (t.from_bank_account_id) {
+        await client.query(
+          `UPDATE bank_accounts SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+          [amount, t.from_bank_account_id, tenantId]
+        );
+      }
+    } else if (t.transfer_type === CashBankTransferType.BANK_TO_BANK) {
+      if (t.from_bank_account_id) {
+        await client.query(
+          `UPDATE bank_accounts SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+          [amount, t.from_bank_account_id, tenantId]
+        );
+      }
+      if (t.to_bank_account_id) {
+        await client.query(
+          `UPDATE bank_accounts SET current_balance = current_balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+          [amount, t.to_bank_account_id, tenantId]
+        );
+      }
+    }
+
+    // Delete record
+    await client.query(
+      `DELETE FROM cash_bank_transfers WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId]
+    );
+
+    return { success: true, message: 'Fund transfer reversed and deleted successfully' };
+  }, { tenantId });
+}
+
+/**
  * 4. Execute Internal Fund Transfer (Cash to Bank / Bank to Cash / Bank to Bank)
  */
 export async function createCashBankTransfer(dto: CreateCashBankTransferDTO): Promise<CashBankTransfer> {

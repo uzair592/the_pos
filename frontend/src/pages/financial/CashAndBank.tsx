@@ -8,6 +8,7 @@ import { ActionMenu } from '../../components/common/ActionMenu.js';
 import { exportCashBankLedgerPdf } from '../../utils/pdfExport.js';
 import {
   Landmark,
+  Trash2,
   Wallet,
   Edit2,
   Eye,
@@ -65,6 +66,12 @@ export const CashAndBank: React.FC = () => {
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Transaction Particulars & Voucher Modals
+  const [selectedLedgerItem, setSelectedLedgerItem] = useState<any | null>(null);
+  const [isLedgerDetailsOpen, setIsLedgerDetailsOpen] = useState(false);
+  const [selectedTransferVoucher, setSelectedTransferVoucher] = useState<any | null>(null);
+  const [isTransferVoucherOpen, setIsTransferVoucherOpen] = useState(false);
 
   // Transfer Form State (Contra Voucher)
   const [transferForm, setTransferForm] = useState({
@@ -364,6 +371,50 @@ export const CashAndBank: React.FC = () => {
       toastError(err.message || 'Failed to save bank account');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Handle Delete Bank Account
+  const handleDeleteBankAccount = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete bank account "${name}"? This account will be deactivated and hidden from active books.`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/financial/bank-accounts/${id}`);
+      success(`Bank account "${name}" deleted successfully`);
+      if (selectedAccountId === id) {
+        setSelectedAccountId('ALL');
+      }
+      fetchData(true);
+    } catch (err: any) {
+      toastError(err.message || 'Failed to delete bank account');
+    }
+  };
+
+  // Handle Set Default Bank Account
+  const handleSetDefaultBankAccount = async (id: string, name: string) => {
+    try {
+      await api.put(`/financial/bank-accounts/${id}`, { isDefault: true });
+      success(`"${name}" is now the default POS bank account`);
+      fetchData(true);
+    } catch (err: any) {
+      toastError(err.message || 'Failed to update default bank account');
+    }
+  };
+
+  // Handle Reverse and Delete Fund Transfer Voucher
+  const handleDeleteTransfer = async (id: string, ref: string, amount: number) => {
+    if (!window.confirm(`Are you sure you want to reverse and delete this fund transfer (${ref || 'Slip #' + id.slice(0, 8)}) of ${currencySymbol} ${amount.toLocaleString()}?\n\nThis will restore the original balances in the respective accounts.`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/financial/cash-bank/transfers/${id}`);
+      success('Fund transfer reversed and voucher deleted successfully');
+      fetchData(true);
+    } catch (err: any) {
+      toastError(err.message || 'Failed to delete fund transfer');
     }
   };
 
@@ -689,39 +740,121 @@ export const CashAndBank: React.FC = () => {
                 </span>
                 <div className="space-y-1">
                   {filteredBankAccounts.map((b) => (
-                    <button
+                    <div
                       key={b.id}
-                      onClick={() => setSelectedAccountId(b.id)}
-                      className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between ${
+                      className={`w-full p-2.5 rounded-xl transition-all border flex items-center justify-between group ${
                         selectedAccountId === b.id
                           ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/40 shadow-sm'
-                          : 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                          : 'border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/60'
                       }`}
                     >
-                      <div className="flex items-center space-x-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black">
-                          <Landmark className="w-4 h-4" />
+                      <button
+                        onClick={() => setSelectedAccountId(b.id)}
+                        className="flex-1 text-left flex items-center justify-between min-w-0 pr-2"
+                      >
+                        <div className="flex items-center space-x-2 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0">
+                            <Landmark className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0 truncate">
+                            <span className="font-extrabold text-xs text-slate-900 dark:text-white block truncate">
+                              {b.bankName}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-semibold block truncate">
+                              {b.accountName}
+                            </span>
+                          </div>
                         </div>
-                        <div className="max-w-[130px] truncate">
-                          <span className="font-extrabold text-xs text-slate-900 dark:text-white block truncate">
-                            {b.bankName}
+                        <div className="text-right shrink-0 ml-1">
+                          <span className="font-black text-xs text-slate-900 dark:text-white block">
+                            {currencySymbol} {Number(b.currentBalance).toLocaleString()}
                           </span>
-                          <span className="text-[10px] text-slate-400 font-semibold block truncate">
-                            {b.accountName}
-                          </span>
+                          {b.isDefault && (
+                            <span className="text-[9px] font-bold text-brand-600 dark:text-brand-400 uppercase">
+                              Default
+                            </span>
+                          )}
                         </div>
+                      </button>
+
+                      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <ActionMenu
+                          items={[
+                            {
+                              label: 'View Account Book',
+                              icon: Eye,
+                              onClick: () => {
+                                setSelectedAccountId(b.id);
+                                setViewMode('MASTER_DETAIL');
+                              },
+                            },
+                            {
+                              label: 'Edit Bank Account',
+                              icon: Edit2,
+                              onClick: () => {
+                                setAccountForm({
+                                  id: b.id,
+                                  accountName: b.accountName,
+                                  bankName: b.bankName,
+                                  accountNumber: b.accountNumber || '',
+                                  iban: b.iban || '',
+                                  branchCode: b.branchCode || '',
+                                  openingBalance: String(b.openingBalance),
+                                  isDefault: b.isDefault,
+                                });
+                                setIsAccountModalOpen(true);
+                              },
+                            },
+                            !b.isDefault && {
+                              label: 'Set as Default POS Bank',
+                              icon: CheckCircle2,
+                              onClick: () => handleSetDefaultBankAccount(b.id, b.bankName),
+                            },
+                            {
+                              label: 'Deposit Cash (+)',
+                              icon: ArrowDownRight,
+                              variant: 'success',
+                              onClick: () => {
+                                setTransferForm({
+                                  transferType: CashBankTransferType.CASH_TO_BANK,
+                                  fromBankAccountId: '',
+                                  toBankAccountId: b.id,
+                                  amount: '',
+                                  transferDate: new Date().toISOString().split('T')[0],
+                                  referenceNumber: '',
+                                  notes: `Deposit into ${b.bankName}`,
+                                });
+                                setIsTransferModalOpen(true);
+                              },
+                            },
+                            {
+                              label: 'Withdraw Float (-)',
+                              icon: ArrowUpRight,
+                              variant: 'warning',
+                              onClick: () => {
+                                setTransferForm({
+                                  transferType: CashBankTransferType.BANK_TO_CASH,
+                                  fromBankAccountId: b.id,
+                                  toBankAccountId: '',
+                                  amount: '',
+                                  transferDate: new Date().toISOString().split('T')[0],
+                                  referenceNumber: '',
+                                  notes: `Withdrawal from ${b.bankName}`,
+                                });
+                                setIsTransferModalOpen(true);
+                              },
+                            },
+                            {
+                              label: 'Delete Bank Account',
+                              icon: Trash2,
+                              variant: 'danger',
+                              divider: true,
+                              onClick: () => handleDeleteBankAccount(b.id, b.bankName),
+                            },
+                          ]}
+                        />
                       </div>
-                      <div className="text-right">
-                        <span className="font-black text-xs text-slate-900 dark:text-white block">
-                          {currencySymbol} {Number(b.currentBalance).toLocaleString()}
-                        </span>
-                        {b.isDefault && (
-                          <span className="text-[9px] font-bold text-brand-600 dark:text-brand-400 uppercase">
-                            Default
-                          </span>
-                        )}
-                      </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1011,13 +1144,17 @@ export const CashAndBank: React.FC = () => {
                                   label: 'View Particulars',
                                   icon: Eye,
                                   onClick: () => {
-                                    alert(`Transaction Details:\nType: ${row.typeLabel}\nAmount: ${currencySymbol} ${(row.inflow || row.outflow).toLocaleString()}\nRef: ${row.reference}\nStaff: ${row.recordedBy}\nNotes: ${row.notes}`);
+                                    setSelectedLedgerItem(row);
+                                    setIsLedgerDetailsOpen(true);
                                   },
                                 },
                                 {
                                   label: 'Print Voucher',
                                   icon: Printer,
-                                  onClick: () => setIsPrintModalOpen(true),
+                                  onClick: () => {
+                                    setSelectedLedgerItem(row);
+                                    setIsPrintModalOpen(true);
+                                  },
                                 },
                               ]}
                             />
@@ -1147,11 +1284,22 @@ export const CashAndBank: React.FC = () => {
                           setIsTransferModalOpen(true);
                         },
                       },
+                      !b.isDefault && {
+                        label: 'Set as Default POS Bank',
+                        icon: CheckCircle2,
+                        onClick: () => handleSetDefaultBankAccount(b.id, b.bankName),
+                      },
                       {
                         label: 'Print Account Statement',
                         icon: Printer,
                         divider: true,
                         onClick: () => setIsPrintModalOpen(true),
+                      },
+                      {
+                        label: 'Delete Bank Account',
+                        icon: Trash2,
+                        variant: 'danger',
+                        onClick: () => handleDeleteBankAccount(b.id, b.bankName),
                       },
                     ]}
                   />
@@ -1196,6 +1344,7 @@ export const CashAndBank: React.FC = () => {
                   <th className="py-3 px-4">Reference / Slip</th>
                   <th className="py-3 px-4">Recorded By</th>
                   <th className="py-3 px-4">Notes</th>
+                  <th className="py-3 px-4 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1253,6 +1402,35 @@ export const CashAndBank: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 text-slate-500 max-w-xs truncate" title={t.notes}>
                           {t.notes || '—'}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <ActionMenu
+                            items={[
+                              {
+                                label: 'View Transfer Voucher',
+                                icon: Eye,
+                                onClick: () => {
+                                  setSelectedTransferVoucher(t);
+                                  setIsTransferVoucherOpen(true);
+                                },
+                              },
+                              {
+                                label: 'Print Voucher Slip',
+                                icon: Printer,
+                                onClick: () => {
+                                  setSelectedTransferVoucher(t);
+                                  setIsTransferVoucherOpen(true);
+                                },
+                              },
+                              {
+                                label: 'Reverse & Delete Transfer',
+                                icon: Trash2,
+                                variant: 'danger',
+                                divider: true,
+                                onClick: () => handleDeleteTransfer(t.id, t.referenceNumber, Number(t.amount)),
+                              },
+                            ]}
+                          />
                         </td>
                       </tr>
                     );
@@ -1545,6 +1723,185 @@ export const CashAndBank: React.FC = () => {
             {isSubmitting ? 'Saving Account...' : accountForm.id ? 'Save Changes' : 'Create Bank Account'}
           </button>
         </form>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL: TRANSACTION PARTICULARS BREAKDOWN */}
+      {/* ========================================================================= */}
+      <Modal
+        isOpen={isLedgerDetailsOpen}
+        onClose={() => setIsLedgerDetailsOpen(false)}
+        title="Transaction Details & Particulars"
+        maxWidth="md"
+      >
+        {selectedLedgerItem && (
+          <div className="space-y-4 text-xs">
+            <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-bold block">Transaction Category</span>
+                <span className="font-extrabold text-sm text-slate-900 dark:text-white">
+                  {selectedLedgerItem.typeLabel}
+                </span>
+                <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                  Ref: {selectedLedgerItem.reference || 'N/A'}
+                </p>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 uppercase font-bold block">Amount</span>
+                <span className={`text-base font-black ${selectedLedgerItem.inflow > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {selectedLedgerItem.inflow > 0 ? '+' : '-'} {currencySymbol} {Number(selectedLedgerItem.inflow || selectedLedgerItem.outflow).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 border rounded-xl p-3 bg-white dark:bg-slate-900 space-y-2">
+              <div className="flex justify-between py-1">
+                <span className="text-slate-500 font-medium">Date & Time:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">
+                  {new Date(selectedLedgerItem.date).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-slate-500 font-medium">Account / Book:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">
+                  {selectedLedgerItem.accountName}
+                </span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-slate-500 font-medium">Running Balance After:</span>
+                <span className="font-mono font-black text-slate-900 dark:text-white">
+                  {currencySymbol} {Number(selectedLedgerItem.runningBalance).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-slate-500 font-medium">Recorded By:</span>
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  {selectedLedgerItem.recordedBy || 'System'}
+                </span>
+              </div>
+              {selectedLedgerItem.notes && (
+                <div className="py-1">
+                  <span className="text-slate-500 font-medium block">Narration / Notes:</span>
+                  <p className="text-slate-700 dark:text-slate-300 italic mt-0.5 bg-slate-50 dark:bg-slate-800/40 p-2 rounded-lg">
+                    {selectedLedgerItem.notes}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                onClick={() => setIsLedgerDetailsOpen(false)}
+                className="px-4 py-2 border rounded-xl text-slate-600 dark:text-slate-400 text-xs font-bold"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setIsLedgerDetailsOpen(false);
+                  setIsPrintModalOpen(true);
+                }}
+                className="px-4 py-2 bg-brand-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Ledger Statement</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL: FUND TRANSFER CONTRA VOUCHER DETAILS */}
+      {/* ========================================================================= */}
+      <Modal
+        isOpen={isTransferVoucherOpen}
+        onClose={() => setIsTransferVoucherOpen(false)}
+        title="Fund Transfer Voucher Details"
+        maxWidth="md"
+      >
+        {selectedTransferVoucher && (
+          <div className="space-y-4 text-xs">
+            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] text-emerald-800 dark:text-emerald-300 font-bold uppercase tracking-wider block">
+                  Contra Voucher # {selectedTransferVoucher.referenceNumber || selectedTransferVoucher.id.slice(0, 8)}
+                </span>
+                <h3 className="font-black text-lg text-emerald-950 dark:text-emerald-100 mt-0.5">
+                  {currencySymbol} {Number(selectedTransferVoucher.amount).toLocaleString()}
+                </h3>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 font-black text-[10px] uppercase">
+                {selectedTransferVoucher.transferType?.replace(/_/g, ' ')}
+              </span>
+            </div>
+
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 border rounded-xl p-3 bg-white dark:bg-slate-900 space-y-2">
+              <div className="flex justify-between py-1">
+                <span className="text-slate-500 font-medium">Transfer Date:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">
+                  {new Date(selectedTransferVoucher.createdAt).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-slate-500 font-medium">Source Account (From):</span>
+                <span className="font-bold text-rose-600 dark:text-rose-400">
+                  {selectedTransferVoucher.fromAccountName}
+                </span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-slate-500 font-medium">Destination Account (To):</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                  {selectedTransferVoucher.toAccountName}
+                </span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-slate-500 font-medium">Staff Member:</span>
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  {selectedTransferVoucher.recordedByName || 'Authorized Staff'}
+                </span>
+              </div>
+              {selectedTransferVoucher.notes && (
+                <div className="py-1">
+                  <span className="text-slate-500 font-medium block">Narration / Notes:</span>
+                  <p className="text-slate-700 dark:text-slate-300 italic mt-0.5 bg-slate-50 dark:bg-slate-800/40 p-2 rounded-lg">
+                    {selectedTransferVoucher.notes}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  const t = selectedTransferVoucher;
+                  setIsTransferVoucherOpen(false);
+                  handleDeleteTransfer(t.id, t.referenceNumber, Number(t.amount));
+                }}
+                className="px-3 py-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-bold transition-colors"
+              >
+                Reverse & Delete
+              </button>
+
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setIsTransferVoucherOpen(false)}
+                  className="px-4 py-2 border rounded-xl text-slate-600 dark:text-slate-400 text-xs font-bold"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-brand-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Voucher</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* ========================================================================= */}

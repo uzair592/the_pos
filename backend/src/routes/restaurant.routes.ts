@@ -235,25 +235,64 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
     const tenantId = req.user!.tenantId!;
     const body = req.body as any;
 
+    if (body.isMainBranch === true) {
+      await query('UPDATE branches SET is_main_branch = false WHERE tenant_id = $1', [tenantId], { tenantId });
+    }
+
     const { rows } = await query(
       `
       UPDATE branches
       SET name = COALESCE($1, name),
-          phone = COALESCE($2, phone),
-          email = COALESCE($3, email),
-          address = COALESCE($4, address),
-          city = COALESCE($5, city),
-          is_active = COALESCE($6, is_active),
+          code = COALESCE($2, code),
+          phone = COALESCE($3, phone),
+          email = COALESCE($4, email),
+          address = COALESCE($5, address),
+          city = COALESCE($6, city),
+          is_main_branch = COALESCE($7, is_main_branch),
+          is_active = COALESCE($8, is_active),
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $7 AND tenant_id = $8
+      WHERE id = $9 AND tenant_id = $10
       RETURNING *
       `,
-      [body.name, body.phone, body.email, body.address, body.city, body.isActive, id, tenantId],
+      [
+        body.name,
+        body.code ? body.code.toUpperCase() : null,
+        body.phone,
+        body.email,
+        body.address,
+        body.city,
+        body.isMainBranch !== undefined ? body.isMainBranch : null,
+        body.isActive !== undefined ? body.isActive : null,
+        id,
+        tenantId,
+      ],
       { tenantId }
     );
 
     if (rows.length === 0) return reply.status(404).send({ error: 'Branch not found' });
     return reply.send({ branch: rows[0] });
+  });
+
+  fastify.delete('/api/restaurant/branches/:id', {
+    preHandler: [requirePermission(Permission.BRANCHES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    const { rows } = await query('SELECT is_main_branch FROM branches WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+    if (rows.length === 0) return reply.status(404).send({ error: 'Branch not found' });
+    if (rows[0].is_main_branch) {
+      return reply.status(400).send({ error: 'Cannot delete the primary flagship branch. Please designate another branch as primary first.' });
+    }
+
+    try {
+      await query('DELETE FROM branches WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+      return reply.send({ message: 'Branch deleted successfully' });
+    } catch (err: any) {
+      // Historical references exist - soft deactivate
+      await query('UPDATE branches SET is_active = false WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+      return reply.send({ message: 'Branch deactivated due to existing historical transaction records' });
+    }
   });
 
   /**

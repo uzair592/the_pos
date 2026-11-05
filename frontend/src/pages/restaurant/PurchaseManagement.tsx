@@ -6,6 +6,7 @@ import { Modal } from '../../components/common/Modal.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
 import {
   Truck,
+  Edit2,
   Plus,
   Search,
   FileText,
@@ -68,6 +69,17 @@ export const PurchaseManagement: React.FC = () => {
 
   // New Supplier Form
   const [supplierForm, setSupplierForm] = useState({
+    name: '',
+    contactPerson: '',
+    phone: '',
+    email: '',
+    address: '',
+    taxNumber: '',
+  });
+
+  const [isEditSupplierOpen, setIsEditSupplierOpen] = useState(false);
+  const [editSupplierForm, setEditSupplierForm] = useState({
+    id: '',
     name: '',
     contactPerson: '',
     phone: '',
@@ -277,6 +289,44 @@ export const PurchaseManagement: React.FC = () => {
       }
     } catch (err: any) {
       error(err.message || 'Failed to create supplier');
+    }
+  };
+
+  const handleUpdateSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.put(`/inventory/suppliers/${editSupplierForm.id}`, editSupplierForm);
+      success('Supplier updated successfully!');
+      setIsEditSupplierOpen(false);
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to update supplier');
+    }
+  };
+
+  const handleDeleteSupplier = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete supplier "${name}"?`)) {
+      return;
+    }
+    try {
+      await api.delete(`/inventory/suppliers/${id}`);
+      success(`Supplier "${name}" deleted successfully`);
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to delete supplier');
+    }
+  };
+
+  const handleDeletePurchase = async (id: string, invNum: string) => {
+    if (!window.confirm(`Are you sure you want to cancel and delete draft purchase invoice "${invNum}"?`)) {
+      return;
+    }
+    try {
+      await api.delete(`/inventory/purchases/${id}`);
+      success(`Purchase invoice "${invNum}" deleted successfully`);
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to delete purchase invoice');
     }
   };
 
@@ -576,6 +626,13 @@ export const PurchaseManagement: React.FC = () => {
                                 icon: Printer,
                                 onClick: () => handleViewInvoiceDetails(p),
                               },
+                              isDraft && {
+                                label: 'Cancel & Delete Invoice',
+                                icon: Trash2,
+                                variant: 'danger',
+                                divider: true,
+                                onClick: () => handleDeletePurchase(p.id, p.invoice_number),
+                              },
                             ]}
                           />
                         </td>
@@ -621,18 +678,19 @@ export const PurchaseManagement: React.FC = () => {
                   <th className="px-4 py-3">Address</th>
                   <th className="px-4 py-3 text-right">Balance Payable</th>
                   <th className="px-4 py-3 text-right">Created</th>
+                  <th className="px-4 py-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-slate-700 dark:text-slate-200 font-medium">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                    <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                       Loading suppliers...
                     </td>
                   </tr>
                 ) : filteredSuppliers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
                       <Users className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
                       <p className="font-bold text-slate-600 dark:text-slate-300">No suppliers registered</p>
                       <p className="text-[11px] text-slate-400 mt-1">
@@ -686,6 +744,46 @@ export const PurchaseManagement: React.FC = () => {
                         </td>
                         <td className="px-4 py-3 text-right text-slate-400 text-[11px]">
                           {new Date(s.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <ActionMenu
+                            items={[
+                              {
+                                label: 'Edit Supplier Details',
+                                icon: Edit2,
+                                onClick: () => {
+                                  setEditSupplierForm({
+                                    id: s.id,
+                                    name: s.name,
+                                    contactPerson: s.contact_person || '',
+                                    phone: s.phone || '',
+                                    email: s.email || '',
+                                    address: s.address || '',
+                                    taxNumber: s.tax_number || '',
+                                  });
+                                  setIsEditSupplierOpen(true);
+                                },
+                              },
+                              {
+                                label: 'Record Inward Purchase',
+                                icon: Plus,
+                                onClick: () => {
+                                  setInvoiceForm((prev) => ({
+                                    ...prev,
+                                    supplierId: s.id,
+                                  }));
+                                  setIsCreateInvoiceOpen(true);
+                                },
+                              },
+                              {
+                                label: 'Delete Supplier',
+                                icon: Trash2,
+                                variant: 'danger',
+                                divider: true,
+                                onClick: () => handleDeleteSupplier(s.id, s.name),
+                              },
+                            ]}
+                          />
                         </td>
                       </tr>
                     );

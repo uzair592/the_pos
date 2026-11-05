@@ -7,6 +7,10 @@ import { Modal } from '../../components/common/Modal.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
 import {
   Boxes,
+  Edit2,
+  Trash2,
+  Eye,
+  Printer,
   Plus,
   Search,
   AlertTriangle,
@@ -47,9 +51,20 @@ export const InventoryManagement: React.FC = () => {
 
   // Modals
   const [isAddIngredientOpen, setIsAddIngredientOpen] = useState(false);
+  const [isEditIngredientOpen, setIsEditIngredientOpen] = useState(false);
   const [isAddRecipeOpen, setIsAddRecipeOpen] = useState(false);
   const [isAdjustmentOpen, setIsAdjustmentOpen] = useState(false);
   const [isAddTransferOpen, setIsAddTransferOpen] = useState(false);
+
+  // Edit Ingredient Form
+  const [editIngForm, setEditIngForm] = useState({
+    id: '',
+    name: '',
+    sku: '',
+    unit: StockUnit.KG,
+    costPerUnit: 0,
+    minStockAlert: 5,
+  });
 
   // Ingredient Form
   const [ingForm, setIngForm] = useState({
@@ -149,6 +164,63 @@ export const InventoryManagement: React.FC = () => {
       fetchData();
     } catch (err: any) {
       error(err.message || 'Failed to create ingredient');
+    }
+  };
+
+  const handleUpdateIngredient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.put(`/inventory/ingredients/${editIngForm.id}`, {
+        name: editIngForm.name,
+        sku: editIngForm.sku,
+        unit: editIngForm.unit,
+        costPerUnit: editIngForm.costPerUnit,
+        minStockAlert: editIngForm.minStockAlert,
+      });
+      setIsEditIngredientOpen(false);
+      success('Ingredient updated successfully');
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to update ingredient');
+    }
+  };
+
+  const handleDeleteIngredient = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete ingredient "${name}"? This will delete stock associations.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/inventory/ingredients/${id}`);
+      success(`Ingredient "${name}" deleted successfully`);
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to delete ingredient');
+    }
+  };
+
+  const handleDeleteRecipe = async (id: string, productName: string) => {
+    if (!window.confirm(`Are you sure you want to delete the recipe for "${productName}"?`)) {
+      return;
+    }
+    try {
+      await api.delete(`/inventory/recipes/${id}`);
+      success(`Recipe for "${productName}" deleted successfully`);
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to delete recipe');
+    }
+  };
+
+  const handleDeleteTransfer = async (id: string, transferNum: string) => {
+    if (!window.confirm(`Are you sure you want to cancel and delete pending transfer "${transferNum}"?`)) {
+      return;
+    }
+    try {
+      await api.delete(`/inventory/transfers/${id}`);
+      success(`Transfer "${transferNum}" cancelled successfully`);
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to delete transfer');
     }
   };
 
@@ -363,6 +435,7 @@ export const InventoryManagement: React.FC = () => {
                   <th className="px-6 py-3.5">Latest Unit Cost</th>
                   <th className="px-6 py-3.5">Alert Threshold</th>
                   <th className="px-6 py-3.5">Stock Status</th>
+                  <th className="px-6 py-3.5 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -403,6 +476,53 @@ export const InventoryManagement: React.FC = () => {
                         >
                           {isLow ? 'Low Stock Alert' : 'Healthy'}
                         </span>
+                      </td>
+                      <td className="px-6 py-3.5 text-center whitespace-nowrap">
+                        <ActionMenu
+                          items={[
+                            {
+                              label: 'Adjust Stock / Write-off',
+                              icon: Scale,
+                              onClick: () => {
+                                setAdjForm((prev) => ({
+                                  ...prev,
+                                  ingredientId: ing.id,
+                                }));
+                                setIsAdjustmentOpen(true);
+                              },
+                            },
+                            {
+                              label: 'Edit Ingredient',
+                              icon: Edit2,
+                              onClick: () => {
+                                setEditIngForm({
+                                  id: ing.id,
+                                  name: ing.name,
+                                  sku: ing.sku,
+                                  unit: ing.unit,
+                                  costPerUnit: Number(ing.cost_per_unit || 0),
+                                  minStockAlert: Number(ing.min_stock_alert || 5),
+                                });
+                                setIsEditIngredientOpen(true);
+                              },
+                            },
+                            {
+                              label: 'View FIFO Batches',
+                              icon: Layers,
+                              onClick: () => {
+                                setBatchIngredientFilter(ing.id);
+                                setActiveTab('BATCHES');
+                              },
+                            },
+                            {
+                              label: 'Delete Ingredient',
+                              icon: Trash2,
+                              variant: 'danger',
+                              divider: true,
+                              onClick: () => handleDeleteIngredient(ing.id, ing.name),
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   );
@@ -465,6 +585,7 @@ export const InventoryManagement: React.FC = () => {
                     <th className="px-6 py-3.5">Remaining Value</th>
                     <th className="px-6 py-3.5">FIFO Priority</th>
                     <th className="px-6 py-3.5">Status</th>
+                    <th className="px-6 py-3.5 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -514,6 +635,31 @@ export const InventoryManagement: React.FC = () => {
                           >
                             {b.status}
                           </span>
+                        </td>
+                        <td className="px-6 py-3.5 text-center whitespace-nowrap">
+                          <ActionMenu
+                            items={[
+                              {
+                                label: 'Waste / Adjust Stock',
+                                icon: Scale,
+                                onClick: () => {
+                                  setAdjForm((prev) => ({
+                                    ...prev,
+                                    ingredientId: b.ingredient_id,
+                                    movementType: StockMovementType.WASTAGE,
+                                  }));
+                                  setIsAdjustmentOpen(true);
+                                },
+                              },
+                              {
+                                label: 'Filter Stock by Item',
+                                icon: Eye,
+                                onClick: () => {
+                                  setBatchIngredientFilter(b.ingredient_id);
+                                },
+                              },
+                            ]}
+                          />
                         </td>
                       </tr>
                     );
@@ -629,32 +775,30 @@ export const InventoryManagement: React.FC = () => {
                               <span>{t.status}</span>
                             </span>
                           </td>
-                          <td className="px-6 py-3.5 text-center">
-                            {isPending && (
-                              <button
-                                onClick={() => handleDispatchTransfer(t.id)}
-                                className="inline-flex items-center space-x-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm"
-                                title="Dispatch transfer and deduct stock from origin branch"
-                              >
-                                <Send className="w-3 h-3" />
-                                <span>Dispatch</span>
-                              </button>
-                            )}
-                            {isDispatched && (
-                              <button
-                                onClick={() => handleReceiveTransfer(t.id)}
-                                className="inline-flex items-center space-x-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm"
-                                title="Receive transfer into destination branch and activate FIFO batch"
-                              >
-                                <Download className="w-3 h-3" />
-                                <span>Receive Stock</span>
-                              </button>
-                            )}
-                            {isReceived && (
-                              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
-                                Stored in FIFO Batch
-                              </span>
-                            )}
+                          <td className="px-6 py-3.5 text-center whitespace-nowrap">
+                            <ActionMenu
+                              items={[
+                                isPending && {
+                                  label: 'Dispatch Stock',
+                                  icon: Send,
+                                  variant: 'success',
+                                  onClick: () => handleDispatchTransfer(t.id),
+                                },
+                                isDispatched && {
+                                  label: 'Receive into Stock',
+                                  icon: Download,
+                                  variant: 'success',
+                                  onClick: () => handleReceiveTransfer(t.id),
+                                },
+                                isPending && {
+                                  label: 'Cancel & Delete Transfer',
+                                  icon: Trash2,
+                                  variant: 'danger',
+                                  divider: true,
+                                  onClick: () => handleDeleteTransfer(t.id, t.transfer_number),
+                                },
+                              ]}
+                            />
                           </td>
                         </tr>
                       );
@@ -685,10 +829,22 @@ export const InventoryManagement: React.FC = () => {
             {recipes.map((r) => (
               <div key={r.id} className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-bold text-slate-900 dark:text-white text-xs">{r.product_name}</h4>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-brand-500/10 text-brand-500 font-bold">
-                    Yield: {r.yield_count}
-                  </span>
+                  <div>
+                    <h4 className="font-bold text-slate-900 dark:text-white text-xs">{r.product_name}</h4>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-brand-500/10 text-brand-500 font-bold inline-block mt-0.5">
+                      Yield: {r.yield_count}
+                    </span>
+                  </div>
+                  <ActionMenu
+                    items={[
+                      {
+                        label: 'Delete Recipe',
+                        icon: Trash2,
+                        variant: 'danger',
+                        onClick: () => handleDeleteRecipe(r.id, r.product_name),
+                      },
+                    ]}
+                  />
                 </div>
                 <div className="space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
                   {r.items?.map((item: any, idx: number) => (
