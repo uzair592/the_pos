@@ -81,9 +81,15 @@ export const Sidebar: React.FC = () => {
   // Vyapar-Style Categorized Restaurant Navigation System
   const restaurantSections: NavSection[] = [
     {
-      title: 'GENERAL / CORE',
+      title: 'GENERAL',
       items: [
         { to: '/app', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+        { to: '/hub', label: 'Workspace Hub', icon: LayoutGrid },
+      ],
+    },
+    {
+      title: 'SALES',
+      items: [
         {
           to: '/pos',
           label: 'POS Billing Terminal',
@@ -94,7 +100,7 @@ export const Sidebar: React.FC = () => {
         },
         {
           to: '/app/orders',
-          label: 'Sales Invoices & Orders',
+          label: 'Orders',
           icon: ShoppingBag,
           permission: Permission.ORDERS_VIEW,
         },
@@ -106,7 +112,6 @@ export const Sidebar: React.FC = () => {
           badge: 'LIVE',
           badgeColor: 'bg-orange-500 text-white',
         },
-        { to: '/hub', label: 'Workspace Hub', icon: LayoutGrid },
       ],
     },
     {

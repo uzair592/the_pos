@@ -701,73 +701,59 @@ export const OrdersHub: React.FC = () => {
         <div className="space-y-5">
           {/* Filter Bar */}
           <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {/* Search */}
-              <div className="relative">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+              {/* Search - Proportional 50% width on tablet & desktop */}
+              <div className="relative sm:col-span-6">
                 <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Order #, customer, table..."
+                  placeholder="Search by Order #, customer, table, waiter, rider..."
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
                     setPage(1);
                   }}
-                  className="w-full pl-9 pr-3.5 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="w-full pl-9 pr-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 />
               </div>
 
-              {/* Status Filter */}
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                <option value="">All Statuses</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="CANCELLED">Cancelled</option>
-                <option value="REFUNDED">Refunded</option>
-                <option value="PREPARING">Preparing</option>
-                <option value="READY">Ready</option>
-                <option value="SERVED">Served</option>
-              </select>
+              {/* Status Filter - Proportional 25% width */}
+              <div className="sm:col-span-3">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none font-medium text-slate-700 dark:text-slate-200"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                  <option value="REFUNDED">Refunded</option>
+                  <option value="PREPARING">Preparing</option>
+                  <option value="READY">Ready</option>
+                  <option value="SERVED">Served</option>
+                </select>
+              </div>
 
-              {/* Order Type Filter */}
-              <select
-                value={typeFilter}
-                onChange={(e) => {
-                  setTypeFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                <option value="">All Order Types</option>
-                <option value="DINE_IN">Dine-In</option>
-                <option value="TAKEAWAY">Takeaway</option>
-                <option value="DELIVERY">Delivery</option>
-                <option value="COUNTER">Counter</option>
-              </select>
-
-              {/* Date Filter Dropdown */}
-              <select
-                value={dateRange}
-                onChange={(e) => {
-                  setDateRange(e.target.value);
-                  setPage(1);
-                }}
-                className="px-3 py-2 text-xs font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                <option value="TODAY">Today's Orders</option>
-                <option value="YESTERDAY">Yesterday</option>
-                <option value="SPECIFIC_DATE">Specific Date (Calendar 📅)</option>
-                <option value="CUSTOM_RANGE">Custom Date Range (📆)</option>
-                <option value="7DAYS">Last 7 Days</option>
-                <option value="30DAYS">Last 30 Days</option>
-                <option value="ALL">All Time</option>
-              </select>
+              {/* Order Type Filter - Proportional 25% width */}
+              <div className="sm:col-span-3">
+                <select
+                  value={typeFilter}
+                  onChange={(e) => {
+                    setTypeFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none font-medium text-slate-700 dark:text-slate-200"
+                >
+                  <option value="">All Order Types</option>
+                  <option value="DINE_IN">Dine-In</option>
+                  <option value="TAKEAWAY">Takeaway</option>
+                  <option value="DELIVERY">Delivery</option>
+                  <option value="COUNTER">Counter</option>
+                </select>
+              </div>
             </div>
 
             {/* Quick Date Presets Row */}
