@@ -14,6 +14,21 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 45 (commit d60c84c): Improved POS terminal product card visual feedback with prominent selected borders and quantity badges:
+  1. Prominent Selected-Item Border & Styling:
+     - Applied `border-2 border-brand-500 dark:border-brand-400`, subtle warm background tint (`bg-brand-50/25 dark:bg-brand-950/20`), elevated shadow (`shadow-md`), and glowing halo ring (`ring-2 ring-brand-500/20`) whenever an item is added to the active bill.
+     - Smoothly transitions back to default styling (`border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900`) when the item is removed from the bill.
+  2. Real-Time Quantity Counter Badge:
+     - Positioned an eye-catching quantity pill (`absolute -top-2 -right-2 z-20 min-w-[24px] h-6 px-1.5 rounded-full bg-brand-500 text-white text-xs font-black shadow-md border-2 border-white dark:border-slate-900`) on the top-right corner of each product card.
+     - Automatically displays the total units of that item added to the bill, updating instantaneously upon cart increments, decrements, or deletions.
+     - Completely hides when the item is not in the bill (quantity 0).
+  3. Visual Consistency & Zero Distortion:
+     - Positioned the badge to avoid obscuring SKU, station, product title, category, or price.
+     - Applied consistent visual feedback across both responsive squared grid view and vertical list view modes across all categories.
+     - Preserved all billing, pricing, tax, and inventory calculations.
+  4. Verification:
+     - 100% frontend production build passed (`npm --workspace=frontend run build`).
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
 - Decision 44 (commit c84cf03): Resolved Bill-Wise Profit & Loss navigation, tab synchronization, branch filtering, and itemized A4 PDF breakdown:
   1. Fixed Navigation & Routing:
      - Updated `Sidebar.tsx` navigation link to point to `/app/reports/bill-profit-loss`.
