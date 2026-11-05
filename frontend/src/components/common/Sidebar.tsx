@@ -182,7 +182,7 @@ export const Sidebar: React.FC = () => {
           exact: true,
         },
         {
-          to: '/app/reports?tab=BILL_PROFIT_LOSS',
+          to: '/app/reports/bill-profit-loss',
           label: 'Bill-Wise Profit & Loss',
           icon: Receipt,
           permission: Permission.REPORTS_SALES,
@@ -260,7 +260,12 @@ export const Sidebar: React.FC = () => {
                   const Icon = item.icon;
                   // Handle custom query match for tab links
                   const isCurrentActive =
-                    item.to.includes('?')
+                    item.to === '/app/reports/bill-profit-loss'
+                      ? location.pathname === '/app/reports/bill-profit-loss' ||
+                        (location.pathname === '/app/reports' && location.search.includes('tab=BILL_PROFIT_LOSS'))
+                      : item.to === '/app/reports'
+                      ? location.pathname === '/app/reports' && !location.search.includes('tab=BILL_PROFIT_LOSS')
+                      : item.to.includes('?')
                       ? location.pathname + location.search === item.to
                       : location.pathname === item.to ||
                         (item.exact === false && location.pathname.startsWith(item.to));

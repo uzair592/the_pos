@@ -28,9 +28,10 @@ import {
   UtensilsCrossed,
   Layers,
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import { getLocalYMD, getLocalDayRangeISO } from '../../utils/dateUtils.js';
 import { Modal } from '../../components/common/Modal.js';
+import { ActionMenu } from '../../components/common/ActionMenu.js';
 import {
   exportSalesReportPdf,
   exportPurchaseReportPdf,
@@ -38,6 +39,7 @@ import {
   exportGrossProfitReportPdf,
   exportNetProfitReportPdf,
   exportBillWiseProfitLossPdf,
+  exportSingleBillProfitLossPdf,
 } from '../../utils/pdfExport.js';
 
 export type ReportTab = 'OVERVIEW' | 'DAYBOOK' | 'CASH_BANK' | 'BILL_PROFIT_LOSS' | 'SALES' | 'PURCHASES' | 'EXPENSES' | 'GROSS_PROFIT';
@@ -48,9 +50,38 @@ interface FinancialReportsProps {
 
 export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab = 'OVERVIEW' }) => {
   const { tenant, currentBranchId, branches } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const queryTab = searchParams.get('tab') as ReportTab;
-  const [activeTab, setActiveTab] = useState<ReportTab>(queryTab || defaultTab);
+
+  const getInitialTab = (): ReportTab => {
+    if (location.pathname.includes('bill-profit-loss')) return 'BILL_PROFIT_LOSS';
+    if (queryTab) return queryTab;
+    return defaultTab;
+  };
+
+  const [activeTab, setActiveTab] = useState<ReportTab>(getInitialTab);
+
+  // Synchronize route and query changes whenever URL or props update
+  useEffect(() => {
+    if (location.pathname.includes('bill-profit-loss')) {
+      setActiveTab('BILL_PROFIT_LOSS');
+    } else if (queryTab) {
+      setActiveTab(queryTab);
+    } else if (defaultTab && !location.search.includes('tab=')) {
+      setActiveTab(defaultTab);
+    }
+  }, [location.pathname, queryTab, defaultTab]);
+
+  const handleTabChange = (tab: ReportTab) => {
+    setActiveTab(tab);
+    if (tab === 'BILL_PROFIT_LOSS') {
+      navigate('/app/reports/bill-profit-loss');
+    } else {
+      navigate(`/app/reports?tab=${tab}`);
+    }
+  };
   const [summary, setSummary] = useState<any>(null);
   const [productSales, setProductSales] = useState<any[]>([]);
   const [categorySales, setCategorySales] = useState<any[]>([]);
@@ -114,7 +145,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
       }
       if (activeTab === 'BILL_PROFIT_LOSS' || activeTab === 'OVERVIEW') {
         const bplRes = await api.get(
-          `/financial/reports/bill-profit-loss?startDate=${start}&endDate=${end}${
+          `/financial/reports/bill-profit-loss?startDate=${start}&endDate=${end}${branchParam}${
             billOrderTypeFilter !== 'ALL' ? `&orderType=${billOrderTypeFilter}` : ''
           }${billSearchQuery ? `&search=${encodeURIComponent(billSearchQuery)}` : ''}`
         );
@@ -129,7 +160,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
 
   useEffect(() => {
     fetchReports();
-  }, [startDate, endDate, activeTab, billOrderTypeFilter, billSearchQuery]);
+  }, [startDate, endDate, activeTab, currentBranchId, billOrderTypeFilter, billSearchQuery]);
 
   const meta = {
     name: tenant?.name || 'Restaurant',
@@ -267,7 +298,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
       {/* Report Sub-Sections Navigation Tabs */}
       <div className="flex space-x-2 border-b border-slate-200 dark:border-slate-800 pb-3 overflow-x-auto text-xs font-bold">
         <button
-          onClick={() => setActiveTab('OVERVIEW')}
+          onClick={() => handleTabChange('OVERVIEW')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
             activeTab === 'OVERVIEW'
               ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
@@ -279,7 +310,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
         </button>
 
         <button
-          onClick={() => setActiveTab('BILL_PROFIT_LOSS')}
+          onClick={() => handleTabChange('BILL_PROFIT_LOSS')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
             activeTab === 'BILL_PROFIT_LOSS'
               ? 'bg-brand-500 text-white shadow-md'
@@ -291,7 +322,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
         </button>
 
         <button
-          onClick={() => setActiveTab('SALES')}
+          onClick={() => handleTabChange('SALES')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
             activeTab === 'SALES'
               ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
@@ -303,7 +334,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
         </button>
 
         <button
-          onClick={() => setActiveTab('GROSS_PROFIT')}
+          onClick={() => handleTabChange('GROSS_PROFIT')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
             activeTab === 'GROSS_PROFIT'
               ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
@@ -315,7 +346,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
         </button>
 
         <button
-          onClick={() => setActiveTab('PURCHASES')}
+          onClick={() => handleTabChange('PURCHASES')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
             activeTab === 'PURCHASES'
               ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
@@ -327,7 +358,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
         </button>
 
         <button
-          onClick={() => setActiveTab('EXPENSES')}
+          onClick={() => handleTabChange('EXPENSES')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
             activeTab === 'EXPENSES'
               ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
@@ -932,7 +963,16 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {filteredAndSortedBills.length === 0 ? (
+                  {loading ? (
+                    <tr>
+                      <td colSpan={11} className="px-6 py-12 text-center text-slate-400">
+                        <div className="flex flex-col items-center justify-center space-y-2">
+                          <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                          <span className="text-xs font-semibold">Loading Bill-Wise P&L records...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredAndSortedBills.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="px-6 py-12 text-center text-slate-400">
                         <Receipt className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
@@ -1017,13 +1057,27 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
                             </span>
                           </td>
                           <td className="px-5 py-3.5 text-center">
-                            <button
-                              onClick={() => setSelectedBillForBreakdown(bill)}
-                              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-500 hover:text-brand-500 transition-colors"
-                              title="View Item Cost & Profit Breakdown"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
+                            <ActionMenu
+                              align="right"
+                              ariaLabel={`Actions for bill ${bill.orderNumber}`}
+                              items={[
+                                {
+                                  label: 'View Breakdown',
+                                  icon: Eye,
+                                  onClick: () => setSelectedBillForBreakdown(bill),
+                                },
+                                {
+                                  label: 'Download A4 PDF',
+                                  icon: Download,
+                                  onClick: () => exportSingleBillProfitLossPdf(meta, bill),
+                                },
+                                {
+                                  label: 'Print A4 Breakdown',
+                                  icon: Printer,
+                                  onClick: () => exportSingleBillProfitLossPdf(meta, bill, { autoPrint: true }),
+                                },
+                              ]}
+                            />
                           </td>
                         </tr>
                       );
@@ -1171,7 +1225,23 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => exportSingleBillProfitLossPdf(meta, selectedBillForBreakdown)}
+                      className="flex items-center space-x-1.5 bg-brand-500 hover:bg-brand-600 text-white px-3.5 py-2 rounded-xl font-bold text-xs shadow-sm transition-all"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download A4 PDF</span>
+                    </button>
+                    <button
+                      onClick={() => exportSingleBillProfitLossPdf(meta, selectedBillForBreakdown, { autoPrint: true })}
+                      className="flex items-center space-x-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3.5 py-2 rounded-xl font-bold text-xs shadow-sm transition-all"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span>Print A4</span>
+                    </button>
+                  </div>
                   <button
                     onClick={() => setSelectedBillForBreakdown(null)}
                     className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-2 rounded-xl font-bold text-xs shadow-md transition-all"

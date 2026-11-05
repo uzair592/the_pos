@@ -1453,3 +1453,181 @@ export function exportCashBankTransferPdf(
   }
   return doc;
 }
+
+/**
+ * Export Individual Bill-Wise Profit & Loss Audit Voucher (A4 Vector PDF)
+ */
+export function exportSingleBillProfitLossPdf(
+  meta: RestaurantMeta,
+  bill: any,
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || 'Rs.';
+  const orderNumber = bill.orderNumber || bill.order_number || 'ORD-000';
+  const billDate = bill.createdAt || bill.created_at || new Date().toISOString();
+  const dateFormatted = new Date(billDate).toLocaleString();
+
+  let startY = drawReportHeader(doc, 'Bill Profit & Loss Voucher', meta, {
+    startDate: new Date(billDate).toLocaleDateString(),
+    endDate: new Date(billDate).toLocaleDateString(),
+  });
+
+  // Top Info Card
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, startY, doc.internal.pageSize.width - 28, 28, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Order #: ${orderNumber}`, 20, startY + 7);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Channel: ${bill.orderType || 'DINE_IN'} ${bill.tableNumber ? `(Table ${bill.tableNumber})` : ''}`, 20, startY + 14);
+  doc.text(`Customer: ${bill.customerName || 'Walk-in Guest'} ${bill.customerPhone ? `(${bill.customerPhone})` : ''}`, 20, startY + 21);
+
+  // Status & Date on right
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Branch: ${bill.branchName || meta.branch || 'Main Branch'}`, doc.internal.pageSize.width - 20, startY + 7, { align: 'right' });
+
+  const isProfitable = Number(bill.grossProfit || 0) >= 0;
+  doc.setTextColor(isProfitable ? 16 : 220, isProfitable ? 185 : 38, isProfitable ? 129 : 38);
+  doc.text(`Result: ${isProfitable ? 'PROFITABLE' : 'LOSS'} (${Number(bill.grossMarginPercent || 0).toFixed(1)}% margin)`, doc.internal.pageSize.width - 20, startY + 14, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Date: ${dateFormatted}`, doc.internal.pageSize.width - 20, startY + 21, { align: 'right' });
+
+  startY += 34;
+
+  // KPI summary strip
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(14, startY, doc.internal.pageSize.width - 28, 14, 2, 2, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Net Food Revenue: ${sym} ${Number(bill.netSales || 0).toLocaleString()}`, 20, startY + 9);
+  doc.setTextColor(217, 119, 6);
+  doc.text(`FIFO COGS: ${sym} ${Number(bill.fifoCogs || 0).toLocaleString()}`, 75, startY + 9);
+  doc.setTextColor(isProfitable ? 22 : 220, isProfitable ? 163 : 38, isProfitable ? 74 : 38);
+  doc.text(`Gross Profit: ${sym} ${Number(bill.grossProfit || 0).toLocaleString()}`, 125, startY + 9);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Margin: ${Number(bill.grossMarginPercent || 0).toFixed(1)}%`, doc.internal.pageSize.width - 20, startY + 9, { align: 'right' });
+
+  startY += 20;
+
+  // Items table
+  const items = bill.items || [];
+  const tableRows = items.map((it: any, idx: number) => {
+    const profit = Number(it.grossProfit || 0);
+    const margin = Number(it.grossMarginPercent || 0);
+    return [
+      String(idx + 1),
+      it.productName + (it.variantName ? ` (${it.variantName})` : ''),
+      String(it.quantity || 1),
+      `${sym} ${Number(it.unitPrice || 0).toLocaleString()}`,
+      `${sym} ${Number(it.totalPrice || 0).toLocaleString()}`,
+      `${sym} ${Number(it.cogs || 0).toLocaleString()}`,
+      `${sym} ${profit.toLocaleString()}`,
+      `${margin.toFixed(1)}%`,
+    ];
+  });
+
+  autoTable(doc, {
+    startY,
+    head: [['#', 'Item Description', 'Qty', 'Unit Price', 'Total Sales', 'FIFO Cost', 'Profit', 'Margin %']],
+    body: tableRows,
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8.5 },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { fontStyle: 'bold' },
+      2: { cellWidth: 15, halign: 'center' },
+      3: { cellWidth: 24, halign: 'right' },
+      4: { cellWidth: 26, halign: 'right' },
+      5: { cellWidth: 24, halign: 'right', textColor: [217, 119, 6] },
+      6: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+      7: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+    },
+    didParseCell: (data) => {
+      if (data.column.index === 6 && data.section === 'body') {
+        const rowItem = items[data.row.index];
+        if (rowItem && Number(rowItem.grossProfit || 0) < 0) {
+          data.cell.styles.textColor = [220, 38, 38];
+        } else {
+          data.cell.styles.textColor = [22, 163, 74];
+        }
+      }
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  startY = (doc as any).lastAutoTable.finalY + 8;
+
+  // Bill Financial Reconciliation Block
+  const summaryBoxWidth = 85;
+  const summaryBoxX = doc.internal.pageSize.width - 14 - summaryBoxWidth;
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(summaryBoxX, startY, summaryBoxWidth, 42, 2, 2, 'FD');
+
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Food Subtotal:', summaryBoxX + 6, startY + 7);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`${sym} ${Number(bill.subtotal || 0).toLocaleString()}`, summaryBoxX + summaryBoxWidth - 6, startY + 7, { align: 'right' });
+
+  if (Number(bill.totalDiscount || 0) > 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(220, 38, 38);
+    doc.text('Discount Applied:', summaryBoxX + 6, startY + 14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`- ${sym} ${Number(bill.totalDiscount || 0).toLocaleString()}`, summaryBoxX + summaryBoxWidth - 6, startY + 14, { align: 'right' });
+  }
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(217, 119, 6);
+  doc.text('FIFO Batch COGS:', summaryBoxX + 6, startY + 21);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`- ${sym} ${Number(bill.fifoCogs || 0).toLocaleString()}`, summaryBoxX + summaryBoxWidth - 6, startY + 21, { align: 'right' });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(isProfitable ? 22 : 220, isProfitable ? 163 : 38, isProfitable ? 74 : 38);
+  doc.text('Gross Food Profit:', summaryBoxX + 6, startY + 28);
+  doc.text(`${sym} ${Number(bill.grossProfit || 0).toLocaleString()}`, summaryBoxX + summaryBoxWidth - 6, startY + 28, { align: 'right' });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Grand Total Customer Paid:', summaryBoxX + 6, startY + 36);
+  doc.text(`${sym} ${Number(bill.grandTotal || 0).toLocaleString()}`, summaryBoxX + summaryBoxWidth - 6, startY + 36, { align: 'right' });
+
+  // Signature lines
+  const signatureY = Math.max(startY + 50, doc.internal.pageSize.height - 35);
+  doc.setDrawColor(203, 213, 225);
+  doc.line(20, signatureY, 80, signatureY);
+  doc.line(doc.internal.pageSize.width - 80, signatureY, doc.internal.pageSize.width - 20, signatureY);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Kitchen In-charge / Auditor', 50, signatureY + 4, { align: 'center' });
+  doc.text('Restaurant Accounts Manager', doc.internal.pageSize.width - 50, signatureY + 4, { align: 'center' });
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    doc.save(`Bill_Profit_Loss_${orderNumber}.pdf`);
+  }
+  return doc;
+}
