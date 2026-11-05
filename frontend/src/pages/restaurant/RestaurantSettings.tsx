@@ -16,7 +16,104 @@ import {
   FileCheck,
   ShieldCheck,
   RefreshCw,
+  Printer,
+  Receipt,
+  Eye,
+  Sliders,
+  Sparkles,
 } from 'lucide-react';
+import {
+  ReceiptPreview,
+  RECEIPT_THEMES,
+} from '../../components/common/ReceiptModal.js';
+import { ReceiptTemplateType } from '@pos/shared';
+
+// Helper to provide realistic preview data in Restaurant Settings
+const getSettingsSampleReceipt = (currentSettings: any, restaurantName: string = 'The Grand Dine') => {
+  const rSettings = currentSettings?.receipt_settings || {};
+  return {
+    restaurantName: restaurantName || 'The Grand Dine',
+    restaurantLogo: null,
+    branchName: 'Main Branch - Commercial Block',
+    branchAddress: 'Gulberg III, Main Boulevard',
+    branchCity: 'Lahore',
+    branchPhone: '+92 300 1234567',
+    taxRegistrationNumber: currentSettings?.tax_registration_number || 'TRN-839210-4',
+    orderNumber: 'ORD-1048',
+    orderType: 'DINE_IN',
+    tableNumber: '4',
+    floorName: 'Ground Floor',
+    coverCount: 3,
+    customerName: 'Sarah Khan',
+    customerPhone: '+92 321 9876543',
+    deliveryAddress: 'House 14, Street 2, Phase 5',
+    riderName: 'Ali Raza',
+    riderPhone: '+92 333 4567890',
+    cashierName: 'Muhammad Uzair',
+    serverName: 'Ahmed Waiter',
+    orderNotes: 'Less spicy on karahi please',
+    date: new Date().toISOString(),
+    currencySymbol: currentSettings?.currency_symbol || 'Rs.',
+    items: [
+      {
+        id: 'sample-1',
+        productName: 'Mutton Karahi Special',
+        variantName: 'Half Handi',
+        quantity: 1,
+        unitPrice: 1850,
+        totalPrice: 1850,
+        modifiers: [{ name: 'Extra Ginger & Desi Ghee', unitPrice: 50 }],
+        notes: 'Mild spicy',
+      },
+      {
+        id: 'sample-2',
+        productName: 'Chicken Biryani Double',
+        variantName: 'Full Platter',
+        quantity: 2,
+        unitPrice: 550,
+        totalPrice: 1100,
+        modifiers: [],
+      },
+      {
+        id: 'sample-3',
+        productName: 'Roghni Naan Fresh',
+        variantName: 'Tandoori',
+        quantity: 4,
+        unitPrice: 80,
+        totalPrice: 320,
+      },
+      {
+        id: 'sample-4',
+        productName: 'Mint Lemonade Chilled',
+        variantName: '500ml',
+        quantity: 2,
+        unitPrice: 220,
+        totalPrice: 440,
+      },
+    ],
+    subtotal: 3760,
+    discount: 376,
+    taxPercent: currentSettings?.tax_rate_percent ? Number(currentSettings.tax_rate_percent) : 5,
+    taxAmount: 169.2,
+    serviceChargeAmount: currentSettings?.service_charge_percent ? 100 : 0,
+    deliveryFee: 0,
+    grandTotal: 3653.2,
+    paidAmount: 4000,
+    changeGiven: 346.8,
+    balanceDue: 0,
+    payments: [{ method: 'CASH', amount: 4000 }],
+    receiptSettings: {
+      defaultTemplate: rSettings.defaultTemplate || 'STANDARD_80MM',
+      paperWidth: rSettings.paperWidth || '80mm',
+      headerText: rSettings.headerText || 'Welcome to our Restaurant & Grill',
+      footerText: rSettings.footerText || 'Thank you for dining with us! Please visit again.',
+      showQrCode: rSettings.showQrCode !== false,
+      showTaxBreakdown: rSettings.showTaxBreakdown !== false,
+      showCustomerDetails: rSettings.showCustomerDetails !== false,
+      showTipGuide: rSettings.showTipGuide !== false,
+    },
+  };
+};
 
 export const RestaurantSettings: React.FC = () => {
   const { tenant, refreshProfile } = useAuth();
@@ -43,6 +140,9 @@ export const RestaurantSettings: React.FC = () => {
         api.get('/restaurant/backups'),
       ]);
       setSettings(setRes.settings);
+      if (setRes.settings?.receipt_settings?.defaultTemplate) {
+        localStorage.setItem('pos_default_receipt_template', setRes.settings.receipt_settings.defaultTemplate);
+      }
       setDevices(devRes.devices || []);
       setBackups(backupRes.backups || []);
     } catch (err: any) {
@@ -56,6 +156,23 @@ export const RestaurantSettings: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleSelectTemplate = (templateId: ReceiptTemplateType) => {
+    const paperWidth = templateId === 'COMPACT_58MM' ? '58mm' : templateId === 'TAX_INVOICE_A4' ? 'A4' : '80mm';
+    setSettings((prev: any) => ({
+      ...prev,
+      receipt_settings: {
+        ...prev?.receipt_settings,
+        defaultTemplate: templateId,
+        paperWidth: prev?.receipt_settings?.paperWidth || paperWidth,
+      },
+    }));
+    localStorage.setItem('pos_default_receipt_template', templateId);
+  };
+
+  const handleTestPrint = () => {
+    window.print();
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,8 +189,13 @@ export const RestaurantSettings: React.FC = () => {
         serviceChargePercent: Number(settings.service_charge_percent),
         receiptSettings: settings.receipt_settings,
       });
+
+      if (settings.receipt_settings?.defaultTemplate) {
+        localStorage.setItem('pos_default_receipt_template', settings.receipt_settings.defaultTemplate);
+      }
+
       setSaveSuccess(true);
-      success('Restaurant configuration saved successfully');
+      success('Restaurant configuration and print themes saved successfully');
       await refreshProfile();
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
@@ -141,60 +263,67 @@ export const RestaurantSettings: React.FC = () => {
       }
     };
     reader.readAsText(file);
-    // Reset file input so user can choose again if cancelled
     e.target.value = '';
   };
 
-  // 3. Confirm and Execute Transactional Restore
+  // 3. Execute Restore
   const handleExecuteRestore = async () => {
-    if (restoreConfirmationText.trim().toUpperCase() !== 'CONFIRM') {
-      error('Please type CONFIRM to authorize the database restore');
-      return;
-    }
+    if (!restorePayload) return;
     setRestoring(true);
     try {
       const res = await api.post('/restaurant/backups/restore', restorePayload);
-      success(`Database restored successfully! ${res.restoredTables?.join(', ') || ''}`);
+      success(res.message || 'Database snapshot restored successfully!');
       setIsRestoreModalOpen(false);
       setRestorePayload(null);
       await fetchData();
       await refreshProfile();
     } catch (err: any) {
-      error(err.message || 'Restore failed. All changes safely rolled back.');
+      error(err.message || 'Failed to restore database from backup');
     } finally {
       setRestoring(false);
     }
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-400 text-xs">Loading restaurant settings...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
+      </div>
+    );
   }
 
+  const activeTemplateId: ReceiptTemplateType =
+    settings?.receipt_settings?.defaultTemplate || 'STANDARD_80MM';
+
   return (
-    <div className="p-6 sm:p-8 space-y-8 max-w-4xl">
+    <div className="space-y-8 max-w-7xl mx-auto pb-12">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Restaurant Settings</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+            <Settings className="w-6 h-6 text-brand-500" />
+            <span>Store & POS Settings</span>
+          </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Configure local taxes, thermal receipt design, multi-device terminals, and database backups
+            Manage tax rates, currency, billing templates, print themes, device terminals, and disaster recovery
           </p>
         </div>
+
         {saveSuccess && (
-          <div className="flex items-center space-x-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+          <div className="flex items-center space-x-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 animate-fade-in">
             <CheckCircle2 className="w-4 h-4" />
-            <span>Saved successfully!</span>
+            <span>Settings Saved!</span>
           </div>
         )}
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Taxes & Financials */}
+        {/* Core Localization & Tax Settings */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4 text-xs">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-800 pb-2">
-            Taxes & Currency Configuration
+            Financial & Tax Configuration
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Currency Code</label>
               <input
@@ -259,159 +388,251 @@ export const RestaurantSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* Receipt & Bill Printing Settings */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4 text-xs">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Receipt & Bill Printing Settings (5 Templates)
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                Configure default bill layout, paper dimensions, tax registration, and bilingual typography
-              </p>
+        {/* ==================== PRINT THEMES & RECEIPT DESIGNER ==================== */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6 text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-9 h-9 rounded-xl bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 flex items-center justify-center font-bold">
+                <Printer className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+                  <span>Print Themes & Receipt Designer</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 font-bold border border-brand-200 dark:border-brand-800">
+                    5 Formats Available
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Select your default bill theme, configure receipt headers/footers, and test print directly
+                </p>
+              </div>
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 font-bold border border-brand-200 dark:border-brand-800">
-              Multi-Template Enabled
-            </span>
+
+            <button
+              type="button"
+              onClick={handleTestPrint}
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl font-bold transition-colors shadow-sm"
+            >
+              <Printer className="w-3.5 h-3.5 text-brand-500" />
+              <span>Test Print Sample</span>
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Default Print Template
-              </label>
-              <select
-                value={settings?.receipt_settings?.defaultTemplate || 'STANDARD_80MM'}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    receipt_settings: { ...settings.receipt_settings, defaultTemplate: e.target.value },
-                  })
-                }
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
-              >
-                <option value="STANDARD_80MM">🧾 Standard 80mm POS Thermal Receipt</option>
-                <option value="FINE_DINING">🍽️ Fine Dining Guest Check & Summary</option>
-                <option value="COMPACT_58MM">⚡ Compact 58mm Mobile / Kiosk Slip</option>
-                <option value="TAX_INVOICE_A4">📑 Official Commercial GST Tax Invoice (A4)</option>
-                <option value="KITCHEN_TOKEN">🎟️ Kitchen Order Ticket / Dispatch Token</option>
-              </select>
-            </div>
+          {/* Visual Theme Selection Cards Grid */}
+          <div>
+            <label className="block font-bold text-slate-800 dark:text-slate-200 mb-2.5 text-xs">
+              Select Default Print Theme:
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              {RECEIPT_THEMES.map((theme) => {
+                const isSelected = activeTemplateId === theme.id;
+                return (
+                  <div
+                    key={theme.id}
+                    onClick={() => handleSelectTemplate(theme.id)}
+                    className={`cursor-pointer rounded-2xl p-3.5 border transition-all flex flex-col justify-between select-none relative ${
+                      isSelected
+                        ? 'bg-brand-50/40 dark:bg-brand-950/30 border-brand-500 shadow-md ring-2 ring-brand-500/40'
+                        : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    {isSelected && (
+                      <span className="absolute top-2.5 right-2.5 flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-500" />
+                      </span>
+                    )}
 
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Paper Roll Width</label>
-              <select
-                value={settings?.receipt_settings?.paperWidth || '80mm'}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    receipt_settings: { ...settings.receipt_settings, paperWidth: e.target.value },
-                  })
-                }
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
-              >
-                <option value="80mm">80mm Standard POS Thermal Paper</option>
-                <option value="58mm">58mm Compact Mobile POS Paper</option>
-                <option value="A4">A4 Full Page Invoice</option>
-              </select>
-            </div>
+                    <div>
+                      <div className="flex items-center space-x-2 mb-1.5">
+                        <span className="text-xl">{theme.icon}</span>
+                        <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                          {theme.badge}
+                        </span>
+                      </div>
+                      <h4 className="font-extrabold text-xs text-slate-900 dark:text-white leading-tight">
+                        {theme.name}
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                        {theme.description}
+                      </p>
+                    </div>
 
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Receipt English Header</label>
-              <input
-                type="text"
-                placeholder="e.g. Welcome to Lahore Karahi & Grill"
-                value={settings?.receipt_settings?.headerText || ''}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    receipt_settings: { ...settings.receipt_settings, headerText: e.target.value },
-                  })
-                }
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
-              />
+                    <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[10px]">
+                      <span className="text-slate-400 dark:text-slate-500 font-mono">{theme.hardware}</span>
+                      <span className={`font-bold ${isSelected ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400'}`}>
+                        {isSelected ? '✓ Default' : 'Select'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Receipt English Footer</label>
-              <input
-                type="text"
-                placeholder="e.g. Thank you for dining with us! Visit again."
-                value={settings?.receipt_settings?.footerText || ''}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    receipt_settings: { ...settings.receipt_settings, footerText: e.target.value },
-                  })
-                }
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
-              />
-            </div>
-
-            
           </div>
 
-          {/* Toggle Flags */}
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings?.receipt_settings?.bilingualUrduEnglish !== false}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    receipt_settings: { ...settings.receipt_settings, bilingualUrduEnglish: e.target.checked },
-                  })
-                }
-                className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
-              />
-              <span className="font-semibold text-slate-700 dark:text-slate-300">Bilingual Urdu</span>
-            </label>
+          {/* Customization Controls & Live Preview Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
+            {/* Left Column: Form Controls */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-3.5">
+                <h4 className="font-bold text-xs text-slate-900 dark:text-white flex items-center space-x-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-brand-500" />
+                  <span>Receipt Layout & Content Options</span>
+                </h4>
 
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings?.receipt_settings?.showQrCode !== false}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    receipt_settings: { ...settings.receipt_settings, showQrCode: e.target.checked },
-                  })
-                }
-                className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
-              />
-              <span className="font-semibold text-slate-700 dark:text-slate-300">QR Code Verification</span>
-            </label>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Paper Roll Width
+                  </label>
+                  <select
+                    value={settings?.receipt_settings?.paperWidth || '80mm'}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        receipt_settings: { ...settings.receipt_settings, paperWidth: e.target.value },
+                      })
+                    }
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
+                  >
+                    <option value="80mm">80mm Standard POS Thermal Paper (3-Inch)</option>
+                    <option value="58mm">58mm Compact Mobile Paper (2-Inch)</option>
+                    <option value="A4">A4 Full Page Commercial Document</option>
+                  </select>
+                </div>
 
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings?.receipt_settings?.showTaxBreakdown !== false}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    receipt_settings: { ...settings.receipt_settings, showTaxBreakdown: e.target.checked },
-                  })
-                }
-                className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
-              />
-              <span className="font-semibold text-slate-700 dark:text-slate-300">STRN/NTN on Bill</span>
-            </label>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Receipt Header Greeting / Tagline
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Welcome to Royal Dine & Grill"
+                    value={settings?.receipt_settings?.headerText || ''}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        receipt_settings: { ...settings.receipt_settings, headerText: e.target.value },
+                      })
+                    }
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
 
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings?.receipt_settings?.showCustomerDetails !== false}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    receipt_settings: { ...settings.receipt_settings, showCustomerDetails: e.target.checked },
-                  })
-                }
-                className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
-              />
-              <span className="font-semibold text-slate-700 dark:text-slate-300">Customer Details</span>
-            </label>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Receipt Footer Thank-You Note
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Thank you for dining with us! Please visit again."
+                    value={settings?.receipt_settings?.footerText || ''}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        receipt_settings: { ...settings.receipt_settings, footerText: e.target.value },
+                      })
+                    }
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                {/* Toggles */}
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-2.5">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings?.receipt_settings?.showQrCode !== false}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          receipt_settings: { ...settings.receipt_settings, showQrCode: e.target.checked },
+                        })
+                      }
+                      className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      Print QR Code for Digital E-Receipt & Feedback
+                    </span>
+                  </label>
+
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings?.receipt_settings?.showTaxBreakdown !== false}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          receipt_settings: { ...settings.receipt_settings, showTaxBreakdown: e.target.checked },
+                        })
+                      }
+                      className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      Print STRN / NTN Tax Registration Number
+                    </span>
+                  </label>
+
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings?.receipt_settings?.showCustomerDetails !== false}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          receipt_settings: { ...settings.receipt_settings, showCustomerDetails: e.target.checked },
+                        })
+                      }
+                      className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      Print Customer Name & Contact Information
+                    </span>
+                  </label>
+
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings?.receipt_settings?.showTipGuide !== false}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          receipt_settings: { ...settings.receipt_settings, showTipGuide: e.target.checked },
+                        })
+                      }
+                      className="rounded text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      Show Gratuity Guide (Fine Dining Guest Check)
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Live Real-Time Interactive Receipt Preview */}
+            <div className="lg:col-span-7 flex flex-col">
+              <div className="flex items-center justify-between pb-2">
+                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center space-x-1.5">
+                  <Eye className="w-4 h-4 text-brand-500" />
+                  <span>Live Interactive Print Preview (Real-Time)</span>
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  {activeTemplateId} • {settings?.receipt_settings?.paperWidth || '80mm'}
+                </span>
+              </div>
+
+              <div className="flex-1 bg-slate-200/80 dark:bg-slate-950/80 p-4 rounded-2xl border border-slate-300 dark:border-slate-800 flex justify-center items-start overflow-y-auto max-h-[520px] shadow-inner">
+                <ReceiptPreview
+                  template={activeTemplateId}
+                  receiptData={getSettingsSampleReceipt(settings, tenant?.name)}
+                  showQrCode={settings?.receipt_settings?.showQrCode !== false}
+                  showTaxDetails={settings?.receipt_settings?.showTaxBreakdown !== false}
+                  showCustomer={settings?.receipt_settings?.showCustomerDetails !== false}
+                  showTipGuide={settings?.receipt_settings?.showTipGuide !== false}
+                  isPrintable={false}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
