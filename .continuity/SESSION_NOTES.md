@@ -14,6 +14,31 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 49 (commit d8826f8): Enterprise Recipe Costing, Food Cost Analysis, and Menu Item Profitability Module:
+  1. Complete Database Schema Migration (`011_recipe_costing_and_profitability.sql`):
+     - Added `packaging_cost`, `additional_cost`, and `target_food_cost_percentage` columns to `products`, `product_variants`, and `recipes`.
+     - Created `ingredient_cost_history` audit table for price fluctuation tracking across purchase invoices, supplier receipts, and manual cost edits.
+  2. Costing Engine & REST Endpoints (`costingService.ts` & `costing.routes.ts`):
+     - `GET /api/costing/menu-profitability`: calculates exact recipe ingredient costs from UOM base units, adds packaging/consumable costs, computes gross profit, food cost %, gross profit margin, status (`EXCELLENT`, `HEALTHY`, `WARNING`, `CRITICAL`), and portfolio summary KPIs.
+     - `GET /api/costing/recipe/:productId`: returns detailed ingredient breakdown with cost share %, packaging breakdown, and live recommended price for target margin.
+     - `PUT /api/costing/recipe/:productId/direct-costs`: updates packaging and additional direct costs on products and recipes.
+     - `GET /api/costing/food-cost-analysis`: computes overall food cost %, category food cost %, sales vs food cost trends over time, top 10 most profitable items, top 10 highest food cost items, and multi-branch performance comparison.
+     - `GET /api/costing/theoretical-vs-actual`: calculates expected recipe consumption vs actual inventory outflow, kitchen prep wastage, quantity/cost variances, and audit flags (`NORMAL`, `WATCH`, `INVESTIGATE`).
+     - `GET /api/costing/ingredient-price-history`: tracks current base cost, previous vs latest purchase costs, average purchase cost, percentage change, and affected menu recipes.
+     - `POST /api/costing/recalculate-recipes`: batch recalculates all recipes based on latest ingredient base costs.
+  3. Power BI-Inspired Executive Dashboard (`RecipeCostingDashboard.tsx`):
+     - 4 interactive tabs: Menu Item Profitability, Food Cost Analysis & Trends, Theoretical vs Actual (Wastage), and Ingredient Cost History.
+     - Summary KPI cards: Total Menu Items, Avg Food Cost %, Total Recipe Cost, Avg Gross Profit per Item, Highest Food Cost Item, Most Profitable Item.
+     - Search, category filter pills, sort options, and multi-item comparison drawer (up to 4 items side-by-side).
+     - Recipe detail breakdown with live pricing simulator slider.
+  4. Standardized Vector A4 PDF & CSV Exports (`pdfExport.ts` & `csvExport.ts`):
+     - Added `exportMenuItemProfitabilityPdf`, `exportFoodCostAnalysisPdf`, `exportTheoreticalVsActualPdf`, and `exportIngredientCostHistoryPdf`.
+     - Universal CSV export for all table views.
+  5. Verification:
+     - 8/8 automated tests in `backend/test/recipe_costing_profitability.test.ts`.
+     - 13/13 tests across inventory test suites.
+     - 38/38 QA simulation checks in `backend/test/qa_simulation_suite.ts`.
+     - 0 build errors across `@pos/shared`, `backend`, and `frontend`.
 - Decision 48 (commit e424765): Automatic Unit of Measurement (UOM) Conversion and Recipe-Based Inventory Management:
   1. Complete Multi-Dimensional Unit Engine (`shared/src/utils/unitConversion.ts`):
      - Dimensions: Weight (`KG`, `G`, `MG`), Volume (`L`, `ML`), Count/Packaging (`PCS`, `DOZEN` [12], `TRAY` [30], `BOX` [10], `CARTON` [24], `PACK`, `SACK`, `BOTTLE`, `CAN`).
@@ -67,6 +92,31 @@
      - 100% backend production build passed (`npm --workspace=backend run build`).
      - 100% frontend production build passed (`npm --workspace=frontend run build`).
      - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
+- Decision 47 (commit 2cccd18): Resolved empty printed bill skeleton by normalizing item fields and auto-fetching complete receipt details:
+  1. Universal Receipt Data Normalizer (`ReceiptModal.tsx`):
+     - Implemented `normalizeReceiptData` that robustly adapts both snake_case fields (from raw Postgres table rows in `orders` and `order_items`) and camelCase fields (from dedicated receipt endpoints).
+     - Maps `product_name` / `name` -> `productName`, `variant_name` -> `variantName`, `unit_price` / `price` -> `unitPrice`, and `total_price` / `amount` -> `totalPrice`.
+     - Ensures `receiptData.items` never renders blank names or `NaN` amounts in any of the 5 themes.
+     - Maps all order-level properties: `order_number`, `order_type`, `table_number`, `customer_name`, `customer_phone`, `delivery_address`, `rider_name`, `rider_phone`, `subtotal`, `grand_total`, `tax_amount`, `total_discount`, and payments.
+     - Added empty fallback messages for all 5 themes (`STANDARD_80MM`, `FINE_DINING`, `COMPACT_58MM`, `TAX_INVOICE_A4`, `KITCHEN_TOKEN`) when an order has no line items.
+  2. Auto-Fetch Fallback in `ReceiptModal.tsx`:
+     - Added an automatic `useEffect` in `ReceiptModal` that detects when an order object has an ID but is missing line items or restaurant/branch metadata (e.g. passed from list/summary views).
+     - Automatically calls `GET /api/orders/:id/receipt` in the background and populates full line item details and totals.
+     - Displays an animated loading state while fetching and disables printing until complete.
+  3. Hardened Backend `/api/orders/:id/receipt` Endpoint (`order.routes.ts`):
+     - Changed `JOIN branches` and `JOIN tenants` to `LEFT JOIN` to prevent 404/500 errors on orders with detached or null branch IDs.
+     - Added robust fallbacks for `restaurant_name`, `branch_name`, `branch_phone`, `branch_address`, and `cashier_name`.
+  4. Updated Action Triggers Across Software (`OrdersHub.tsx`, `Daybook.tsx`, `RestaurantDashboard.tsx`):
+     - Updated 3-dots "Print / Reprint Receipt" in Orders Hub, "Print Receipt" in Daybook, and "Print Bill / Receipt" in Dashboard to call `/api/orders/:id/receipt` before opening the modal.
+     - Updated Orders Hub payment settlement and Order Details modal print buttons to fetch full receipt payloads.
+  5. Print Media Isolation (`Modal.tsx`, `index.css`):
+     - Added `print:static print:overflow-visible print:p-0 print:transform-none` to `Modal.tsx` to prevent parent containers from clipping or scrolling long receipts.
+     - Added `no-print` to Modal backdrop and header.
+     - Added `.no-print` hiding and background white/border none isolation in `index.css`.
+  6. Verification:
+     - 100% backend production build passed (`npm --workspace=backend run build`).
+     - 100% frontend production build passed (`npm --workspace=frontend run build`).
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
 - Decision 46 (commit 4e17cce): Corrected Top Selling Products sorting on Restaurant Dashboard to prioritize quantity sold:
   1. Backend API Sorting (`financial.routes.ts`):
      - Updated `/api/financial/reports/sales-by-product` to sort by `total_quantity DESC, total_sales DESC` by default, ensuring higher volume items rank ahead of higher-priced low-volume items.
@@ -75,6 +125,30 @@
      - Explicitly sorted `productsRes.products` by `total_quantity DESC` with `total_sales DESC` tie-breaker before taking the top 6.
   3. Verification:
      - 100% frontend and backend production builds passed.
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
+- Decision 46 (commit 4e17cce): Corrected Top Selling Products sorting on Restaurant Dashboard to prioritize quantity sold:
+  1. Backend API Sorting (`financial.routes.ts`):
+     - Updated `/api/financial/reports/sales-by-product` to sort by `total_quantity DESC, total_sales DESC` by default, ensuring higher volume items rank ahead of higher-priced low-volume items.
+     - Added optional `sortBy=sales` parameter for cases requiring revenue-based sorting.
+  2. Frontend Dashboard Sorting (`RestaurantDashboard.tsx`):
+     - Explicitly sorted `productsRes.products` by `total_quantity DESC` with `total_sales DESC` tie-breaker before taking the top 6.
+  3. Verification:
+     - 100% frontend and backend production builds passed.
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
+- Decision 45 (commit d60c84c): Improved POS terminal product card visual feedback with prominent selected borders and quantity badges:
+  1. Prominent Selected-Item Border & Styling:
+     - Applied `border-2 border-brand-500 dark:border-brand-400`, subtle warm background tint (`bg-brand-50/25 dark:bg-brand-950/20`), elevated shadow (`shadow-md`), and glowing halo ring (`ring-2 ring-brand-500/20`) whenever an item is added to the active bill.
+     - Smoothly transitions back to default styling (`border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900`) when the item is removed from the bill.
+  2. Real-Time Quantity Counter Badge:
+     - Positioned an eye-catching quantity pill (`absolute -top-2 -right-2 z-20 min-w-[24px] h-6 px-1.5 rounded-full bg-brand-500 text-white text-xs font-black shadow-md border-2 border-white dark:border-slate-900`) on the top-right corner of each product card.
+     - Automatically displays the total units of that item added to the bill, updating instantaneously upon cart increments, decrements, or deletions.
+     - Completely hides when the item is not in the bill (quantity 0).
+  3. Visual Consistency & Zero Distortion:
+     - Positioned the badge to avoid obscuring SKU, station, product title, category, or price.
+     - Applied consistent visual feedback across both responsive squared grid view and vertical list view modes across all categories.
+     - Preserved all billing, pricing, tax, and inventory calculations.
+  4. Verification:
+     - 100% frontend production build passed (`npm --workspace=frontend run build`).
      - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
 - Decision 45 (commit d60c84c): Improved POS terminal product card visual feedback with prominent selected borders and quantity badges:
   1. Prominent Selected-Item Border & Styling:
