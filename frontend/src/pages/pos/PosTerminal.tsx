@@ -49,6 +49,7 @@ import {
   ChevronLeft,
   LayoutList,
   LayoutGrid,
+  Sparkles,
 } from 'lucide-react';
 import { OrderType, PaymentMethod, SystemRole } from '@pos/shared';
 
@@ -92,7 +93,8 @@ export const PosTerminal: React.FC = () => {
   const [billDiscountAmount, setBillDiscountAmount] = useState(0);
   const [orderNotes, setOrderNotes] = useState('');
   const [isSubmittingKitchen, setIsSubmittingKitchen] = useState(false);
-  const [itemViewMode, setItemViewMode] = useState<'list' | 'grid'>('list');
+  const [itemViewMode, setItemViewMode] = useState<'list' | 'grid'>('grid');
+  const [showCategorySidebar, setShowCategorySidebar] = useState<boolean>(false);
 
   // Resizable Billing Section width state
   const [billingWidth, setBillingWidth] = useState<number>(() => {
@@ -882,7 +884,8 @@ export const PosTerminal: React.FC = () => {
       {/* Main POS Interface (3-Column Layout: Vertical Categories on Left, Menu Items in Middle, Resizable Cart on Right) */}
       <div className="flex-1 flex overflow-hidden">
         {/* ==================== 1. VERTICAL CATEGORIES & SUBCATEGORIES SIDEBAR ==================== */}
-        <div className="w-56 sm:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-hidden select-none">
+        {showCategorySidebar && (
+          <div className="w-56 sm:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-hidden select-none animate-in slide-in-from-left duration-200">
           {/* Sidebar Header */}
           <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40">
             <div className="flex items-center space-x-2">
@@ -1016,6 +1019,7 @@ export const PosTerminal: React.FC = () => {
             })}
           </div>
         </div>
+        )}
 
         {/* ==================== 2. MENU ITEMS SECTION (MIDDLE) ==================== */}
         <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
@@ -1033,8 +1037,23 @@ export const PosTerminal: React.FC = () => {
                 />
               </div>
 
+              {/* Sidebar Tree Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowCategorySidebar(!showCategorySidebar)}
+                title={showCategorySidebar ? "Hide categories sidebar" : "Show categories sidebar"}
+                className={`flex items-center space-x-1.5 px-2.5 py-2 rounded-xl border text-xs font-bold transition-all shrink-0 ${
+                  showCategorySidebar
+                    ? 'bg-brand-500 text-white border-brand-500 shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">Sidebar</span>
+              </button>
+
               {/* View Mode Toggle: List (Vertical) vs Grid */}
-              <div className="flex items-center space-x-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center space-x-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
                 <button
                   onClick={() => setItemViewMode('list')}
                   title="Vertical List View"
@@ -1045,11 +1064,11 @@ export const PosTerminal: React.FC = () => {
                   }`}
                 >
                   <LayoutList className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Vertical List</span>
+                  <span className="hidden md:inline">List</span>
                 </button>
                 <button
                   onClick={() => setItemViewMode('grid')}
-                  title="Grid Cards View"
+                  title="Square Grid View"
                   className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     itemViewMode === 'grid'
                       ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
@@ -1060,6 +1079,133 @@ export const PosTerminal: React.FC = () => {
                   <span className="hidden md:inline">Grid</span>
                 </button>
               </div>
+            </div>
+
+            {/* Horizontal Small Boxes for Categories + Category Vertical Bar + Subcategories */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+              {/* Category Boxes */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory('ALL');
+                    setSelectedSubCategory('ALL');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center space-x-1.5 ${
+                    selectedCategory === 'ALL'
+                      ? 'bg-brand-500 text-white shadow-xs ring-2 ring-brand-500/20'
+                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <UtensilsCrossed className="w-3.5 h-3.5" />
+                  <span>All Menu</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                      selectedCategory === 'ALL'
+                        ? 'bg-white/30 text-white'
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {products.length}
+                  </span>
+                </button>
+
+                {rootCategories.map((cat) => {
+                  const isCatSelected = selectedCategory === cat.id;
+                  const count = categoryItemCounts[cat.id] || 0;
+                  const subcats = subCategoriesByParent[cat.id] || [];
+                  const hasSubcats = subcats.length > 0;
+
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => {
+                        if (selectedCategory === cat.id) {
+                          setSelectedSubCategory('ALL');
+                        } else {
+                          setSelectedCategory(cat.id);
+                          setSelectedSubCategory('ALL');
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center space-x-1.5 ${
+                        isCatSelected
+                          ? 'bg-brand-500 text-white shadow-xs ring-2 ring-brand-500/20'
+                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <span>{cat.name}</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          isCatSelected
+                            ? 'bg-white/30 text-white'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {count}
+                      </span>
+                      {hasSubcats && (
+                        <span className={`text-[10px] ${isCatSelected ? 'text-white' : 'text-slate-400'}`}>•</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Vertical Bar Separator: Shown when selected category has subcategories */}
+              {selectedCategory !== 'ALL' && (subCategoriesByParent[selectedCategory] || []).length > 0 && (
+                <div className="flex items-center shrink-0 animate-in fade-in slide-in-from-left-2 duration-150">
+                  {/* Category Vertical Bar */}
+                  <div className="h-6 w-[2px] bg-slate-300 dark:bg-slate-700 mx-1.5 shrink-0 rounded-full" />
+
+                  {/* Subcategory Small Boxes */}
+                  <div className="flex items-center gap-1.5 shrink-0 pl-1">
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider shrink-0">
+                      Sub:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSubCategory('ALL')}
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center space-x-1 ${
+                        selectedSubCategory === 'ALL'
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <span>All {categories.find((c) => c.id === selectedCategory)?.name || 'Category'}</span>
+                    </button>
+
+                    {(subCategoriesByParent[selectedCategory] || []).map((subcat) => {
+                      const isSubSelected = selectedSubCategory === subcat.id;
+                      const subCount = categoryItemCounts[subcat.id] || 0;
+
+                      return (
+                        <button
+                          key={subcat.id}
+                          type="button"
+                          onClick={() => setSelectedSubCategory(subcat.id)}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center space-x-1.5 ${
+                            isSubSelected
+                              ? 'bg-brand-500 text-white shadow-xs ring-2 ring-brand-500/20'
+                              : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <span>{subcat.name}</span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                              isSubSelected
+                                ? 'bg-white/30 text-white'
+                                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            {subCount}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Category / Subcategory Active Trail & Results Counter */}
@@ -1213,13 +1359,14 @@ export const PosTerminal: React.FC = () => {
                 })}
               </div>
             ) : (
-              /* GRID VIEW (WHEN TOGGLED) */
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
+              /* RESPONSIVE SQUARED BOXES (GRID VIEW) */
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
                 {filteredProducts.map((p) => {
                   const hasVariants = p.variants && p.variants.length > 0;
                   const defaultVariant = hasVariants ? (p.variants.find((v: any) => v.is_default) || p.variants[0]) : null;
                   const displayPrice = defaultVariant ? Number(defaultVariant.price) : Number(p.base_price);
                   const hasModifiers = p.modifier_groups && p.modifier_groups.length > 0;
+                  const categoryName = p.category_name || categories.find((c) => c.id === p.category_id)?.name;
 
                   return (
                     <div
@@ -1237,28 +1384,60 @@ export const PosTerminal: React.FC = () => {
                           addToCart(p);
                         }
                       }}
-                      className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3.5 flex flex-col justify-between hover:border-brand-500 hover:shadow-md cursor-pointer transition-all active:scale-[0.98] select-none"
+                      className="group relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-brand-500 dark:hover:border-brand-500 rounded-2xl p-3 aspect-square flex flex-col justify-between shadow-xs hover:shadow-lg transition-all duration-200 active:scale-[0.97] cursor-pointer select-none overflow-hidden"
                     >
-                      <div>
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                          <span className="font-mono">{p.sku}</span>
-                          <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-slate-600 dark:text-slate-400 font-semibold uppercase">
-                            {p.station}
-                          </span>
-                        </div>
-                        <h4 className="font-bold text-slate-900 dark:text-white text-xs leading-snug line-clamp-2">
-                          {p.name}
-                        </h4>
-                        
+                      {/* Top Badges: SKU & Station */}
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="font-mono text-[10px] font-bold text-slate-400 truncate max-w-[65%]">
+                          {p.sku || 'ITEM'}
+                        </span>
+                        <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
+                          {p.station || 'KITCHEN'}
+                        </span>
                       </div>
 
-                      <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                        <span className="font-extrabold text-sm text-brand-600 dark:text-brand-400">
-                          {currencySymbol} {displayPrice.toLocaleString()}
-                        </span>
-                        <span className="w-6 h-6 rounded-lg bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-400 flex items-center justify-center font-bold text-xs hover:bg-brand-500 hover:text-white transition-colors">
-                          +
-                        </span>
+                      {/* Center Content: Title, Category & Badges */}
+                      <div className="my-auto py-1">
+                        <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white line-clamp-2 leading-tight group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+                          {p.name}
+                        </h4>
+                        {categoryName && (
+                          <p className="text-[10px] text-slate-400 truncate mt-0.5 font-medium">
+                            {categoryName}
+                          </p>
+                        )}
+                        
+                        <div className="flex items-center gap-1 mt-1 flex-wrap">
+                          {hasModifiers && (
+                            <span className="inline-flex items-center text-[9px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded">
+                              <Sparkles className="w-2.5 h-2.5 mr-0.5" />
+                              Addons
+                            </span>
+                          )}
+                          {hasVariants && (
+                            <span className="inline-flex items-center text-[9px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.5 rounded">
+                              {p.variants.length} Sizes
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bottom Row: Price & Touch Plus Button */}
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+                        <div className="min-w-0">
+                          <span className="text-[9px] font-bold uppercase text-slate-400 block leading-tight">Price</span>
+                          <span className="font-black text-xs sm:text-sm text-brand-600 dark:text-brand-400 truncate block">
+                            {currencySymbol} {displayPrice.toLocaleString()}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          title={hasModifiers ? "Customize Item" : "Quick Add to Cart"}
+                          className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-brand-500 hover:bg-brand-600 active:scale-90 text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-all shrink-0"
+                        >
+                          <Plus className="w-4 h-4 stroke-[2.5]" />
+                        </button>
                       </div>
                     </div>
                   );
