@@ -14,6 +14,31 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 47 (commit 2cccd18): Resolved empty printed bill skeleton by normalizing item fields and auto-fetching complete receipt details:
+  1. Universal Receipt Data Normalizer (`ReceiptModal.tsx`):
+     - Implemented `normalizeReceiptData` that robustly adapts both snake_case fields (from raw Postgres table rows in `orders` and `order_items`) and camelCase fields (from dedicated receipt endpoints).
+     - Maps `product_name` / `name` -> `productName`, `variant_name` -> `variantName`, `unit_price` / `price` -> `unitPrice`, and `total_price` / `amount` -> `totalPrice`.
+     - Ensures `receiptData.items` never renders blank names or `NaN` amounts in any of the 5 themes.
+     - Maps all order-level properties: `order_number`, `order_type`, `table_number`, `customer_name`, `customer_phone`, `delivery_address`, `rider_name`, `rider_phone`, `subtotal`, `grand_total`, `tax_amount`, `total_discount`, and payments.
+     - Added empty fallback messages for all 5 themes (`STANDARD_80MM`, `FINE_DINING`, `COMPACT_58MM`, `TAX_INVOICE_A4`, `KITCHEN_TOKEN`) when an order has no line items.
+  2. Auto-Fetch Fallback in `ReceiptModal.tsx`:
+     - Added an automatic `useEffect` in `ReceiptModal` that detects when an order object has an ID but is missing line items or restaurant/branch metadata (e.g. passed from list/summary views).
+     - Automatically calls `GET /api/orders/:id/receipt` in the background and populates full line item details and totals.
+     - Displays an animated loading state while fetching and disables printing until complete.
+  3. Hardened Backend `/api/orders/:id/receipt` Endpoint (`order.routes.ts`):
+     - Changed `JOIN branches` and `JOIN tenants` to `LEFT JOIN` to prevent 404/500 errors on orders with detached or null branch IDs.
+     - Added robust fallbacks for `restaurant_name`, `branch_name`, `branch_phone`, `branch_address`, and `cashier_name`.
+  4. Updated Action Triggers Across Software (`OrdersHub.tsx`, `Daybook.tsx`, `RestaurantDashboard.tsx`):
+     - Updated 3-dots "Print / Reprint Receipt" in Orders Hub, "Print Receipt" in Daybook, and "Print Bill / Receipt" in Dashboard to call `/api/orders/:id/receipt` before opening the modal.
+     - Updated Orders Hub payment settlement and Order Details modal print buttons to fetch full receipt payloads.
+  5. Print Media Isolation (`Modal.tsx`, `index.css`):
+     - Added `print:static print:overflow-visible print:p-0 print:transform-none` to `Modal.tsx` to prevent parent containers from clipping or scrolling long receipts.
+     - Added `no-print` to Modal backdrop and header.
+     - Added `.no-print` hiding and background white/border none isolation in `index.css`.
+  6. Verification:
+     - 100% backend production build passed (`npm --workspace=backend run build`).
+     - 100% frontend production build passed (`npm --workspace=frontend run build`).
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
 - Decision 46 (commit 4e17cce): Corrected Top Selling Products sorting on Restaurant Dashboard to prioritize quantity sold:
   1. Backend API Sorting (`financial.routes.ts`):
      - Updated `/api/financial/reports/sales-by-product` to sort by `total_quantity DESC, total_sales DESC` by default, ensuring higher volume items rank ahead of higher-priced low-volume items.
