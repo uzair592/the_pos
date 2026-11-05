@@ -7,5 +7,6 @@ export * from './types/kds.js';
 export * from './types/inventory.js';
 export * from './types/financial.js';
 export * from './types/customer.js';
+export * from './types/costing.js';
 export * from './schemas/index.js';
 export * from './utils/unitConversion.js';

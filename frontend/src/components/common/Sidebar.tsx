@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   ChevronRight,
   Sparkles,
+  Calculator,
 } from 'lucide-react';
 import { FeatureKey, Permission } from '@pos/shared';
 
@@ -124,6 +125,14 @@ export const Sidebar: React.FC = () => {
           permission: Permission.MENU_VIEW,
         },
         {
+          to: '/app/recipe-costing',
+          label: 'Recipe Costing & Margins',
+          icon: Calculator,
+          permission: Permission.MENU_VIEW,
+          badge: 'COSTING',
+          badgeColor: 'bg-emerald-600 text-white',
+        },
+        {
           to: '/app/inventory',
           label: 'Stock & FIFO Batches',
           icon: Boxes,
@@ -186,6 +195,12 @@ export const Sidebar: React.FC = () => {
           label: 'Bill-Wise Profit & Loss',
           icon: Receipt,
           permission: Permission.REPORTS_SALES,
+        },
+        {
+          to: '/app/reports/recipe-costing',
+          label: 'Recipe Costing & Food Cost',
+          icon: Calculator,
+          permission: Permission.REPORTS_FINANCIAL,
         },
       ],
     },
@@ -260,11 +275,13 @@ export const Sidebar: React.FC = () => {
                   const Icon = item.icon;
                   // Handle custom query match for tab links
                   const isCurrentActive =
-                    item.to === '/app/reports/bill-profit-loss'
+                    item.to === '/app/recipe-costing' || item.to === '/app/reports/recipe-costing'
+                      ? location.pathname === '/app/recipe-costing' || location.pathname === '/app/reports/recipe-costing'
+                      : item.to === '/app/reports/bill-profit-loss'
                       ? location.pathname === '/app/reports/bill-profit-loss' ||
                         (location.pathname === '/app/reports' && location.search.includes('tab=BILL_PROFIT_LOSS'))
                       : item.to === '/app/reports'
-                      ? location.pathname === '/app/reports' && !location.search.includes('tab=BILL_PROFIT_LOSS')
+                      ? location.pathname === '/app/reports' && !location.search.includes('tab=BILL_PROFIT_LOSS') && !location.pathname.includes('recipe-costing')
                       : item.to.includes('?')
                       ? location.pathname + location.search === item.to
                       : location.pathname === item.to ||

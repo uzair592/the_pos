@@ -28,6 +28,8 @@ export interface ProductVariant {
   sku?: string;
   price: number;
   costPrice?: number;
+  packagingCost?: number;
+  additionalCost?: number;
   isDefault: boolean;
   isActive: boolean;
 }
@@ -65,6 +67,9 @@ export interface Product {
   barcode?: string;
   basePrice: number;
   costPrice: number;
+  packagingCost?: number;
+  additionalCost?: number;
+  targetFoodCostPercentage?: number;
   station: PrepStation;
   imageUrl?: string;
   isAvailable: boolean;

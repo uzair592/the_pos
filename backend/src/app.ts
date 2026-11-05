@@ -15,6 +15,7 @@ import { inventoryRoutes } from './routes/inventory.routes.js';
 import { financialRoutes } from './routes/financial.routes.js';
 import { customerRoutes } from './routes/customer.routes.js';
 import { syncRoutes } from './routes/sync.routes.js';
+import { costingRoutes } from './routes/costing.routes.js';
 import { pool } from './db/connection.js';
 
 export function buildApp(): FastifyInstance {
@@ -103,6 +104,7 @@ export function buildApp(): FastifyInstance {
   app.register(financialRoutes);
   app.register(customerRoutes);
   app.register(syncRoutes);
+  app.register(costingRoutes);
 
   // Global Error Handler
   app.setErrorHandler((error: any, request, reply) => {

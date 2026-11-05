@@ -24,6 +24,7 @@ import { Daybook } from './pages/restaurant/Daybook.js';
 import { CashAndBank } from './pages/financial/CashAndBank.js';
 import { OrdersHub } from './pages/orders/OrdersHub.js';
 import { MenuCatalog } from './pages/restaurant/MenuCatalog.js';
+import { RecipeCostingDashboard } from './pages/restaurant/RecipeCostingDashboard.js';
 import { InventoryManagement } from './pages/restaurant/InventoryManagement.js';
 import { PurchaseManagement } from './pages/restaurant/PurchaseManagement.js';
 import { ShiftManagement } from './pages/restaurant/ShiftManagement.js';
@@ -302,12 +303,14 @@ export const App: React.FC = () => {
                 <Route path="cash-and-bank" element={<CashAndBank />} />
                 <Route path="orders" element={<OrdersHub />} />
                 <Route path="menu" element={<MenuCatalog />} />
+                <Route path="recipe-costing" element={<RecipeCostingDashboard />} />
                 <Route path="inventory" element={<InventoryManagement />} />
                 <Route path="purchases" element={<PurchaseManagement />} />
                 <Route path="shifts" element={<ShiftManagement />} />
                 <Route path="reports" element={<FinancialReports />} />
                 <Route path="reports/daybook" element={<Daybook />} />
                 <Route path="reports/cash-and-bank" element={<CashAndBank />} />
+                <Route path="reports/recipe-costing" element={<RecipeCostingDashboard />} />
                 <Route path="reports/bill-profit-loss" element={<FinancialReports defaultTab="BILL_PROFIT_LOSS" />} />
                 <Route path="staff" element={<StaffManagement />} />
                 <Route path="branches" element={<BranchManagement />} />

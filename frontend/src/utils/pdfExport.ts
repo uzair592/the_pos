@@ -1631,3 +1631,486 @@ export function exportSingleBillProfitLossPdf(
   }
   return doc;
 }
+
+/**
+ * =========================================================================
+ * RECIPE COSTING, FOOD COST ANALYSIS, AND MENU ITEM PROFITABILITY EXPORTS
+ * =========================================================================
+ */
+
+export function exportMenuItemProfitabilityPdf(
+  items: any[],
+  summary: any,
+  meta: RestaurantMeta,
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || meta.currency || 'PKR';
+
+  // Report Header
+  drawReportHeader(doc, 'Menu Item Profitability & Recipe Costing Audit', meta, {
+    startDate: 'Active Catalog',
+    endDate: new Date().toISOString().split('T')[0],
+  });
+
+  let currentY = 36;
+
+  // KPI Summary Cards
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text('PORTFOLIO PROFITABILITY & FOOD COST BENCHMARKS', 14, currentY);
+
+  currentY += 4;
+  const cardWidth = (doc.internal.pageSize.width - 28 - 20) / 5;
+  const cards = [
+    { label: 'Total Menu Items', val: `${summary?.totalMenuItems || items.length} Items (${summary?.itemsWithRecipes || 0} recipes)` },
+    { label: 'Avg Food Cost %', val: `${summary?.avgFoodCostPercentage || 0}%`, color: [37, 99, 235] },
+    { label: 'Avg Gross Profit', val: `${sym} ${Number(summary?.avgGrossProfit || 0).toLocaleString()}`, color: [22, 163, 74] },
+    { label: 'Highest Food Cost', val: `${summary?.highestFoodCostItem?.name || 'N/A'} (${summary?.highestFoodCostItem?.foodCostPercentage || 0}%)`, color: [220, 38, 38] },
+    { label: 'Most Profitable', val: `${summary?.mostProfitableItem?.name || 'N/A'} (${sym} ${Number(summary?.mostProfitableItem?.grossProfit || 0).toLocaleString()})`, color: [16, 185, 129] },
+  ];
+
+  cards.forEach((card, idx) => {
+    const x = 14 + idx * (cardWidth + 5);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, currentY, cardWidth, 16, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text(card.label.toUpperCase(), x + 3, currentY + 5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    if (card.color) doc.setTextColor(card.color[0], card.color[1], card.color[2]);
+    else doc.setTextColor(15, 23, 42);
+    doc.text(card.val, x + 3, currentY + 11);
+  });
+
+  currentY += 22;
+
+  // Notice Banner: Gross Profit distinction
+  doc.setFillColor(254, 243, 199); // amber-100
+  doc.setDrawColor(251, 191, 36);
+  doc.roundedRect(14, currentY, doc.internal.pageSize.width - 28, 7, 1.5, 1.5, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(180, 83, 9);
+  doc.text(
+    'IMPORTANT NOTICE: Gross Profit reflects Selling Price minus direct ingredient and packaging costs. Operating expenses (labor, rent, utilities, marketing, taxes) are not deducted here.',
+    18,
+    currentY + 4.5
+  );
+
+  currentY += 11;
+
+  // Table Data
+  const rows = items.map((it, idx) => [
+    idx + 1,
+    it.productName,
+    it.categoryName || 'General',
+    `${sym} ${Number(it.sellingPrice || 0).toLocaleString()}`,
+    `${sym} ${Number(it.ingredientCost || 0).toLocaleString()}`,
+    `${sym} ${Number(it.packagingCost || 0).toLocaleString()}`,
+    `${sym} ${Number(it.totalDirectCost || 0).toLocaleString()}`,
+    `${sym} ${Number(it.grossProfit || 0).toLocaleString()}`,
+    `${Number(it.foodCostPercentage || 0).toFixed(1)}%`,
+    `${Number(it.grossProfitMargin || 0).toFixed(1)}%`,
+    it.status || 'HEALTHY',
+  ]);
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [[
+      '#',
+      'Menu Item',
+      'Category',
+      'Selling Price',
+      'Ingredient Cost',
+      'Packaging',
+      'Total Direct Cost',
+      'Gross Profit',
+      'Food Cost %',
+      'Gross Margin %',
+      'Status',
+    ]],
+    body: rows,
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 2, textColor: [51, 65, 85] },
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 50, fontStyle: 'bold' },
+      2: { cellWidth: 30 },
+      3: { cellWidth: 24, halign: 'right' },
+      4: { cellWidth: 24, halign: 'right' },
+      5: { cellWidth: 20, halign: 'right' },
+      6: { cellWidth: 26, halign: 'right', fontStyle: 'bold' },
+      7: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+      8: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+      9: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+      10: { cellWidth: 21, halign: 'center' },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        if (data.column.index === 8) {
+          const val = parseFloat(data.cell.text[0]);
+          if (val > 45) data.cell.styles.textColor = [220, 38, 38];
+          else if (val <= 28) data.cell.styles.textColor = [22, 163, 74];
+        }
+        if (data.column.index === 10) {
+          const st = data.cell.text[0];
+          if (st === 'EXCELLENT') data.cell.styles.textColor = [22, 163, 74];
+          else if (st === 'CRITICAL') data.cell.styles.textColor = [220, 38, 38];
+          else if (st === 'WARNING') data.cell.styles.textColor = [217, 119, 6];
+          else data.cell.styles.textColor = [37, 99, 235];
+        }
+      }
+    },
+  });
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    doc.save(`Menu_Item_Profitability_${new Date().toISOString().split('T')[0]}.pdf`);
+  }
+  return doc;
+}
+
+export function exportFoodCostAnalysisPdf(
+  analysis: any,
+  meta: RestaurantMeta,
+  dates: DateRangeMeta,
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || meta.currency || 'PKR';
+
+  drawReportHeader(doc, 'Food Cost Analysis & Category Breakdown', meta, dates);
+
+  let currentY = 36;
+  const overall = analysis?.overall || {};
+
+  // KPI Overview
+  doc.setFillColor(15, 23, 42);
+  doc.roundedRect(14, currentY, doc.internal.pageSize.width - 28, 22, 2, 2, 'F');
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(148, 163, 184);
+  doc.text('TOTAL NET SALES', 20, currentY + 7);
+  doc.text('TOTAL FOOD COST (COGS)', 70, currentY + 7);
+  doc.text('OVERALL FOOD COST %', 130, currentY + 7);
+  doc.text('GROSS PROFIT', 180, currentY + 7, { align: 'right' });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(255, 255, 255);
+  doc.text(`${sym} ${Number(overall.netSales || 0).toLocaleString()}`, 20, currentY + 15);
+  doc.setTextColor(251, 146, 60); // orange
+  doc.text(`${sym} ${Number(overall.totalCogs || 0).toLocaleString()}`, 70, currentY + 15);
+  doc.setTextColor(96, 165, 250); // blue
+  doc.text(`${Number(overall.overallFoodCostPercent || 0).toFixed(1)}%`, 130, currentY + 15);
+  doc.setTextColor(74, 222, 128); // green
+  doc.text(`${sym} ${Number(overall.grossProfit || 0).toLocaleString()}`, 180, currentY + 15, { align: 'right' });
+
+  currentY += 28;
+
+  // Category Breakdown Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text('CATEGORY-WISE FOOD COST & MARGIN ANALYSIS', 14, currentY);
+  currentY += 4;
+
+  const catRows = (analysis?.categoryBreakdown || []).map((cat: any, idx: number) => [
+    idx + 1,
+    cat.categoryName,
+    cat.itemCount,
+    `${sym} ${Number(cat.totalSales || 0).toLocaleString()}`,
+    `${sym} ${Number(cat.totalCogs || 0).toLocaleString()}`,
+    `${sym} ${Number(cat.grossProfit || 0).toLocaleString()}`,
+    `${Number(cat.foodCostPercentage || 0).toFixed(1)}%`,
+    `${Number(cat.grossProfitMargin || 0).toFixed(1)}%`,
+  ]);
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [['#', 'Category', 'Items', 'Net Sales', 'Food Cost', 'Gross Profit', 'Food Cost %', 'Margin %']],
+    body: catRows,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2.5 },
+    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 42, fontStyle: 'bold' },
+      2: { cellWidth: 16, halign: 'center' },
+      3: { cellWidth: 28, halign: 'right' },
+      4: { cellWidth: 26, halign: 'right' },
+      5: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
+      6: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+      7: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+    },
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 10;
+
+  // Branch Comparison (if available)
+  if (analysis?.branchComparison && analysis.branchComparison.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text('BRANCH COMPARISON & EFFICIENCY', 14, currentY);
+    currentY += 4;
+
+    const branchRows = analysis.branchComparison.map((br: any, idx: number) => [
+      idx + 1,
+      br.branchName,
+      br.orderCount,
+      `${sym} ${Number(br.netSales || 0).toLocaleString()}`,
+      `${sym} ${Number(br.cogs || 0).toLocaleString()}`,
+      `${sym} ${Number(br.grossProfit || 0).toLocaleString()}`,
+      `${Number(br.foodCostPercentage || 0).toFixed(1)}%`,
+      `${Number(br.grossProfitMargin || 0).toFixed(1)}%`,
+    ]);
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['#', 'Branch Name', 'Orders', 'Net Sales', 'Food Cost', 'Gross Profit', 'Food Cost %', 'Margin %']],
+      body: branchRows,
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2.5 },
+      headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255] },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 45, fontStyle: 'bold' },
+        2: { cellWidth: 18, halign: 'center' },
+        3: { cellWidth: 28, halign: 'right' },
+        4: { cellWidth: 26, halign: 'right' },
+        5: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
+        6: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+        7: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+      },
+    });
+  }
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    doc.save(`Food_Cost_Analysis_${dates.startDate}_to_${dates.endDate}.pdf`);
+  }
+  return doc;
+}
+
+export function exportTheoreticalVsActualPdf(
+  items: any[],
+  summary: any,
+  meta: RestaurantMeta,
+  dates: DateRangeMeta,
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || meta.currency || 'PKR';
+
+  drawReportHeader(doc, 'Theoretical vs Actual Food Cost & Wastage Audit', meta, dates);
+
+  let currentY = 36;
+
+  // Summary Banner
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text('CONSUMPTION VARIANCE & DISCREPANCY AUDIT SUMMARY', 14, currentY);
+
+  currentY += 4;
+  const cardWidth = (doc.internal.pageSize.width - 28 - 15) / 4;
+  const cards = [
+    { label: 'Theoretical Cost (Expected)', val: `${sym} ${Number(summary?.totalTheoreticalCost || 0).toLocaleString()}` },
+    { label: 'Actual Inventory Cost', val: `${sym} ${Number(summary?.totalActualCost || 0).toLocaleString()}`, color: [37, 99, 235] },
+    { label: 'Recorded Wastage / Loss', val: `${sym} ${Number(summary?.totalWastageCost || 0).toLocaleString()}`, color: [220, 38, 38] },
+    { label: 'Overall Cost Variance', val: `${sym} ${Number(summary?.totalCostVariance || 0).toLocaleString()} (${Number(summary?.variancePercentage || 0).toFixed(1)}%)`, color: summary?.totalCostVariance > 0 ? [220, 38, 38] : [22, 163, 74] },
+  ];
+
+  cards.forEach((card, idx) => {
+    const x = 14 + idx * (cardWidth + 5);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, currentY, cardWidth, 16, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text(card.label.toUpperCase(), x + 3, currentY + 5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    if (card.color) doc.setTextColor(card.color[0], card.color[1], card.color[2]);
+    else doc.setTextColor(15, 23, 42);
+    doc.text(card.val, x + 3, currentY + 11.5);
+  });
+
+  currentY += 22;
+
+  const rows = items.map((it, idx) => [
+    idx + 1,
+    it.ingredientName,
+    it.category || 'General',
+    it.baseUnit,
+    Number(it.theoreticalQuantity || 0).toLocaleString(),
+    `${sym} ${Number(it.theoreticalCost || 0).toLocaleString()}`,
+    Number(it.actualQuantity || 0).toLocaleString(),
+    `${sym} ${Number(it.actualCost || 0).toLocaleString()}`,
+    Number(it.wastageQuantity || 0).toLocaleString(),
+    Number(it.quantityVariance || 0).toLocaleString(),
+    `${sym} ${Number(it.costVariance || 0).toLocaleString()}`,
+    `${Number(it.variancePercentage || 0).toFixed(1)}%`,
+    it.status || 'NORMAL',
+  ]);
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [[
+      '#',
+      'Ingredient',
+      'Category',
+      'Unit',
+      'Expected Qty',
+      'Expected Cost',
+      'Actual Qty',
+      'Actual Cost',
+      'Wastage',
+      'Qty Variance',
+      'Cost Variance',
+      'Variance %',
+      'Status',
+    ]],
+    body: rows,
+    theme: 'grid',
+    styles: { fontSize: 7, cellPadding: 2 },
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 40, fontStyle: 'bold' },
+      2: { cellWidth: 26 },
+      3: { cellWidth: 12, halign: 'center' },
+      4: { cellWidth: 22, halign: 'right' },
+      5: { cellWidth: 24, halign: 'right' },
+      6: { cellWidth: 22, halign: 'right' },
+      7: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+      8: { cellWidth: 20, halign: 'right' },
+      9: { cellWidth: 22, halign: 'right' },
+      10: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+      11: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
+      12: { cellWidth: 22, halign: 'center' },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        if (data.column.index === 12) {
+          const st = data.cell.text[0];
+          if (st === 'NORMAL') data.cell.styles.textColor = [22, 163, 74];
+          else if (st === 'INVESTIGATE') data.cell.styles.textColor = [220, 38, 38];
+          else data.cell.styles.textColor = [217, 119, 6];
+        }
+      }
+    },
+  });
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    doc.save(`Theoretical_vs_Actual_${dates.startDate}_to_${dates.endDate}.pdf`);
+  }
+  return doc;
+}
+
+export function exportIngredientCostHistoryPdf(
+  ingredients: any[],
+  meta: RestaurantMeta,
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || meta.currency || 'PKR';
+
+  drawReportHeader(doc, 'Ingredient Cost History & Price Fluctuations', meta, {
+    startDate: 'Purchase Audit',
+    endDate: new Date().toISOString().split('T')[0],
+  });
+
+  let currentY = 36;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text('RAW MATERIAL PRICE MOVEMENTS & RECIPE EXPOSURE', 14, currentY);
+  currentY += 4;
+
+  const rows = ingredients.map((ing, idx) => [
+    idx + 1,
+    ing.ingredientName,
+    ing.category || 'General',
+    `${ing.purchaseUnit} (${ing.conversionFactor} ${ing.baseUnit})`,
+    `${sym} ${Number(ing.previousPurchaseCost || 0).toLocaleString()}`,
+    `${sym} ${Number(ing.latestPurchaseCost || 0).toLocaleString()}`,
+    `${sym} ${Number(ing.averagePurchaseCost || 0).toLocaleString()}`,
+    `${Number(ing.priceChangePercentage || 0).toFixed(1)}%`,
+    `${ing.recipesAffectedCount || 0} recipes`,
+  ]);
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [[
+      '#',
+      'Ingredient',
+      'Category',
+      'Packaging Unit',
+      'Prev Cost',
+      'Latest Cost',
+      'Avg Cost',
+      'Change %',
+      'Recipes Affected',
+    ]],
+    body: rows,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2.5 },
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 38, fontStyle: 'bold' },
+      2: { cellWidth: 26 },
+      3: { cellWidth: 26 },
+      4: { cellWidth: 20, halign: 'right' },
+      5: { cellWidth: 20, halign: 'right', fontStyle: 'bold' },
+      6: { cellWidth: 20, halign: 'right' },
+      7: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+      8: { cellWidth: 22, halign: 'center' },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 7) {
+        const val = parseFloat(data.cell.text[0]);
+        if (val > 0) data.cell.styles.textColor = [220, 38, 38];
+        else if (val < 0) data.cell.styles.textColor = [22, 163, 74];
+      }
+    },
+  });
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    doc.save(`Ingredient_Cost_History_${new Date().toISOString().split('T')[0]}.pdf`);
+  }
+  return doc;
+}
+
