@@ -14,6 +14,27 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 44 (commit c84cf03): Resolved Bill-Wise Profit & Loss navigation, tab synchronization, branch filtering, and itemized A4 PDF breakdown:
+  1. Fixed Navigation & Routing:
+     - Updated `Sidebar.tsx` navigation link to point to `/app/reports/bill-profit-loss`.
+     - Enhanced `isCurrentActive` matching to correctly distinguish `/app/reports/bill-profit-loss` from `/app/reports` and handle `?tab=BILL_PROFIT_LOSS`.
+  2. Tab State Synchronization:
+     - Added `useEffect` in `FinancialReports.tsx` synchronizing `location.pathname` and `queryTab` to `activeTab`, resolving the bug where clicking the menu failed to switch tabs when `FinancialReports` was already mounted.
+     - Wrapped sub-report tabs with `handleTabChange` to synchronize URL route state and enable standard browser history back/forward navigation.
+  3. Branch Filtering & Reactive Loading:
+     - Appended missing `${branchParam}` to the `/financial/reports/bill-profit-loss` API query.
+     - Added `currentBranchId` to the `useEffect` dependencies for instant refetching upon switching branches.
+     - Added a clean animated loading spinner while bill records are querying.
+  4. Standardized 3-Dots ActionMenu:
+     - Replaced raw button in the bill-wise table with `ActionMenu` containing View Breakdown, Download A4 PDF, and Print A4 Breakdown.
+  5. Individual Bill A4 PDF Breakdown:
+     - Implemented `exportSingleBillProfitLossPdf` in `pdfExport.ts` producing vector A4 audit vouchers with complete item-by-item FIFO ingredient cost, selling price, gross profit, margin %, financial reconciliation summary card, and dual signatures.
+     - Added Download A4 PDF and Print A4 buttons directly in the Breakdown details modal.
+  6. Verification:
+     - 100% frontend production build passed (`npm --workspace=frontend run build`).
+     - 100% backend production build passed (`npm --workspace=backend run build`).
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
+- Decision 43 (commit 1ecb019): Standardized business reporting on professional A4 PDF format across Daybook, Shift Reconciliation, Purchases, and Cash & Bank:
 - Decision 42 (commit 24ad8dd): Standardized 3-dots action menu and completed verified CRUD operations across all modules:
   1. Backend Endpoints Added & Hardened:
      - financial.routes.ts: DELETE /api/financial/bank-accounts/:id (soft-deactivates account and safely reassigns default) and DELETE /api/financial/cash-bank/transfers/:id (reverses cash/bank balances and deletes contra voucher).
