@@ -319,10 +319,11 @@ export async function financialRoutes(fastify: FastifyInstance) {
     preHandler: [requirePermission(Permission.REPORTS_SALES)],
   }, async (req, reply) => {
     const tenantId = req.user!.tenantId!;
-    const { branchId, startDate, endDate } = req.query as {
+    const { branchId, startDate, endDate, sortBy } = req.query as {
       branchId?: string;
       startDate?: string;
       endDate?: string;
+      sortBy?: string;
     };
 
     const start = startDate || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
@@ -346,7 +347,12 @@ export async function financialRoutes(fastify: FastifyInstance) {
       params.push(branchId);
       sql += ` AND o.branch_id = $${params.length}`;
     }
-    sql += ` GROUP BY oi.product_id, oi.product_name ORDER BY total_sales DESC`;
+
+    const orderClause = sortBy === 'sales'
+      ? 'ORDER BY total_sales DESC, total_quantity DESC'
+      : 'ORDER BY total_quantity DESC, total_sales DESC';
+
+    sql += ` GROUP BY oi.product_id, oi.product_name ${orderClause}`;
 
     const { rows } = await query(sql, params, { tenantId });
     return reply.send({ products: rows });

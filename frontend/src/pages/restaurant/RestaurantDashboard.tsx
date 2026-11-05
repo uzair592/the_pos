@@ -86,7 +86,12 @@ export const RestaurantDashboard: React.FC = () => {
       setSummary(summaryRes.report);
       setRecentOrders(ordersRes.orders || []);
       setActiveOrders(activeRes.orders || []);
-      setTopProducts((productsRes.products || []).slice(0, 6));
+      const sortedByQuantity = [...(productsRes.products || [])].sort((a, b) => {
+        const qtyDiff = (Number(b.total_quantity || b.total_quantity_sold) || 0) - (Number(a.total_quantity || a.total_quantity_sold) || 0);
+        if (qtyDiff !== 0) return qtyDiff;
+        return (Number(b.total_sales) || 0) - (Number(a.total_sales) || 0);
+      });
+      setTopProducts(sortedByQuantity.slice(0, 6));
 
       if (hasFeature(FeatureKey.INVENTORY)) {
         const stockRes = await api.get(
