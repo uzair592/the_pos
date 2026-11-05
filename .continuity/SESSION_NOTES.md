@@ -14,6 +14,31 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 50: Fixed Left Navigation Sidebar, Collapsible Menu & Distinct Background Separation:
+  1. Fixed Viewport-Locked Navigation Layout (`App.tsx`):
+     - Restructured `RestaurantLayout` and `SuperAdminLayout` from scrolling window containers (`min-h-screen`) into viewport-locked app shells:
+       `<div className="h-screen w-screen overflow-hidden flex bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">`
+     - Desktop sidebar occupies full viewport height (`h-screen`) fixed on the left and never scrolls when scrolling page contents.
+     - Top navbar (`h-16 shrink-0`) sits fixed at the top of the content column with branch indicators, quick action buttons, theme toggler, and user profile.
+     - Content container `<main className="flex-1 h-full min-w-0 overflow-y-auto overflow-x-hidden">` serves as the sole scrolling container for Orders, Products, Inventory, Reports, and other pages.
+  2. Collapsible Minimize / Expand Functionality (`Sidebar.tsx`):
+     - State persistence: initialized from `localStorage.getItem('pos_sidebar_collapsed') === 'true'`.
+     - Smooth width transition between expanded (`w-68 lg:w-72`) and collapsed (`w-20`) using `transition-all duration-300 ease-in-out`.
+     - In expanded mode: full navigation hierarchy, brand identity header with collapse toggle button (`ChevronLeft`), categorized section titles, badges, and bottom tenant profile card.
+     - In collapsed mode: centered compact icons, floating hover tooltips showing labels, badges, and keyboard shortcuts, compact brand header with expand toggle button (`ChevronRight`), and compact tenant avatar badge.
+     - Main content area automatically expands to fill the available width when collapsed.
+  3. Distinct Background & Theme Separation (`Sidebar.tsx`):
+     - Distinct dark slate / midnight navy background (`bg-slate-900 dark:bg-[#0b0f19] border-r border-slate-800 text-slate-200 shadow-xl`) creating immediate visual contrast against both light (`bg-slate-50`) and dark (`bg-slate-950`) workspaces.
+     - Active link styling: prominent `bg-brand-500 text-white shadow-md shadow-brand-500/25` with left accent bar indicator (`w-1 bg-white rounded-r-full`).
+     - Inactive link styling: `text-slate-300 hover:text-white hover:bg-slate-800/80`.
+     - Independent internal scrolling (`overflow-y-auto custom-scrollbar`) inside the sidebar navigation body for low-height displays.
+  4. Mobile Responsive Drawer (`Sidebar.tsx` & `Navbar.tsx`):
+     - For screens `< md`, mobile hamburger menu toggle in `Navbar` opens a fixed slide-out drawer with backdrop overlay.
+     - Link clicks and keyboard shortcut (`Alt+S`) automatically close the mobile drawer.
+  5. Verification:
+     - 100% frontend production build passed (`npm --workspace=frontend run build`).
+     - 63/63 vitest automated test cases passed across 9 test suites.
+     - 38/38 QA simulation checks passed in `backend/test/qa_simulation_suite.ts`.
 - Decision 49 (commit d8826f8): Enterprise Recipe Costing, Food Cost Analysis, and Menu Item Profitability Module:
   1. Complete Database Schema Migration (`011_recipe_costing_and_profitability.sql`):
      - Added `packaging_cost`, `additional_cost`, and `target_food_cost_percentage` columns to `products`, `product_variants`, and `recipes`.

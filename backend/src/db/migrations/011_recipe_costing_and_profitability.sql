@@ -52,3 +52,4 @@ SELECT
 FROM ingredients
 WHERE is_active = true
 ON CONFLICT DO NOTHING;
+

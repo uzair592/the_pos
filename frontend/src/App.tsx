@@ -1,5 +1,5 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext.js';
 import { ThemeProvider } from './context/ThemeContext.js';
 import { ToastProvider } from './context/ToastContext.js';
@@ -162,6 +162,29 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 // Super Admin Layout Guard
 const SuperAdminLayout: React.FC = () => {
   const { user, isSuperAdmin, isLoading } = useAuth();
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('pos_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    setIsMobileOpen(false);
+  }, [location.pathname]);
+
+  const toggleCollapse = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('pos_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   if (isLoading) {
     return (
@@ -176,11 +199,19 @@ const SuperAdminLayout: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors">
-      <Navbar />
-      <div className="flex-1 flex">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto">
+    <div className="h-screen w-screen overflow-hidden flex bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+      <Sidebar
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={toggleCollapse}
+        isMobileOpen={isMobileOpen}
+        onCloseMobile={() => setIsMobileOpen(false)}
+      />
+      <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
+        <Navbar
+          onToggleMobileMenu={() => setIsMobileOpen((prev) => !prev)}
+          isSidebarCollapsed={isSidebarCollapsed}
+        />
+        <main className="flex-1 h-full min-w-0 overflow-y-auto overflow-x-hidden bg-slate-50 dark:bg-slate-950">
           <Outlet />
         </main>
       </div>
@@ -191,6 +222,29 @@ const SuperAdminLayout: React.FC = () => {
 // Restaurant Protected Layout
 const RestaurantLayout: React.FC = () => {
   const { user, isSuperAdmin, isLoading } = useAuth();
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('pos_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    setIsMobileOpen(false);
+  }, [location.pathname]);
+
+  const toggleCollapse = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('pos_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   if (isLoading) {
     return (
@@ -205,11 +259,19 @@ const RestaurantLayout: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors">
-      <Navbar />
-      <div className="flex-1 flex">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto">
+    <div className="h-screen w-screen overflow-hidden flex bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+      <Sidebar
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={toggleCollapse}
+        isMobileOpen={isMobileOpen}
+        onCloseMobile={() => setIsMobileOpen(false)}
+      />
+      <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
+        <Navbar
+          onToggleMobileMenu={() => setIsMobileOpen((prev) => !prev)}
+          isSidebarCollapsed={isSidebarCollapsed}
+        />
+        <main className="flex-1 h-full min-w-0 overflow-y-auto overflow-x-hidden bg-slate-50 dark:bg-slate-950">
           <Outlet />
         </main>
       </div>

@@ -164,3 +164,4 @@ export async function costingRoutes(fastify: FastifyInstance) {
     return reply.send({ message: 'All recipe costs recalculated successfully', ...result });
   });
 }
+
