@@ -14,6 +14,19 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 33 (commit 8e3eca8): Centralized Cash & Bank and Daybook under Reports, Added Daybook PDF Download, Removed All Urdu, and Standardized 3-Dots Action Menus:
+  1. Information Architecture & Navigation:
+     - Grouped Daily Daybook (/app/reports/daybook) and Cash & Bank (/app/reports/cash-and-bank) under Reports & Analytics in Sidebar.tsx.
+     - Integrated Daybook and Cash & Bank as primary tabs (DAYBOOK and CASH_BANK) inside FinancialReports.tsx alongside Executive Overview, Bill-Wise P&L, Sales, Purchases, and Expenses.
+     - Maintained backward-compatible route aliases (/app/daybook, /app/cash-and-bank) in App.tsx.
+  2. Daybook PDF Download:
+     - Built exportDaybookPdf in frontend/src/utils/pdfExport.ts delivering a formatted portrait A4 PDF with restaurant & branch branding, executive KPI banner, payment method breakdown, sales order ledger, inward purchases, ingredient FIFO consumption, operating expenses, kitchen wastage, and shift drawer cash reconciliation.
+     - Added prominent Download PDF button with instant generation to Daybook.tsx.
+  3. Complete Urdu Removal (100% English UI):
+     - Removed all Urdu wording, subtitles, placeholders, font imports (Noto Nastaliq Urdu), and classes (.font-urdu) across ReceiptModal, MenuCatalog, PosTerminal, Daybook, CashAndBank, OnboardingWizard, and RestaurantSettings.
+  4. Universal 3-Vertical-Dots Action Menu (ActionMenu):
+     - Expanded ActionMenu across all modules: Purchase Management (inward purchases), Cash & Bank (bank account cards & transfers), Active Orders cards in Orders Hub, Daybook tables (sales, purchases, expenses, wastage, shifts), Inventory Management (transfers), and Shift Management (history).
+  5. Zero test regressions: frontend production build succeeds with 0 errors, all 47 backend integration tests pass, and 38/38 QA simulation checks pass.
 - Decision 32 (commit 0307922): Modernized Menu and Product Center for High-Volume Restaurant POS Workflows:
   1. Complete Redesign of Menu Catalog (MenuCatalog.tsx):
      - Added Executive KPI Stats Cards: Total Products, Available in POS (In-Stock), 86'd / Out of Stock, and Catalog-Wide Average Gross Margin %.
