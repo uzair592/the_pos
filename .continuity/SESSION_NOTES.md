@@ -14,6 +14,26 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 51 (commit b6d3d3a): Fix POS Receipt Printing Data Binding, NaN/Undefined Glitches & Direct Thermal Printing:
+  1. Root Cause Resolution for `undefined`, `NaN`, and `Invalid Date`:
+     - Identified missing database joins in `/api/orders/active` and `/api/orders/:id/receipt` which omitted `branch_phone`, `branch_address`, and `restaurant_name`.
+     - Standardized property naming mismatch between raw Postgres `snake_case` (e.g. `order_number`, `product_name`, `created_at`, `total_price`) and formatters expecting `camelCase` (`orderNumber`, `productName`, `date`, `totalPrice`), preventing `undefined` values and `Number(undefined) -> NaN` calculations.
+     - Normalized date handling using Pakistan Standard Time (`Asia/Karachi`) to prevent `"Invalid Date"`.
+     - Guaranteed 100% safe numerical parsing (`safeNumber`) so currency values format as `Rs. 1,250.00` and never leak `Rs. NaN`.
+  2. Dedicated Thermal Receipt Printing Engine (`frontend/src/utils/receiptPrinter.ts`):
+     - Created `normalizeAndValidateReceiptData` with zero-leak guarantees for all order fields, items, modifiers, taxes, and payment lines.
+     - Created `generateThermalReceiptHtml` with optimized CSS layouts for both **80mm** (standard 3-inch roll) and **58mm** (compact 2-inch roll) thermal paper widths with clean dashed dividers, item counts, unit prices, discounts, and clear bold totals.
+     - Added `*** DUPLICATE / REPRINT RECEIPT ***` header banner for receipts printed from Orders Hub, Daybook, or Dashboard to distinguish reprints from originals.
+     - Created `formatReceiptPlainText` for 1-click clean WhatsApp / SMS receipt sharing without corrupted characters.
+  3. Elimination of In-App Print Preview Modal:
+     - Replaced the screen-blocking in-app `ReceiptModal` popup in POS Terminal, Orders Hub, Daybook, and Dashboard with high-speed direct printing (`executeThermalPrint`).
+     - Rendered receipts into a sandboxed, hidden iframe (`#pos-silent-thermal-frame`), invoking the browser/system printer dialog directly in 1 click.
+  4. Verification:
+     - 100% frontend production build passed (`tsc && vite build`).
+     - 63/63 vitest automated backend test cases passed across 9 test suites.
+     - 38/38 QA simulation checks passed in `backend/test/qa_simulation_suite.ts`.
+     - Pushed to `origin feature/initial-project`.
+
 - Decision 50: Fixed Left Navigation Sidebar, Collapsible Menu & Distinct Background Separation:
   1. Fixed Viewport-Locked Navigation Layout (`App.tsx`):
      - Restructured `RestaurantLayout` and `SuperAdminLayout` from scrolling window containers (`min-h-screen`) into viewport-locked app shells:
