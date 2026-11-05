@@ -254,7 +254,7 @@ export const KitchenDisplay: React.FC = () => {
               let badgeBg = 'bg-slate-800 text-slate-300';
 
               if (isDelayedWarning) {
-                statusBorder = 'border-rose-500 ring-2 ring-rose-500/50 animate-pulse';
+                statusBorder = 'border-rose-500 ring-2 ring-rose-500/50';
               } else if (isPending) {
                 statusBorder = 'border-amber-500/60 ring-1 ring-amber-500/30';
                 badgeBg = 'bg-amber-500/20 text-amber-300 border border-amber-500/40';
@@ -302,7 +302,7 @@ export const KitchenDisplay: React.FC = () => {
                         <div className="flex items-center justify-end space-x-1 mt-1 text-[11px] font-bold">
                           <Clock className={`w-3.5 h-3.5 ${
                             isDelayedWarning
-                              ? 'text-rose-400 animate-spin'
+                              ? 'text-rose-400'
                               : isUrgent
                               ? 'text-amber-400'
                               : 'text-emerald-400'
