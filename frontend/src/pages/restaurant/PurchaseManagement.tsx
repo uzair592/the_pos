@@ -27,6 +27,7 @@ import {
   Users,
 } from 'lucide-react';
 import { StockUnit, Permission } from '@pos/shared';
+import { exportPurchaseVoucherPdf } from '../../utils/pdfExport.js';
 
 export const PurchaseManagement: React.FC = () => {
   const { tenant, branches, currentBranchId, hasPermission } = useAuth();
@@ -262,6 +263,32 @@ export const PurchaseManagement: React.FC = () => {
     } catch (err: any) {
       error(err.message || 'Failed to fetch invoice details');
     }
+  };
+
+  const handleDownloadInvoicePdf = (invoice: any, items: any[] = []) => {
+    exportPurchaseVoucherPdf(
+      {
+        name: tenant?.name || 'Restaurant POS',
+        currencySymbol,
+        branch: invoice.branch_name || 'Main Branch',
+      },
+      invoice,
+      items,
+      { autoPrint: false }
+    );
+  };
+
+  const handlePrintInvoicePdf = (invoice: any, items: any[] = []) => {
+    exportPurchaseVoucherPdf(
+      {
+        name: tenant?.name || 'Restaurant POS',
+        currencySymbol,
+        branch: invoice.branch_name || 'Main Branch',
+      },
+      invoice,
+      items,
+      { autoPrint: true }
+    );
   };
 
   const handleCreateSupplier = async (e: React.FormEvent) => {
@@ -622,9 +649,14 @@ export const PurchaseManagement: React.FC = () => {
                                 onClick: () => handleReceiveStock(p.id),
                               },
                               {
-                                label: 'Print Invoice Slip',
+                                label: 'Download A4 Invoice (PDF)',
+                                icon: Download,
+                                onClick: () => handleDownloadInvoicePdf(p),
+                              },
+                              {
+                                label: 'Print A4 Invoice',
                                 icon: Printer,
-                                onClick: () => handleViewInvoiceDetails(p),
+                                onClick: () => handlePrintInvoicePdf(p),
                               },
                               isDraft && {
                                 label: 'Cancel & Delete Invoice',
@@ -1146,25 +1178,46 @@ export const PurchaseManagement: React.FC = () => {
 
             {/* Actions */}
             <div className="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setIsDetailModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-xs font-bold"
-              >
-                Close
-              </button>
-
-              {selectedInvoice.status === 'DRAFT' && (
+              <div className="flex items-center space-x-2">
                 <button
                   type="button"
-                  onClick={() => handleReceiveStock(selectedInvoice.id)}
-                  disabled={receivingInvoiceId === selectedInvoice.id}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-md disabled:opacity-50"
+                  onClick={() => handleDownloadInvoicePdf(selectedInvoice, invoiceItems)}
+                  className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-all"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{receivingInvoiceId === selectedInvoice.id ? 'Receiving Stock...' : 'Receive Stock & Generate FIFO Lots'}</span>
+                  <Download className="w-4 h-4" />
+                  <span>Download A4 PDF</span>
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => handlePrintInvoicePdf(selectedInvoice, invoiceItems)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print A4 Invoice</span>
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsDetailModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-xs font-bold"
+                >
+                  Close
+                </button>
+
+                {selectedInvoice.status === 'DRAFT' && (
+                  <button
+                    type="button"
+                    onClick={() => handleReceiveStock(selectedInvoice.id)}
+                    disabled={receivingInvoiceId === selectedInvoice.id}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-md disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{receivingInvoiceId === selectedInvoice.id ? 'Receiving Stock...' : 'Receive Stock & Generate FIFO Lots'}</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </Modal>

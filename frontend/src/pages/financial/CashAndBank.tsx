@@ -5,7 +5,7 @@ import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
 import { StatCard } from '../../components/common/StatCard.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
-import { exportCashBankLedgerPdf } from '../../utils/pdfExport.js';
+import { exportCashBankLedgerPdf, exportCashBankTransferPdf } from '../../utils/pdfExport.js';
 import {
   Landmark,
   Trash2,
@@ -18,6 +18,7 @@ import {
   Plus,
   RefreshCw,
   Printer,
+  Download,
   Calendar,
   CheckCircle2,
   Building2,
@@ -1415,11 +1416,33 @@ export const CashAndBank: React.FC = () => {
                                 },
                               },
                               {
-                                label: 'Print Voucher Slip',
+                                label: 'Download A4 Voucher (PDF)',
+                                icon: Download,
+                                onClick: () => {
+                                  exportCashBankTransferPdf(
+                                    {
+                                      name: tenant?.name || 'Restaurant POS',
+                                      currencySymbol,
+                                      branch: 'Main Branch',
+                                    },
+                                    t,
+                                    { autoPrint: false }
+                                  );
+                                },
+                              },
+                              {
+                                label: 'Print A4 Voucher',
                                 icon: Printer,
                                 onClick: () => {
-                                  setSelectedTransferVoucher(t);
-                                  setIsTransferVoucherOpen(true);
+                                  exportCashBankTransferPdf(
+                                    {
+                                      name: tenant?.name || 'Restaurant POS',
+                                      currencySymbol,
+                                      branch: 'Main Branch',
+                                    },
+                                    t,
+                                    { autoPrint: true }
+                                  );
                                 },
                               },
                               {
@@ -1886,17 +1909,46 @@ export const CashAndBank: React.FC = () => {
 
               <div className="flex space-x-2">
                 <button
-                  onClick={() => setIsTransferVoucherOpen(false)}
-                  className="px-4 py-2 border rounded-xl text-slate-600 dark:text-slate-400 text-xs font-bold"
+                  type="button"
+                  onClick={() => {
+                    exportCashBankTransferPdf(
+                      {
+                        name: tenant?.name || 'Restaurant POS',
+                        currencySymbol,
+                        branch: 'Main Branch',
+                      },
+                      selectedTransferVoucher,
+                      { autoPrint: false }
+                    );
+                  }}
+                  className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm"
                 >
-                  Close
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download A4 PDF</span>
                 </button>
                 <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2 bg-brand-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5"
+                  type="button"
+                  onClick={() => {
+                    exportCashBankTransferPdf(
+                      {
+                        name: tenant?.name || 'Restaurant POS',
+                        currencySymbol,
+                        branch: 'Main Branch',
+                      },
+                      selectedTransferVoucher,
+                      { autoPrint: true }
+                    );
+                  }}
+                  className="px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center space-x-1.5"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  <span>Print Voucher</span>
+                  <span>Print A4 Voucher</span>
+                </button>
+                <button
+                  onClick={() => setIsTransferVoucherOpen(false)}
+                  className="px-4 py-2 border rounded-xl text-slate-600 dark:text-slate-400 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  Close
                 </button>
               </div>
             </div>
@@ -1973,19 +2025,30 @@ export const CashAndBank: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end space-x-2 pt-4 border-t border-slate-200 dark:border-slate-700">
+          <div className="flex justify-between items-center pt-4 border-t border-slate-200 dark:border-slate-700">
+            <div className="flex space-x-2">
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center space-x-1.5"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download A4 Statement (PDF)</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                className="px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center space-x-1.5"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print A4 Statement</span>
+              </button>
+            </div>
             <button
               onClick={() => setIsPrintModalOpen(false)}
               className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               Close
-            </button>
-            <button
-              onClick={() => window.print()}
-              className="px-5 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center space-x-1.5"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Print Statement</span>
             </button>
           </div>
         </div>

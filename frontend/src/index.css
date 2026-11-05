@@ -24,13 +24,14 @@
   background: rgba(148, 163, 184, 0.6);
 }
 
-/* Print Specific Rules for Universal Thermal Receipts and Reports */
+/* Print Specific Rules for Universal Thermal Receipts and A4 Reports */
 @media print {
   body * {
     visibility: hidden !important;
   }
   .printable-receipt, .printable-receipt *,
-  .printable-area, .printable-area * {
+  .printable-area, .printable-area *,
+  .printable-a4-report, .printable-a4-report * {
     visibility: visible !important;
   }
   .printable-receipt, .printable-area {
@@ -42,13 +43,30 @@
     padding: 0 !important;
     box-shadow: none !important;
   }
-  /* Remove browser headers and footers for crisp receipts */
+  .printable-a4-report {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 210mm !important;
+    margin: 0 auto !important;
+    padding: 8mm !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  .printable-a4-report table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+  .printable-a4-report tr {
+    page-break-inside: avoid !important;
+  }
   @page {
-    margin: 0;
+    margin: 8mm;
     size: auto;
   }
 }
-
 
 /* Dedicated Independent POS Scrollbars with overscroll containment */
 .pos-menu-scroller {

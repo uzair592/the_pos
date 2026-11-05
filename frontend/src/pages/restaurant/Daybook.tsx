@@ -4,7 +4,12 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
-import { exportDaybookPdf } from '../../utils/pdfExport.js';
+import {
+  exportDaybookPdf,
+  exportPurchaseVoucherPdf,
+  exportExpenseVoucherPdf,
+  exportShiftZReportPdf,
+} from '../../utils/pdfExport.js';
 import { ReceiptModal } from '../../components/common/ReceiptModal.js';
 import {
   Calendar,
@@ -82,92 +87,78 @@ export const Daybook: React.FC = () => {
   const [selectedDaybookExpense, setSelectedDaybookExpense] = useState<any | null>(null);
   const [selectedDaybookShift, setSelectedDaybookShift] = useState<any | null>(null);
 
+  const handleDownloadDaybookPurchase = (p: any) => {
+    exportPurchaseVoucherPdf(
+      {
+        name: tenant?.name || 'Restaurant POS',
+        currencySymbol,
+        branch: p.branchName || 'Main Branch',
+      },
+      p,
+      [],
+      { autoPrint: false }
+    );
+  };
+
   const handlePrintDaybookPurchase = (p: any) => {
-    const printWindow = window.open('', '_blank', 'width=450,height=600');
-    if (!printWindow) { window.print(); return; }
-    const html = `
-      <html><head><title>Purchase Voucher - ${p.invoiceNumber}</title>
-      <style>body{font-family:monospace;font-size:12px;padding:15px;}.row{display:flex;justify-content:space-between;margin:4px 0;}.bold{font-weight:bold;}.divider{border-bottom:1px dashed #000;margin:8px 0;}</style></head>
-      <body>
-      <h2 style="text-align:center;margin:0;">${tenant?.name || 'RESTAURANT POS'}</h2>
-      <h3 style="text-align:center;margin:4px 0;">INWARD PURCHASE VOUCHER</h3>
-      <div class="divider"></div>
-      <div class="row"><span>Invoice #:</span><span class="bold">${p.invoiceNumber}</span></div>
-      <div class="row"><span>Supplier:</span><span>${p.supplierName}</span></div>
-      <div class="row"><span>Branch:</span><span>${p.branchName}</span></div>
-      <div class="row"><span>Received By:</span><span>${p.receivedByName || 'Inventory Manager'}</span></div>
-      <div class="row"><span>Items Count:</span><span>${p.itemsCount} lines</span></div>
-      <div class="divider"></div>
-      <div class="row bold"><span>Total Amount:</span><span>${currencySymbol} ${Number(p.totalAmount).toLocaleString()}</span></div>
-      <div class="row"><span>Paid Amount:</span><span>${currencySymbol} ${Number(p.paidAmount).toLocaleString()}</span></div>
-      <div class="row bold"><span>Balance Payable:</span><span>${currencySymbol} ${Number(p.balancePayable).toLocaleString()}</span></div>
-      <div class="divider"></div>
-      <p style="text-align:center;font-size:10px;">Daybook Inward Voucher</p>
-      </body></html>
-    `;
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+    exportPurchaseVoucherPdf(
+      {
+        name: tenant?.name || 'Restaurant POS',
+        currencySymbol,
+        branch: p.branchName || 'Main Branch',
+      },
+      p,
+      [],
+      { autoPrint: true }
+    );
+  };
+
+  const handleDownloadDaybookExpense = (e: any) => {
+    exportExpenseVoucherPdf(
+      {
+        name: tenant?.name || 'Restaurant POS',
+        currencySymbol,
+        branch: e.branchName || 'Main Branch',
+      },
+      e,
+      { autoPrint: false }
+    );
   };
 
   const handlePrintDaybookExpense = (e: any) => {
-    const printWindow = window.open('', '_blank', 'width=450,height=600');
-    if (!printWindow) { window.print(); return; }
-    const html = `
-      <html><head><title>Expense Voucher</title>
-      <style>body{font-family:monospace;font-size:12px;padding:15px;}.row{display:flex;justify-content:space-between;margin:4px 0;}.bold{font-weight:bold;}.divider{border-bottom:1px dashed #000;margin:8px 0;}</style></head>
-      <body>
-      <h2 style="text-align:center;margin:0;">${tenant?.name || 'RESTAURANT POS'}</h2>
-      <h3 style="text-align:center;margin:4px 0;">EXPENSE PAYMENT VOUCHER</h3>
-      <div class="divider"></div>
-      <div class="row"><span>Category:</span><span class="bold">${e.categoryName}</span></div>
-      <div class="row"><span>Description:</span><span>${e.description}</span></div>
-      <div class="row"><span>Branch:</span><span>${e.branchName}</span></div>
-      <div class="row"><span>Payment Method:</span><span>${e.paymentMethod}</span></div>
-      <div class="row"><span>Recorded By:</span><span>${e.recordedByName || 'Staff'}</span></div>
-      <div class="row"><span>Time:</span><span>${new Date(e.createdAt).toLocaleString()}</span></div>
-      <div class="divider"></div>
-      <div class="row bold"><span>Total Paid:</span><span>${currencySymbol} ${Number(e.amount).toLocaleString()}</span></div>
-      <div class="divider"></div>
-      <p style="text-align:center;font-size:10px;">Daybook Operational Expense Voucher</p>
-      </body></html>
-    `;
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+    exportExpenseVoucherPdf(
+      {
+        name: tenant?.name || 'Restaurant POS',
+        currencySymbol,
+        branch: e.branchName || 'Main Branch',
+      },
+      e,
+      { autoPrint: true }
+    );
+  };
+
+  const handleDownloadDaybookShift = (s: any) => {
+    exportShiftZReportPdf(
+      {
+        name: tenant?.name || 'Restaurant POS',
+        currencySymbol,
+        branch: s.branchName || 'Main Branch',
+      },
+      s,
+      { autoPrint: false }
+    );
   };
 
   const handlePrintDaybookShift = (s: any) => {
-    const printWindow = window.open('', '_blank', 'width=450,height=600');
-    if (!printWindow) { window.print(); return; }
-    const html = `
-      <html><head><title>Shift Report - ${s.cashierName}</title>
-      <style>body{font-family:monospace;font-size:12px;padding:15px;}.row{display:flex;justify-content:space-between;margin:4px 0;}.bold{font-weight:bold;}.divider{border-bottom:1px dashed #000;margin:8px 0;}</style></head>
-      <body>
-      <h2 style="text-align:center;margin:0;">${tenant?.name || 'RESTAURANT POS'}</h2>
-      <h3 style="text-align:center;margin:4px 0;">SHIFT RECONCILIATION SUMMARY</h3>
-      <div class="divider"></div>
-      <div class="row"><span>Cashier:</span><span class="bold">${s.cashierName}</span></div>
-      <div class="row"><span>Branch:</span><span>${s.branchName}</span></div>
-      <div class="row"><span>Opened:</span><span>${new Date(s.openedAt).toLocaleTimeString()}</span></div>
-      <div class="row"><span>Closed:</span><span>${s.closedAt ? new Date(s.closedAt).toLocaleTimeString() : 'Open'}</span></div>
-      <div class="divider"></div>
-      <div class="row"><span>Opening Cash:</span><span>${currencySymbol} ${Number(s.openingCash).toLocaleString()}</span></div>
-      <div class="row"><span>Cash Sales:</span><span>+${currencySymbol} ${Number(s.cashSales).toLocaleString()}</span></div>
-      <div class="row"><span>Cash In / Out:</span><span>+${s.cashIn} / -${s.cashOut}</span></div>
-      <div class="row bold"><span>Expected Cash:</span><span>${currencySymbol} ${Number(s.expectedCash).toLocaleString()}</span></div>
-      <div class="row bold"><span>Actual Counted:</span><span>${s.actualCash !== null ? `${currencySymbol} ${Number(s.actualCash).toLocaleString()}` : '—'}</span></div>
-      <div class="row bold"><span>Variance:</span><span>${s.variance !== null ? `${s.variance > 0 ? '+' : ''}${currencySymbol} ${Number(s.variance).toLocaleString()}` : '—'}</span></div>
-      <div class="divider"></div>
-      <p style="text-align:center;font-size:10px;">Daybook Cashier Reconciliation</p>
-      </body></html>
-    `;
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+    exportShiftZReportPdf(
+      {
+        name: tenant?.name || 'Restaurant POS',
+        currencySymbol,
+        branch: s.branchName || 'Main Branch',
+      },
+      s,
+      { autoPrint: true }
+    );
   };
 
   // Catalog helpers for modals
@@ -459,11 +450,21 @@ export const Daybook: React.FC = () => {
           </button>
 
           <button
+            onClick={handleDownloadPdf}
+            className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold text-xs flex items-center space-x-1.5 transition-colors shadow-sm"
+            title="Download complete Daybook Statement as A4 PDF"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download A4 PDF</span>
+          </button>
+
+          <button
             onClick={() => setIsPrintModalOpen(true)}
             className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 rounded-xl font-bold text-xs flex items-center space-x-1.5 transition-colors shadow-sm"
+            title="Preview and print A4 Daybook Statement"
           >
             <Printer className="w-3.5 h-3.5" />
-            <span>Print Daybook</span>
+            <span>Print A4 Statement</span>
           </button>
 
           <button
@@ -1039,7 +1040,12 @@ export const Daybook: React.FC = () => {
                               onClick: () => setSelectedDaybookPurchase(p),
                             },
                             {
-                              label: 'Print Purchase Slip',
+                              label: 'Download A4 Voucher (PDF)',
+                              icon: Download,
+                              onClick: () => handleDownloadDaybookPurchase(p),
+                            },
+                            {
+                              label: 'Print A4 Voucher',
                               icon: Printer,
                               onClick: () => handlePrintDaybookPurchase(p),
                             },
@@ -1212,7 +1218,12 @@ export const Daybook: React.FC = () => {
                                   onClick: () => setSelectedDaybookExpense(e),
                                 },
                                 {
-                                  label: 'Print Payment Slip',
+                                  label: 'Download A4 Voucher (PDF)',
+                                  icon: Download,
+                                  onClick: () => handleDownloadDaybookExpense(e),
+                                },
+                                {
+                                  label: 'Print A4 Voucher',
                                   icon: Printer,
                                   onClick: () => handlePrintDaybookExpense(e),
                                 },
@@ -1396,7 +1407,12 @@ export const Daybook: React.FC = () => {
                                 onClick: () => setSelectedDaybookShift(s),
                               },
                               {
-                                label: 'Print Z-Report Slip',
+                                label: 'Download A4 Z-Report (PDF)',
+                                icon: Download,
+                                onClick: () => handleDownloadDaybookShift(s),
+                              },
+                              {
+                                label: 'Print A4 Z-Report',
                                 icon: Printer,
                                 onClick: () => handlePrintDaybookShift(s),
                               },
@@ -1617,15 +1633,26 @@ export const Daybook: React.FC = () => {
           <div className="space-y-6 text-xs font-sans">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
               <p className="text-slate-500">
-                Print-ready official Daily Operations & Financial Statement (A4 / 80mm roll).
+                Official Daily Operations & Financial Statement in standard A4 PDF format.
               </p>
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black rounded-xl text-xs flex items-center space-x-1.5 shadow-md"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Print Document</span>
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl text-xs flex items-center space-x-1.5 shadow-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download A4 PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black rounded-xl text-xs flex items-center space-x-1.5 shadow-md"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print A4 Statement</span>
+                </button>
+              </div>
             </div>
 
             {/* Print Document Paper Container */}
@@ -1851,11 +1878,19 @@ export const Daybook: React.FC = () => {
             <div className="flex justify-end space-x-2 pt-2">
               <button
                 type="button"
+                onClick={() => handleDownloadDaybookPurchase(selectedDaybookPurchase)}
+                className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg text-xs shadow-sm transition-all"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download A4 PDF</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => handlePrintDaybookPurchase(selectedDaybookPurchase)}
                 className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print Slip</span>
+                <span>Print A4 Voucher</span>
               </button>
               <button
                 type="button"
@@ -1914,11 +1949,19 @@ export const Daybook: React.FC = () => {
             <div className="flex justify-end space-x-2 pt-2">
               <button
                 type="button"
+                onClick={() => handleDownloadDaybookExpense(selectedDaybookExpense)}
+                className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg text-xs shadow-sm transition-all"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download A4 PDF</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => handlePrintDaybookExpense(selectedDaybookExpense)}
                 className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print Voucher</span>
+                <span>Print A4 Voucher</span>
               </button>
               <button
                 type="button"
@@ -1990,11 +2033,19 @@ export const Daybook: React.FC = () => {
             <div className="flex justify-end space-x-2 pt-2">
               <button
                 type="button"
+                onClick={() => handleDownloadDaybookShift(selectedDaybookShift)}
+                className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg text-xs shadow-sm transition-all"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download A4 PDF</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => handlePrintDaybookShift(selectedDaybookShift)}
                 className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print Z-Report</span>
+                <span>Print A4 Z-Report</span>
               </button>
               <button
                 type="button"

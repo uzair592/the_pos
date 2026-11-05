@@ -938,3 +938,518 @@ export function exportCashBankLedgerPdf(params: CashBankLedgerPdfParams) {
   const cleanName = accountName.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`Statement_${cleanName}_${dates.startDate}_${dates.endDate}.pdf`);
 }
+
+/**
+ * Helper to open an in-memory jsPDF document directly in the browser's PDF print viewer
+ */
+export function openPdfForPrint(doc: jsPDF) {
+  const blobUrl = doc.output('bloburl');
+  const printWin = window.open(blobUrl, '_blank');
+  if (printWin) {
+    printWin.focus();
+  }
+}
+
+/**
+ * 9. Shift Z-Report & Cash Drawer Reconciliation PDF (A4 Portrait)
+ */
+export function exportShiftZReportPdf(
+  meta: RestaurantMeta,
+  shift: any,
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || 'Rs.';
+  const openedDateStr = shift.opened_at || shift.openedAt ? new Date(shift.opened_at || shift.openedAt).toLocaleDateString() : new Date().toLocaleDateString();
+
+  let startY = drawReportHeader(doc, 'Shift Z-Report & Cash Audit', meta, {
+    startDate: openedDateStr,
+    endDate: shift.closed_at || shift.closedAt ? new Date(shift.closed_at || shift.closedAt).toLocaleDateString() : openedDateStr,
+  });
+
+  // Shift Meta Card
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, startY, doc.internal.pageSize.width - 28, 28, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Register: ${shift.register_name || shift.registerName || 'POS Register 01'}`, 20, startY + 7);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Cashier: ${shift.cashier_name || shift.cashierName || 'Staff Cashier'}`, 20, startY + 14);
+  doc.text(`Branch Location: ${shift.branch_name || shift.branchName || meta.branch || 'Main Outlet'}`, 20, startY + 21);
+
+  // Status Badge on Right
+  const isClosed = (shift.status || '').toUpperCase() === 'CLOSED';
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(isClosed ? 15 : 16, isClosed ? 23 : 185, isClosed ? 42 : 129);
+  doc.text(`Status: ${shift.status || 'CLOSED'}`, doc.internal.pageSize.width - 20, startY + 7, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  const openTime = shift.opened_at || shift.openedAt ? new Date(shift.opened_at || shift.openedAt).toLocaleString() : '—';
+  const closeTime = shift.closed_at || shift.closedAt ? new Date(shift.closed_at || shift.closedAt).toLocaleString() : 'In Progress (Open)';
+  doc.text(`Opened: ${openTime}`, doc.internal.pageSize.width - 20, startY + 14, { align: 'right' });
+  doc.text(`Closed: ${closeTime}`, doc.internal.pageSize.width - 20, startY + 21, { align: 'right' });
+
+  startY += 34;
+
+  // Drawer Reconciliation Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Cash Drawer Reconciliation Breakdown', 14, startY);
+  startY += 3;
+
+  const openingCash = Number(shift.opening_cash || shift.openingCash || 0);
+  const cashSales = Number(shift.total_cash_sales || shift.cashSales || 0);
+  const cashRefunds = Number(shift.total_cash_refunds || shift.cashRefunds || 0);
+  const cashIn = Number(shift.total_cash_in || shift.cashIn || 0);
+  const cashOut = Number(shift.total_cash_out || shift.cashOut || 0);
+  const expectedCash = Number(shift.expected_cash || shift.expectedCash || (openingCash + cashSales - cashRefunds + cashIn - cashOut));
+  const actualCash = shift.actual_cash !== null && shift.actual_cash !== undefined
+    ? Number(shift.actual_cash)
+    : shift.actualCash !== null && shift.actualCash !== undefined
+    ? Number(shift.actualCash)
+    : null;
+  const variance = actualCash !== null ? actualCash - expectedCash : null;
+
+  const reconRows = [
+    ['Opening Cash Float', 'Initial starting cash in drawer float', `${sym} ${openingCash.toLocaleString()}`],
+    ['+ Cash Sales Revenue', 'Total cash collected from orders today', `+ ${sym} ${cashSales.toLocaleString()}`],
+    ['- Cash Refunds / Voids', 'Cash paid back to customers for returns/voids', `- ${sym} ${cashRefunds.toLocaleString()}`],
+    ['+ Cash In (Drawer Additions)', 'Petty cash infusions into register drawer', `+ ${sym} ${cashIn.toLocaleString()}`],
+    ['- Cash Out (Drawer Payouts)', 'Petty cash withdrawals / expenses from register', `- ${sym} ${cashOut.toLocaleString()}`],
+    ['Expected Cash in Drawer', 'Computed net mathematical closing drawer total', `${sym} ${expectedCash.toLocaleString()}`],
+    ['Actual Counted Cash', 'Physical cash count verified by cashier/manager', actualCash !== null ? `${sym} ${actualCash.toLocaleString()}` : 'Unclosed / Pending Count'],
+    ['Reconciliation Variance', variance === null ? 'Pending' : variance === 0 ? 'Exact Match (Rs. 0)' : variance > 0 ? `Surplus (+${sym} ${variance.toLocaleString()})` : `Shortage (${sym} ${variance.toLocaleString()})`, variance !== null ? `${variance >= 0 ? '+' : ''}${sym} ${variance.toLocaleString()}` : '—'],
+  ];
+
+  autoTable(doc, {
+    startY,
+    head: [['Particulars', 'Description / Calculation Method', 'Amount']],
+    body: reconRows,
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8 },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 55 },
+      1: { textColor: [71, 85, 105], cellWidth: 85 },
+      2: { halign: 'right', fontStyle: 'bold', cellWidth: 42 },
+    },
+    didParseCell: (data) => {
+      if (data.row.index === 5 || data.row.index === 6) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [241, 245, 249];
+      }
+      if (data.row.index === 7) {
+        data.cell.styles.fontStyle = 'bold';
+        if (variance !== null) {
+          if (variance < 0) {
+            data.cell.styles.textColor = [225, 29, 72];
+            data.cell.styles.fillColor = [255, 241, 242];
+          } else if (variance > 0) {
+            data.cell.styles.textColor = [37, 99, 235];
+            data.cell.styles.fillColor = [239, 246, 255];
+          } else {
+            data.cell.styles.textColor = [16, 185, 129];
+            data.cell.styles.fillColor = [236, 253, 245];
+          }
+        }
+      }
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  startY = (doc as any).lastAutoTable.finalY + 8;
+
+  // Notes Box if available
+  const notes = shift.closing_notes || shift.closingNotes;
+  if (notes) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Shift Notes & Explanation:', 14, startY);
+    startY += 4;
+
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(14, startY, doc.internal.pageSize.width - 28, 14, 2, 2, 'F');
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text(doc.splitTextToSize(notes, doc.internal.pageSize.width - 36), 18, startY + 6);
+    startY += 18;
+  } else {
+    startY += 4;
+  }
+
+  // Official Signature Section
+  const signatureY = Math.max(startY + 8, doc.internal.pageSize.height - 38);
+  doc.setDrawColor(203, 213, 225);
+  doc.line(20, signatureY, 80, signatureY);
+  doc.line(doc.internal.pageSize.width - 80, signatureY, doc.internal.pageSize.width - 20, signatureY);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Cashier Signature', 50, signatureY + 4, { align: 'center' });
+  doc.text('Duty Manager / Auditor Signature', doc.internal.pageSize.width - 50, signatureY + 4, { align: 'center' });
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    const regClean = (shift.register_name || shift.registerName || 'Shift').replace(/[^a-zA-Z0-9]/g, '_');
+    doc.save(`Shift_Z_Report_${regClean}_${openedDateStr.replace(/[^a-zA-Z0-9]/g, '-')}.pdf`);
+  }
+  return doc;
+}
+
+/**
+ * 10. Inward Purchase Invoice & Goods Received Note PDF (A4 Portrait)
+ */
+export function exportPurchaseVoucherPdf(
+  meta: RestaurantMeta,
+  purchase: any,
+  items: any[] = [],
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || 'Rs.';
+  const invoiceNumber = purchase.invoice_number || purchase.invoiceNumber || 'INV-000';
+  const purchaseDate = purchase.created_at || purchase.purchaseDate || new Date().toISOString();
+  const dateStr = new Date(purchaseDate).toLocaleDateString();
+
+  let startY = drawReportHeader(doc, 'Inward Purchase Invoice', meta, { startDate: dateStr, endDate: dateStr });
+
+  // Supplier & Delivery Card
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, startY, doc.internal.pageSize.width - 28, 28, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Supplier: ${purchase.supplier_name || purchase.supplierName || 'General Vendor'}`, 20, startY + 7);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Destination: ${purchase.branch_name || purchase.branchName || meta.branch || 'Central Kitchen / Main Branch'}`, 20, startY + 14);
+  doc.text(`Received By: ${purchase.received_by_name || purchase.receivedByName || 'Inventory Manager'}`, 20, startY + 21);
+
+  // Invoice & Payment Status on Right
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Invoice #: ${invoiceNumber}`, doc.internal.pageSize.width - 20, startY + 7, { align: 'right' });
+
+  const isPaid = Number(purchase.balance_payable !== undefined ? purchase.balance_payable : purchase.balancePayable || 0) <= 0;
+  doc.setTextColor(isPaid ? 16 : 217, isPaid ? 185 : 119, isPaid ? 129 : 6);
+  doc.text(`Status: ${isPaid ? 'PAID' : 'UNPAID / ON CREDIT'}`, doc.internal.pageSize.width - 20, startY + 14, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Date: ${dateStr}`, doc.internal.pageSize.width - 20, startY + 21, { align: 'right' });
+
+  startY += 34;
+
+  // Line items table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Received Materials & Inventory Items', 14, startY);
+  startY += 3;
+
+  const totalAmount = Number(purchase.total_amount || purchase.totalAmount || 0);
+  const paidAmount = Number(purchase.paid_amount || purchase.paidAmount || 0);
+  const balancePayable = Number(purchase.balance_payable !== undefined ? purchase.balance_payable : purchase.balancePayable || (totalAmount - paidAmount));
+
+  const tableBody = items.length > 0
+    ? items.map((it: any, index: number) => [
+        String(index + 1),
+        it.ingredient_name || it.ingredientName || it.name || 'Raw Ingredient',
+        `${Number(it.quantity || 0).toLocaleString()} ${it.unit || ''}`,
+        `${sym} ${Number(it.unit_price || it.unitPrice || 0).toLocaleString()}`,
+        `${sym} ${Number(it.total_price || it.totalPrice || (Number(it.quantity || 0) * Number(it.unit_price || it.unitPrice || 0))).toLocaleString()}`,
+      ])
+    : [
+        ['1', `Inward Stock Batch (${purchase.items_count || purchase.itemsCount || 1} lines)`, `${purchase.items_count || purchase.itemsCount || 1} lines`, `${sym} ${totalAmount.toLocaleString()}`, `${sym} ${totalAmount.toLocaleString()}`],
+      ];
+
+  autoTable(doc, {
+    startY,
+    head: [['#', 'Item / Ingredient', 'Qty Received', 'Unit Rate', 'Line Total']],
+    body: tableBody,
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8 },
+    columnStyles: {
+      0: { cellWidth: 12, halign: 'center' },
+      1: { fontStyle: 'bold' },
+      2: { halign: 'center' },
+      3: { halign: 'right' },
+      4: { halign: 'right', fontStyle: 'bold' },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  startY = (doc as any).lastAutoTable.finalY + 6;
+
+  // Financial Totals Summary Box
+  const summaryX = doc.internal.pageSize.width - 90;
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(summaryX, startY, 76, 26, 2, 2, 'F');
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Gross Total:', summaryX + 6, startY + 6);
+  doc.text(`${sym} ${totalAmount.toLocaleString()}`, summaryX + 70, startY + 6, { align: 'right' });
+
+  doc.text('Amount Paid:', summaryX + 6, startY + 13);
+  doc.setTextColor(16, 185, 129);
+  doc.text(`${sym} ${paidAmount.toLocaleString()}`, summaryX + 70, startY + 13, { align: 'right' });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Balance Due:', summaryX + 6, startY + 20);
+  doc.setTextColor(balancePayable > 0 ? 225 : 15, balancePayable > 0 ? 29 : 23, balancePayable > 0 ? 72 : 42);
+  doc.text(`${sym} ${balancePayable.toLocaleString()}`, summaryX + 70, startY + 20, { align: 'right' });
+
+  // Signature Section
+  const signatureY = Math.max(startY + 38, doc.internal.pageSize.height - 35);
+  doc.setDrawColor(203, 213, 225);
+  doc.line(20, signatureY, 80, signatureY);
+  doc.line(doc.internal.pageSize.width - 80, signatureY, doc.internal.pageSize.width - 20, signatureY);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Storekeeper / Receiver Signature', 50, signatureY + 4, { align: 'center' });
+  doc.text('Authorized Purchasing Manager', doc.internal.pageSize.width - 50, signatureY + 4, { align: 'center' });
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    doc.save(`Purchase_Invoice_${invoiceNumber}.pdf`);
+  }
+  return doc;
+}
+
+/**
+ * 11. Operational Expense Voucher PDF (A4 Portrait)
+ */
+export function exportExpenseVoucherPdf(
+  meta: RestaurantMeta,
+  expense: any,
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || 'Rs.';
+  const dateStr = expense.createdAt ? new Date(expense.createdAt).toLocaleDateString() : new Date().toLocaleDateString();
+  const timeStr = expense.createdAt ? new Date(expense.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+  let startY = drawReportHeader(doc, 'Operational Expense Voucher', meta, { startDate: dateStr, endDate: dateStr });
+
+  // Voucher Summary Box
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, startY, doc.internal.pageSize.width - 28, 28, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(225, 29, 72);
+  doc.text(`Category: ${expense.categoryName || 'General Operational Expense'}`, 20, startY + 7);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Branch Location: ${expense.branchName || meta.branch || 'Main Outlet'}`, 20, startY + 14);
+  doc.text(`Payment Method: ${expense.paymentMethod || 'Cash (Petty Cash Drawer)'}`, 20, startY + 21);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Voucher Ref: ${expense.id ? expense.id.slice(0, 8).toUpperCase() : 'EXP-01'}`, doc.internal.pageSize.width - 20, startY + 7, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Recorded By: ${expense.recordedByName || 'Staff Cashier'}`, doc.internal.pageSize.width - 20, startY + 14, { align: 'right' });
+  doc.text(`Date & Time: ${dateStr} ${timeStr}`, doc.internal.pageSize.width - 20, startY + 21, { align: 'right' });
+
+  startY += 34;
+
+  // Expense Particulars Table
+  const expenseRows = [
+    ['Expense Category', expense.categoryName || 'Operational Expense'],
+    ['Description / Particulars', expense.description || '—'],
+    ['Payment Channel', expense.paymentMethod || 'Cash'],
+    ['Operating Branch', expense.branchName || meta.branch || 'Main Branch'],
+    ['Total Amount Paid', `${sym} ${Number(expense.amount || 0).toLocaleString()}`],
+  ];
+
+  autoTable(doc, {
+    startY,
+    head: [['Field', 'Voucher Details']],
+    body: expenseRows,
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8.5 },
+    columnStyles: {
+      0: { cellWidth: 50, fontStyle: 'bold', textColor: [71, 85, 105] },
+      1: { fontStyle: 'normal' },
+    },
+    didParseCell: (data) => {
+      if (data.row.index === 4) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.textColor = [225, 29, 72];
+        data.cell.styles.fontSize = 10;
+        data.cell.styles.fillColor = [255, 241, 242];
+      }
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  startY = (doc as any).lastAutoTable.finalY + 12;
+
+  // Triple-tier Signatures
+  const signatureY = Math.max(startY + 20, doc.internal.pageSize.height - 35);
+  const colWidth = (doc.internal.pageSize.width - 28) / 3;
+
+  doc.setDrawColor(203, 213, 225);
+  doc.line(18, signatureY, 18 + colWidth - 8, signatureY);
+  doc.line(18 + colWidth + 4, signatureY, 18 + (colWidth * 2) - 4, signatureY);
+  doc.line(18 + (colWidth * 2) + 8, signatureY, doc.internal.pageSize.width - 18, signatureY);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Prepared By (Staff)', 18 + (colWidth / 2) - 4, signatureY + 4, { align: 'center' });
+  doc.text('Authorized Manager', 18 + colWidth + (colWidth / 2), signatureY + 4, { align: 'center' });
+  doc.text('Received By (Payee)', doc.internal.pageSize.width - 18 - (colWidth / 2) + 4, signatureY + 4, { align: 'center' });
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    doc.save(`Expense_Voucher_${expense.id ? expense.id.slice(0, 8) : 'Doc'}.pdf`);
+  }
+  return doc;
+}
+
+/**
+ * 12. Contra Cash/Bank Transfer Voucher PDF (A4 Portrait)
+ */
+export function exportCashBankTransferPdf(
+  meta: RestaurantMeta,
+  transfer: any,
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const sym = meta.currencySymbol || 'Rs.';
+  const dateStr = transfer.transferDate ? new Date(transfer.transferDate).toLocaleDateString() : new Date().toLocaleDateString();
+  const timeStr = transfer.transferDate ? new Date(transfer.transferDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+  let startY = drawReportHeader(doc, 'Contra Fund Transfer Voucher', meta, { startDate: dateStr, endDate: dateStr });
+
+  // Transfer Card
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, startY, doc.internal.pageSize.width - 28, 28, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Voucher #: ${transfer.referenceNumber || 'TRF-001'}`, 20, startY + 7);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Transfer Mode: Contra Fund Rebalance / Shift Deposit`, 20, startY + 14);
+  doc.text(`Initiated By: ${transfer.createdByName || 'Finance Officer'}`, 20, startY + 21);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(16, 185, 129);
+  doc.text(`Amount: ${sym} ${Number(transfer.amount || 0).toLocaleString()}`, doc.internal.pageSize.width - 20, startY + 7, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Date: ${dateStr}`, doc.internal.pageSize.width - 20, startY + 14, { align: 'right' });
+  doc.text(`Time: ${timeStr}`, doc.internal.pageSize.width - 20, startY + 21, { align: 'right' });
+
+  startY += 34;
+
+  // Accounting Double Entry Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Double-Entry Accounting Journal Movement', 14, startY);
+  startY += 3;
+
+  const accountingRows = [
+    ['From Account (Credit / Outflow)', transfer.fromAccountName || 'Source Account', `- ${sym} ${Number(transfer.amount || 0).toLocaleString()}`],
+    ['To Account (Debit / Inflow)', transfer.toAccountName || 'Destination Account', `+ ${sym} ${Number(transfer.amount || 0).toLocaleString()}`],
+    ['Transfer Notes / Narration', transfer.notes || 'Routine cash/bank balancing', '—'],
+  ];
+
+  autoTable(doc, {
+    startY,
+    head: [['Journal Line', 'Account Name / Reference', 'Movement Effect']],
+    body: accountingRows,
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8.5 },
+    columnStyles: {
+      0: { cellWidth: 55, fontStyle: 'bold' },
+      1: { fontStyle: 'normal' },
+      2: { halign: 'right', fontStyle: 'bold' },
+    },
+    didParseCell: (data) => {
+      if (data.row.index === 0 && data.column.index === 2) {
+        data.cell.styles.textColor = [225, 29, 72];
+      }
+      if (data.row.index === 1 && data.column.index === 2) {
+        data.cell.styles.textColor = [16, 185, 129];
+      }
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  startY = (doc as any).lastAutoTable.finalY + 15;
+
+  // Signatures
+  const signatureY = Math.max(startY + 25, doc.internal.pageSize.height - 35);
+  doc.setDrawColor(203, 213, 225);
+  doc.line(20, signatureY, 80, signatureY);
+  doc.line(doc.internal.pageSize.width - 80, signatureY, doc.internal.pageSize.width - 20, signatureY);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Cashier / Transferor Signature', 50, signatureY + 4, { align: 'center' });
+  doc.text('Accounts Manager Signature', doc.internal.pageSize.width - 50, signatureY + 4, { align: 'center' });
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    doc.save(`Transfer_Voucher_${transfer.referenceNumber || 'Contra'}.pdf`);
+  }
+  return doc;
+}

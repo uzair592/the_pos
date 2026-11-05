@@ -96,6 +96,52 @@
 - Decision 37 (commit f89ed1f): Modernized POS Terminal UI:
   1. Category Bar: Horizontal scrollable category pills + vertical divider bar (`|`) + subcategory pills.
   2. Item Grid: Responsive squared product cards (`aspect-square`) with badge, price, and instant touch-friendly ordering.
+- Decision 41 (commit 83e4481): Managed print themes from settings, removed template selector tabs from bill printing modal, and modernized receipt styling:
+  1. Receipt Printing Modal Streamlining (`ReceiptModal.tsx`):
+     - Removed the template selector tab bar and option toggles that previously cluttered the bill modal during checkout.
+     - Cashiers can now preview and print bills immediately with 1-click speed.
+     - Clean modal header with unobtrusive active theme indicator (`Theme: Standard 80mm POS Thermal`) and subtle settings management hint.
+     - Automatically uses the default template configured in restaurant settings (`defaultTemplate` or `localStorage.pos_default_receipt_template`).
+  2. Print Themes & Receipt Designer in Settings (`RestaurantSettings.tsx`):
+     - Created an interactive visual theme designer section in Restaurant Settings.
+     - Provided 5 visual theme selection cards with hardware specs, feature badges, and active selection rings:
+       * Standard 80mm POS Thermal (Recommended for standard 80mm receipt printers)
+       * Fine Dining Guest Check (Dine-In slip with covers, server, tip guide, signature lines)
+       * Compact 58mm Mobile Roll (Mobile/handheld Bluetooth and kiosk roll)
+       * Official GST Tax Invoice (A4) (Commercial invoice with full tax compliance)
+       * Kitchen Dispatch / Prep Token (High-contrast ticket for kitchen prep and pickup tokens)
+     - Interactive controls for paper width (80mm, 58mm, A4), header greeting, footer thank-you message, STRN/NTN toggle, QR code toggle, customer details toggle, and gratuity guide toggle.
+     - Live Real-Time Interactive Receipt Preview embedded directly inside Settings, re-rendering instantly upon theme selection or header/footer edits.
+     - "Test Print Sample" button right in Settings to test thermal hardware before operating.
+     - Removed leftover `bilingualUrduEnglish` checkbox, ensuring 100% English across software.
+  3. Receipt Styling Modernization:
+     - High-contrast, razor-sharp typography for both screen preview and 203 DPI thermal printing.
+     - Crisp double-dashed borders, tabular numbers, item customizations/notes indentation, and bold high-contrast grand total banner.
+  4. Verification:
+     - 100% frontend production build passed (`npm --workspace=frontend run build`).
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
+- Decision 40 (commit 0984e05): Turned off blinking in Kitchen Display System (KDS):
+  1. Replaced pulsing animations with steady high-contrast warning borders:
+     - Removed `animate-pulse` from delayed order cards in `KitchenDisplay.tsx`, replacing it with a steady alert border (`border-rose-500 ring-2 ring-rose-500/50`).
+     - Removed `animate-spin` from the timer clock icon.
+     - Removed `animate-pulse` from the delayed tickets badge in the KDS header.
+  2. Maintained all visual alert criteria (color-coded status badges, urgent time indicators, audio chime) without visual blinking or eye fatigue.
+  3. Verification:
+     - 100% frontend production build passed (`npm --workspace=frontend run build`).
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
+- Decision 39 (commit 939bc9f): UI Cleanup for Sales Menu and Orders Filter Bar:
+  1. Renamed Sales Menu in Sidebar:
+     - Replaced "Sales Invoices & Orders" with single concise "Orders" item.
+  2. Removed Duplicate Order History Dropdown:
+     - Removed redundant date filter dropdown from upper filter bar on OrdersHub.tsx.
+  3. Proportional Filter Bar Layout:
+     - Expanded remaining 3 filter controls across 12-column grid: Search (50%), Status (25%), Order Type (25%).
+- Decision 38 (commit d8f6051): Isolated POS Menu Scroller & Fixed Viewport:
+  1. Fixed double-scroll bug by adding `.pos-menu-scroller` with `overscroll-behavior: contain !important`.
+  2. Anchored root container with `fixed inset-0 h-full w-full max-h-screen overflow-hidden` and added mount effect locking `body` and `html` overflow.
+- Decision 37 (commit f89ed1f): Modernized POS Terminal UI:
+  1. Category Bar: Horizontal scrollable category pills + vertical divider bar (`|`) + subcategory pills.
+  2. Item Grid: Responsive squared product cards (`aspect-square`) with badge, price, and instant touch-friendly ordering.
 - Decision 36 (commit 9401ff5): Redesigned Cash & Bank module following the authentic Vyapar Software UI system:
   1. Two-Pane Master-Detail Account Explorer & Ledger:
      - Left Accounts Explorer (w-80): instant search, Consolidated All Accounts book card, Cash in Hand drawer cash card, and bank account cards with active selection states, balances, and 3-dots actions.
