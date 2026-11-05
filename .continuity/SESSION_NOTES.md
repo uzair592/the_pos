@@ -14,6 +14,27 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 35 (commit dc3f2f6): Resolved Restaurant Dashboard Freeze and Implemented Instant Real-Time Order Reactivity:
+  1. Root Cause Diagnosis of Frozen Dashboard:
+     - Discovered fatal query string syntax bug in RestaurantDashboard.tsx where /orders/active was queried as `/orders/active${branchParam}` with `branchParam = '&branchId=...'`.
+     - Lacking a '?', Fastify matched this URL against parameterized route `/api/orders/:id` with `id = "active&branchId=..."`.
+     - PostgreSQL threw unhandled 500: `invalid input syntax for type uuid: "active&branchId=..."`.
+     - Because this call ran inside `Promise.all([summaryRes, ordersRes, activeRes, productsRes])`, the entire promise rejected on every initial load and every 5-second polling interval, silently preventing `summary`, `recentOrders`, `activeOrders`, and `topProducts` from ever updating!
+  2. End-to-End Bug Fixes & Hardening:
+     - Fixed query syntax in RestaurantDashboard.tsx to `/orders/active?branchId=${branchId}` (returning 200 with orders array).
+     - Standardized date ranges using `getTodayRangeISO()` for local 24-hour day consistency.
+     - Repaired field mappings in Top Selling Products: mapped `product_name || name` and `total_quantity || total_quantity_sold`.
+     - Added defensive UUID regex validation in GET `/api/orders/:id` returning 404 instead of 500 when invalid IDs are received.
+  3. Real-Time Reactivity & Multi-Tab Synchronization:
+     - Reduced auto-polling interval from 5 seconds to 3 seconds.
+     - Added instant custom event listener `pos_order_updated` and `storage` / `focus` / `visibilitychange` listeners in RestaurantDashboard.tsx.
+     - Dispatched `pos_order_updated` and updated `pos_last_order_at` in PosTerminal.tsx (on send to kitchen & checkout), OrdersHub.tsx (on payment settlement, cancellation, and deletion), and KitchenDisplay.tsx (on status transitions to Ready/Served).
+     - Expanded Live Operations banner to display all in-flight active orders (cooking in kitchen + served awaiting payment) with live pulse, order cards, and 1-click POS payment collection links.
+  4. Verification:
+     - 100% frontend production build passed (`npm --workspace=frontend run build`).
+     - All 38 simulation checks passed in `npx tsx backend/test/qa_simulation_suite.ts`.
+     - All 47 backend integration tests passed in `npm --workspace=backend run test`.
+     - Automated live end-to-end test proved immediate dashboard update on order creation (active orders 4 -> 5, recent orders populated) and immediate sales update on POS payment checkout (completed orders 24 -> 25, net sales 30,110 -> 34,910).
 - Decision 34 (commit a352460): Redesigned Menu Navigation System following the Vyapar Style System:
   1. Vyapar Quick Add Sale Action:
      - Added prominent top +ADD SALE / BILL button with gradient styling and global Alt+S keyboard shortcut triggering immediate POS terminal navigation from any screen.
