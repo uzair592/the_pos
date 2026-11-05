@@ -432,6 +432,18 @@ export const PosTerminal: React.FC = () => {
     });
   }, [products, selectedCategory, selectedSubCategory, search]);
 
+  // Active Cart Quantities map by Product ID for instant visual feedback on product cards
+  const cartQuantityMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of cartItems) {
+      if (item.productId) {
+        const pId = String(item.productId);
+        map[pId] = (map[pId] || 0) + (Number(item.quantity) || 0);
+      }
+    }
+    return map;
+  }, [cartItems]);
+
   // Cart Calculations
   const cartSubtotal = useMemo(() => {
     return cartItems.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
@@ -1283,17 +1295,37 @@ export const PosTerminal: React.FC = () => {
                   const hasModifiers = p.modifier_groups && p.modifier_groups.length > 0;
                   const defaultVariant = hasVariants ? (p.variants.find((v: any) => v.is_default) || p.variants[0]) : null;
                   const displayPrice = defaultVariant ? Number(defaultVariant.price) : Number(p.base_price);
+                  const qtyInCart = cartQuantityMap[String(p.id)] || 0;
+                  const isSelected = qtyInCart > 0;
 
                   return (
                     <div
                       key={p.id}
-                      className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-brand-500 hover:shadow-md transition-all select-none"
+                      className={`relative rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all select-none ${
+                        isSelected
+                          ? 'bg-brand-50/20 dark:bg-brand-950/25 border-2 border-brand-500 dark:border-brand-400 shadow-md ring-2 ring-brand-500/20'
+                          : 'bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-brand-500 hover:shadow-md'
+                      }`}
                     >
+                      {/* Quantity Counter Badge (Top Right Corner) */}
+                      {isSelected && (
+                        <div
+                          className="absolute -top-2 -right-2 z-20 flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-full bg-brand-500 text-white text-xs font-black shadow-md border-2 border-white dark:border-slate-900 animate-in zoom-in-75 duration-150"
+                          title={`${qtyInCart} in current bill`}
+                        >
+                          {qtyInCart}
+                        </div>
+                      )}
+
                       {/* Left Details */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2 mb-1">
                           <span className="text-xs font-mono text-slate-400 font-bold">{p.sku}</span>
-                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md text-[10px] font-extrabold text-slate-600 dark:text-slate-400 uppercase">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase transition-colors ${
+                            isSelected
+                              ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                          }`}>
                             {p.station}
                           </span>
                           {p.category_name && (
@@ -1301,9 +1333,16 @@ export const PosTerminal: React.FC = () => {
                               {p.category_name}
                             </span>
                           )}
+                          {isSelected && (
+                            <span className="px-2 py-0.5 bg-brand-500 text-white rounded-md text-[10px] font-black shadow-xs">
+                              {qtyInCart} in bill
+                            </span>
+                          )}
                         </div>
 
-                        <h4 className="text-sm font-black text-slate-900 dark:text-white truncate">
+                        <h4 className={`text-sm font-black truncate transition-colors ${
+                          isSelected ? 'text-brand-600 dark:text-brand-400' : 'text-slate-900 dark:text-white'
+                        }`}>
                           {p.name}
                         </h4>
                         
@@ -1387,6 +1426,8 @@ export const PosTerminal: React.FC = () => {
                   const displayPrice = defaultVariant ? Number(defaultVariant.price) : Number(p.base_price);
                   const hasModifiers = p.modifier_groups && p.modifier_groups.length > 0;
                   const categoryName = p.category_name || categories.find((c) => c.id === p.category_id)?.name;
+                  const qtyInCart = cartQuantityMap[String(p.id)] || 0;
+                  const isSelected = qtyInCart > 0;
 
                   return (
                     <div
@@ -1404,21 +1445,43 @@ export const PosTerminal: React.FC = () => {
                           addToCart(p);
                         }
                       }}
-                      className="group relative bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-brand-500 dark:hover:border-brand-500 rounded-2xl p-3 aspect-square flex flex-col justify-between shadow-xs hover:shadow-lg transition-all duration-200 active:scale-[0.97] cursor-pointer select-none overflow-hidden"
+                      className={`group relative rounded-2xl p-3 aspect-square flex flex-col justify-between transition-all duration-200 active:scale-[0.97] cursor-pointer select-none ${
+                        isSelected
+                          ? 'bg-brand-50/25 dark:bg-brand-950/20 border-2 border-brand-500 dark:border-brand-400 shadow-md ring-2 ring-brand-500/20 hover:border-brand-600'
+                          : 'bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-brand-500 dark:hover:border-brand-500 shadow-xs hover:shadow-lg'
+                      }`}
                     >
+                      {/* Quantity Counter Badge in Top-Right Corner */}
+                      {isSelected && (
+                        <div
+                          className="absolute -top-2 -right-2 z-20 flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-full bg-brand-500 text-white text-xs font-black shadow-md border-2 border-white dark:border-slate-900 transition-all transform scale-100 animate-in zoom-in-75 duration-150"
+                          title={`${qtyInCart} in current bill`}
+                        >
+                          {qtyInCart}
+                        </div>
+                      )}
+
                       {/* Top Badges: SKU & Station */}
                       <div className="flex items-center justify-between gap-1">
-                        <span className="font-mono text-[10px] font-bold text-slate-400 truncate max-w-[65%]">
+                        <span className="font-mono text-[10px] font-bold text-slate-400 truncate max-w-[60%]">
                           {p.sku || 'ITEM'}
                         </span>
-                        <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
+                        <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded shrink-0 transition-colors ${
+                          isSelected
+                            ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                        }`}>
                           {p.station || 'KITCHEN'}
                         </span>
                       </div>
 
                       {/* Center Content: Title, Category & Badges */}
                       <div className="my-auto py-1">
-                        <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white line-clamp-2 leading-tight group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+                        <h4 className={`font-extrabold text-xs sm:text-sm line-clamp-2 leading-tight transition-colors ${
+                          isSelected
+                            ? 'text-brand-600 dark:text-brand-400'
+                            : 'text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400'
+                        }`}>
                           {p.name}
                         </h4>
                         {categoryName && (
@@ -1454,7 +1517,11 @@ export const PosTerminal: React.FC = () => {
                         <button
                           type="button"
                           title={hasModifiers ? "Customize Item" : "Quick Add to Cart"}
-                          className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-brand-500 hover:bg-brand-600 active:scale-90 text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-all shrink-0"
+                          className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl text-white flex items-center justify-center shadow-xs transition-all shrink-0 active:scale-90 ${
+                            isSelected
+                              ? 'bg-brand-600 hover:bg-brand-700 ring-2 ring-brand-500/30'
+                              : 'bg-brand-500 hover:bg-brand-600 group-hover:scale-105'
+                          }`}
                         >
                           <Plus className="w-4 h-4 stroke-[2.5]" />
                         </button>
