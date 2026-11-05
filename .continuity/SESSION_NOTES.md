@@ -14,6 +14,19 @@
 - None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
 
 ## Key Decisions
+- Decision 34 (commit a352460): Redesigned Menu Navigation System following the Vyapar Style System:
+  1. Vyapar Quick Add Sale Action:
+     - Added prominent top +ADD SALE / BILL button with gradient styling and global Alt+S keyboard shortcut triggering immediate POS terminal navigation from any screen.
+  2. Vyapar Categorized Navigation Modules:
+     - General / Core: Dashboard, POS Billing Terminal (SALE badge), Sales Invoices & Orders Hub, Kitchen Display KDS (LIVE badge), Workspace Hub.
+     - Items & Catalog: Menu & Products, Stock & FIFO Batches.
+     - Purchase & Expenses: Purchases & Vendors, Cash Registers & Shifts.
+     - Cash & Bank (Banking): Cash & Bank Accounts (BANKING badge).
+     - Reports & Analytics: Daily Daybook Ledger (DAILY badge), Financial Reports & P&L, Bill-Wise Profit & Loss.
+     - Settings & System: Staff & Roles, Restaurant Settings.
+  3. Vyapar Visual Identity & Polish:
+     - Crisp uppercase section headers with subtle indicator dots, left accent highlight bar for active menu item, high-contrast dark/white active pill, category badges, and bottom company & sync status footer.
+  4. Production verification: TypeScript build passed with 0 errors, all 47 backend integration tests passed, and 38/38 QA simulation checks passed.
 - Decision 33 (commit 8e3eca8): Centralized Cash & Bank and Daybook under Reports, Added Daybook PDF Download, Removed All Urdu, and Standardized 3-Dots Action Menus:
   1. Information Architecture & Navigation:
      - Grouped Daily Daybook (/app/reports/daybook) and Cash & Bank (/app/reports/cash-and-bank) under Reports & Analytics in Sidebar.tsx.
