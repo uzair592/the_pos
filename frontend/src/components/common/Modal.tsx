@@ -1,12 +1,16 @@
 import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 
-interface ModalProps {
+export interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
   children: React.ReactNode;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl';
+  footer?: React.ReactNode;
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
+  className?: string;
+  bodyClassName?: string;
 }
 
 const maxWidthMap = {
@@ -15,15 +19,24 @@ const maxWidthMap = {
   lg: 'max-w-lg',
   xl: 'max-w-xl',
   '2xl': 'max-w-2xl',
+  '3xl': 'max-w-3xl',
   '4xl': 'max-w-4xl',
+  '5xl': 'max-w-5xl',
+  '6xl': 'max-w-6xl',
+  '7xl': 'max-w-7xl',
+  full: 'max-w-[96vw]',
 };
 
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
   onClose,
   title,
+  subtitle,
   children,
+  footer,
   maxWidth = 'lg',
+  className = '',
+  bodyClassName = '',
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -43,24 +56,48 @@ export const Modal: React.FC<ModalProps> = ({
         onClick={onClose}
       />
 
-      {/* Modal Dialog */}
-      <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0 print:p-0 print:block">
+      {/* Modal Dialog Container */}
+      <div className="flex min-h-full items-center justify-center p-3 sm:p-4 text-center print:p-0 print:block">
         <div
-          className={`relative transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 text-left shadow-2xl transition-all sm:my-8 w-full ${maxWidthMap[maxWidth]} border border-slate-200 dark:border-slate-800 print:transform-none print:shadow-none print:border-none print:static print:max-w-none print:overflow-visible print:bg-transparent print:p-0`}
+          className={`relative transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 text-left shadow-2xl transition-all my-2 sm:my-4 md:my-6 w-full ${maxWidthMap[maxWidth]} border border-slate-200 dark:border-slate-800 flex flex-col max-h-[calc(100vh-1.5rem)] sm:max-h-[calc(100vh-2.5rem)] md:max-h-[calc(100vh-3.5rem)] print:transform-none print:shadow-none print:border-none print:static print:max-w-none print:overflow-visible print:bg-transparent print:p-0 ${className}`}
         >
           {/* Header */}
-          <div className="no-print flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">{title}</h3>
+          <div className="no-print flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4 shrink-0 bg-white dark:bg-slate-900 z-10">
+            <div className="flex-1 pr-4">
+              {typeof title === 'string' ? (
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight">
+                  {title}
+                </h3>
+              ) : (
+                title
+              )}
+              {subtitle && (
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {subtitle}
+                </div>
+              )}
+            </div>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              type="button"
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+              title="Close modal (Esc)"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
           {/* Body */}
-          <div className="px-6 py-5 max-h-[80vh] overflow-y-auto dark:text-slate-200 print:max-h-none print:overflow-visible print:p-0">{children}</div>
+          <div className={`px-6 py-5 overflow-y-auto flex-1 dark:text-slate-200 print:max-h-none print:overflow-visible print:p-0 ${bodyClassName}`}>
+            {children}
+          </div>
+
+          {/* Optional Sticky Footer */}
+          {footer && (
+            <div className="no-print border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/70 px-6 py-3.5 shrink-0 rounded-b-2xl">
+              {footer}
+            </div>
+          )}
         </div>
       </div>
     </div>

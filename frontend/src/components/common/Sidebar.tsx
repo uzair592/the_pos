@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { NavLink, useNavigate, useLocation, Link } from 'react-router-dom';
+import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import {
   LayoutDashboard,
@@ -25,6 +26,7 @@ import {
   ShieldCheck,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Sparkles,
   Calculator,
   UtensilsCrossed,
@@ -34,6 +36,7 @@ import {
   LifeBuoy,
   Activity,
   ShieldAlert,
+  Search,
 } from 'lucide-react';
 import { FeatureKey, Permission } from '@pos/shared';
 
@@ -44,8 +47,19 @@ export interface SidebarProps {
   onCloseMobile?: () => void;
 }
 
-interface NavItem {
+interface NavSubItem {
   to: string;
+  label: string;
+  badge?: string;
+  badgeColor?: string;
+  shortcut?: string;
+  permission?: Permission;
+  feature?: FeatureKey;
+}
+
+interface NavItem {
+  id?: string;
+  to?: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   exact?: boolean;
@@ -53,7 +67,10 @@ interface NavItem {
   badgeColor?: string;
   shortcut?: string;
   permission?: Permission;
+  permissions?: Permission[];
   feature?: FeatureKey;
+  isAccordion?: boolean;
+  subItems?: NavSubItem[];
 }
 
 interface NavSection {
@@ -71,7 +88,146 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Vyapar Alt+S keyboard shortcut to quickly launch POS Billing from anywhere
+  // Storage key per logged-in user or fallback to global
+  const storageKey = user?.id ? `pos_sidebar_width_${user.id}` : 'pos_sidebar_width';
+
+  // Manual resizable width state (min 200px, max 480px, default 260px)
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = Number(saved);
+        if (!isNaN(parsed) && parsed >= 200 && parsed <= 480) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Fallback
+    }
+    return 260;
+  });
+
+  const [isResizing, setIsResizing] = useState(false);
+  const startXRef = useRef<number>(0);
+  const startWidthRef = useRef<number>(260);
+
+  // Sync width when user changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = Number(saved);
+        if (!isNaN(parsed) && parsed >= 200 && parsed <= 480) {
+          setSidebarWidth(parsed);
+        }
+      }
+    } catch {}
+  }, [storageKey]);
+
+  // Handle Dragging
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (isCollapsed) return;
+    e.preventDefault();
+    setIsResizing(true);
+    startXRef.current = e.clientX;
+    startWidthRef.current = sidebarWidth;
+  }, [isCollapsed, sidebarWidth]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - startXRef.current;
+      const newWidth = Math.max(200, Math.min(480, startWidthRef.current + delta));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      try {
+        localStorage.setItem(storageKey, String(sidebarWidth));
+      } catch {}
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, sidebarWidth, storageKey]);
+
+  // Billz POS Accordion: Exactly ONE dropdown open at a time
+  const [openDropdown, setOpenDropdown] = useState<string | null>(() => {
+    try {
+      const pathname = window.location.pathname;
+      if (pathname.startsWith('/app/orders') || pathname.startsWith('/app/reservations')) return 'ORDERS';
+      if (pathname.startsWith('/app/inventory')) return 'INVENTORY';
+      if (pathname.startsWith('/app/settings') || pathname.startsWith('/app/tables')) return 'SETTINGS';
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Dynamic live notification badges polled from backend
+  const [badges, setBadges] = useState<{
+    activeOrders: number;
+    pendingKitchen: number;
+    lowStock: number;
+    pendingReservations: number;
+    waitlistCount: number;
+  }>({
+    activeOrders: 0,
+    pendingKitchen: 0,
+    lowStock: 0,
+    pendingReservations: 0,
+    waitlistCount: 0,
+  });
+
+  // Toggle Accordion Dropdown (Only ONE open at a time; clicking open parent collapses it)
+  const handleToggleDropdown = (dropdownId: string) => {
+    setOpenDropdown((prev) => (prev === dropdownId ? null : dropdownId));
+  };
+
+  // Automatically expand and keep open the matching parent when user visits via URL
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.startsWith('/app/orders') || path.startsWith('/app/reservations')) {
+      setOpenDropdown('ORDERS');
+    } else if (path.startsWith('/app/inventory')) {
+      setOpenDropdown('INVENTORY');
+    } else if (path.startsWith('/app/settings') || path.startsWith('/app/tables')) {
+      setOpenDropdown('SETTINGS');
+    }
+  }, [location.pathname]);
+
+  // Poll backend sidebar badges every 12 seconds
+  useEffect(() => {
+    if (isSuperAdmin || !user) return;
+
+    let isMounted = true;
+    const fetchBadges = async () => {
+      try {
+        const branchParam = currentBranchId ? `?branchId=${currentBranchId}` : '';
+        const res = await api.get(`/restaurant/sidebar-badges${branchParam}`);
+        if (isMounted && res?.badges) {
+          setBadges(res.badges);
+        }
+      } catch {
+        // Fallback gracefully on temporary network drops
+      }
+    };
+
+    fetchBadges();
+    const interval = setInterval(fetchBadges, 12000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [isSuperAdmin, user, currentBranchId]);
+
+  // Billz POS Alt+S keyboard shortcut to quickly launch POS Billing from anywhere
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && (e.key === 's' || e.key === 'S')) {
@@ -87,7 +243,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeBranchName =
     branches?.find((b) => b.id === (currentBranchId || user?.branchId))?.name || 'Main Branch';
 
-  // Super Admin Categorized Navigation
+  // Super Admin Navigation
   const superAdminSections: NavSection[] = [
     {
       title: 'BUSINESS & RESTAURANTS',
@@ -123,21 +279,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
-  // Vyapar-Style Categorized Restaurant Navigation System
+  // FINAL APPROVED RESTAURANT SIDEBAR STRUCTURE
   const restaurantSections: NavSection[] = [
-    {
-      title: 'GENERAL',
-      items: [
-        { to: '/app', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-        { to: '/hub', label: 'Workspace Hub', icon: LayoutGrid },
-      ],
-    },
     {
       title: 'SALES',
       items: [
         {
           to: '/pos',
-          label: 'POS Billing Terminal',
+          label: 'Bill',
           icon: Monitor,
           badge: 'SALE',
           badgeColor: 'bg-emerald-500 text-white',
@@ -148,46 +297,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'Orders',
           icon: ShoppingBag,
           permission: Permission.ORDERS_VIEW,
+          badge: badges.activeOrders > 0 ? String(badges.activeOrders) : undefined,
+          badgeColor: 'bg-blue-500 text-white',
         },
         {
           to: '/kds',
-          label: 'Kitchen Display',
+          label: 'Kitchen',
           icon: ChefHat,
           feature: FeatureKey.KDS,
           permission: Permission.ORDERS_VIEW,
+          badge: badges.pendingKitchen > 0 ? String(badges.pendingKitchen) : undefined,
+          badgeColor: 'bg-orange-500 text-white',
         },
       ],
     },
     {
-      title: 'INVENTORY & ITEMS',
+      title: 'INVENTORY',
       items: [
         {
           to: '/app/menu',
-          label: 'Menu Items & Recipes',
+          label: 'Menu',
           icon: Utensils,
           permission: Permission.MENU_MANAGE,
         },
         {
           to: '/app/purchases',
-          label: 'Purchases & Inward Stock',
+          label: 'Purchases',
           icon: Truck,
           feature: FeatureKey.INVENTORY,
           permission: Permission.INVENTORY_MANAGE,
         },
         {
           to: '/app/inventory',
-          label: 'Ingredients & Inventory',
+          label: 'Inventory',
           icon: Boxes,
           feature: FeatureKey.INVENTORY,
           permission: Permission.INVENTORY_VIEW,
-          exact: true,
+          badge: badges.lowStock > 0 ? String(badges.lowStock) : undefined,
+          badgeColor: 'bg-rose-500 text-white',
         },
         {
-          to: '/app/inventory?tab=alerts',
-          label: 'Stock Alerts & Reorder',
-          icon: Layers,
+          to: '/app/recipe-costing',
+          label: 'Costing',
+          icon: Calculator,
           feature: FeatureKey.INVENTORY,
-          permission: Permission.INVENTORY_VIEW,
+          permissions: [Permission.INVENTORY_VIEW, Permission.REPORTS_FINANCIAL, Permission.MENU_VIEW],
         },
       ],
     },
@@ -195,66 +349,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'OPERATIONS',
       items: [
         {
-          to: '/app/tables',
-          label: 'Tables & Floor Plan',
-          icon: LayoutGrid,
-          permission: Permission.TABLES_MANAGE,
-        },
-        {
-          to: '/app/reservations',
-          label: 'Reservation & Waitlist',
-          icon: Clock,
-          permission: Permission.TABLES_MANAGE,
-        },
-        {
           to: '/app/daybook',
-          label: 'Daybook / Register',
+          label: 'Daybook',
           icon: BookOpen,
           permission: Permission.REPORTS_FINANCIAL,
         },
         {
-          to: '/app/cash-bank',
-          label: 'Cash & Bank',
+          to: '/app/cash-and-bank',
+          label: 'Banking',
           icon: Landmark,
           permission: Permission.REPORTS_FINANCIAL,
         },
       ],
     },
     {
-      title: 'FINANCE & REPORTS',
+      title: 'FINANCE',
       items: [
         {
-          to: '/app/reports',
-          label: 'Financial Reports & P&L',
-          icon: BarChart3,
-          permission: Permission.REPORTS_FINANCIAL,
-        },
-        {
-          to: '/app/reports/bill-profit-loss',
-          label: 'Bill-Wise Profit & Loss',
+          to: '/app/expenses',
+          label: 'Expenses',
           icon: Receipt,
-          permission: Permission.REPORTS_SALES,
+          permission: Permission.EXPENSES_VIEW,
         },
         {
-          to: '/app/reports/recipe-costing',
-          label: 'Recipe Costing & Food Cost',
-          icon: Calculator,
+          to: '/app/reports',
+          label: 'Reports',
+          icon: BarChart3,
           permission: Permission.REPORTS_FINANCIAL,
         },
       ],
     },
     {
-      title: 'SETTINGS & SYSTEM',
+      title: 'MANAGEMENT',
       items: [
         {
           to: '/app/staff',
-          label: 'Staff & Roles',
+          label: 'Staff',
           icon: Users,
           permission: Permission.STAFF_MANAGE,
         },
         {
           to: '/app/settings',
-          label: 'Restaurant Settings',
+          label: 'Settings',
           icon: Settings,
           permission: Permission.SETTINGS_MANAGE,
         },
@@ -263,6 +399,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const sections = isSuperAdmin ? superAdminSections : restaurantSections;
+
+  // Check if a link is currently active
+  const isUrlActive = (targetUrl?: string, exact: boolean = false) => {
+    if (!targetUrl) return false;
+    if (targetUrl === '/app/recipe-costing' || targetUrl === '/app/reports/recipe-costing') {
+      return location.pathname === '/app/recipe-costing' || location.pathname === '/app/reports/recipe-costing';
+    }
+    if (targetUrl === '/app/reports') {
+      return location.pathname === '/app/reports' && !location.pathname.includes('recipe-costing');
+    }
+    if (targetUrl.includes('?')) {
+      const [path, query] = targetUrl.split('?');
+      return location.pathname === path && location.search.includes(query);
+    }
+    if (exact) {
+      return location.pathname === targetUrl && location.search === '';
+    }
+    return location.pathname === targetUrl || location.pathname.startsWith(targetUrl + '/');
+  };
 
   const renderContent = (collapsed: boolean, isMobileDrawer: boolean = false) => (
     <>
@@ -334,9 +489,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Scrollable Navigation Body (Independent scrolling inside sidebar) */}
+      {/* Scrollable Navigation Body (Independent internal scrolling) */}
       <div className="flex-1 overflow-y-auto px-2.5 py-3 space-y-3 custom-scrollbar">
-        {/* Vyapar-Style Quick Add Sale Button */}
+        {/* Billz POS Quick Add Sale Button */}
         {!isSuperAdmin && (
           collapsed ? (
             <div className="pt-1 pb-1 flex justify-center relative group">
@@ -350,7 +505,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {/* Floating Tooltip */}
               <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center z-50 pointer-events-none">
                 <div className="bg-slate-950 text-white border border-slate-700/90 text-xs font-bold py-1.5 px-3 rounded-lg shadow-2xl whitespace-nowrap flex items-center space-x-2">
-                  <span className="text-amber-400 font-extrabold">+ ADD SALE / BILL</span>
+                  <span className="text-amber-400 font-extrabold">+ BILL</span>
                   <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded font-mono text-slate-300">
                     Alt+S
                   </span>
@@ -369,7 +524,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
                     <Plus className="w-3.5 h-3.5 group-hover:rotate-90 transition-transform duration-200" />
                   </div>
-                  <span className="tracking-wide uppercase font-extrabold">+ ADD SALE / BILL</span>
+                  <span className="tracking-wide uppercase font-extrabold">+ BILL</span>
                 </div>
                 <span className="text-[10px] bg-black/25 px-1.5 py-0.5 rounded font-mono font-bold tracking-wider">
                   Alt+S
@@ -379,161 +534,299 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )
         )}
 
-        {/* Vyapar Grouped Menu Sections */}
+        {/* Billz POS Accordion Navigation */}
         {sections.map((section, sIdx) => {
-          // Filter items by feature and permissions
-          const visibleItems = section.items.filter((item) => {
-            if (item.feature && !hasFeature(item.feature)) return false;
-            if (item.permission && !hasPermission(item.permission)) return false;
-            return true;
-          });
+            // Filter items by feature and permissions
+            const visibleItems = section.items.filter((item) => {
+              if (item.feature && !hasFeature(item.feature)) return false;
+              if (item.permissions && !item.permissions.some((p) => hasPermission(p))) return false;
+              if (item.permission && !hasPermission(item.permission)) return false;
+              return true;
+            });
 
-          if (visibleItems.length === 0) return null;
+            if (visibleItems.length === 0) return null;
 
-          return (
-            <div key={sIdx} className="space-y-1">
-              {collapsed ? (
-                /* Subtle horizontal divider in collapsed mode */
-                <div className="my-2 border-t border-slate-800/80 mx-2" title={section.title} />
-              ) : (
-                /* Section Header with badge dot in expanded mode */
-                <div className="flex items-center justify-between px-2.5 pt-2 pb-1 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                  <span>{section.title}</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700" />
-                </div>
-              )}
+            return (
+              <div key={sIdx} className="space-y-1">
+                {collapsed ? (
+                  <div className="my-2 border-t border-slate-800/80 mx-2" title={section.title} />
+                ) : (
+                  <div className="flex items-center justify-between px-2.5 pt-2 pb-1 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                    <span>{section.title}</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-700" />
+                  </div>
+                )}
 
-              {/* Items List */}
-              <div className="space-y-0.5">
-                {visibleItems.map((item) => {
-                  const Icon = item.icon;
-                  // Handle custom query match for tab links
-                  const isCurrentActive =
-                    item.to === '/app/recipe-costing' || item.to === '/app/reports/recipe-costing'
-                      ? location.pathname === '/app/recipe-costing' || location.pathname === '/app/reports/recipe-costing'
-                      : item.to === '/app/reports/bill-profit-loss'
-                      ? location.pathname === '/app/reports/bill-profit-loss' ||
-                        (location.pathname === '/app/reports' && location.search.includes('tab=BILL_PROFIT_LOSS'))
-                      : item.to === '/app/reports'
-                      ? location.pathname === '/app/reports' &&
-                        !location.search.includes('tab=BILL_PROFIT_LOSS') &&
-                        !location.pathname.includes('recipe-costing')
-                      : item.to.includes('?')
-                      ? location.pathname + location.search === item.to
-                      : location.pathname === item.to ||
-                        (item.exact === false && location.pathname.startsWith(item.to));
+                {/* Items List */}
+                <div className="space-y-1">
+                  {visibleItems.map((item) => {
+                    const Icon = item.icon;
+                    const isAccordion = !!item.isAccordion;
+                    const accordionKey = item.id || item.label;
+                    const isOpen = openDropdown === accordionKey;
 
-                  if (collapsed) {
-                    return (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.exact}
-                        className={({ isActive }) => {
-                          const active = item.to.includes('?') ? isCurrentActive : isActive;
-                          return `relative w-10 h-10 mx-auto flex items-center justify-center rounded-xl text-xs transition-all group ${
-                            active
-                              ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25 font-bold'
-                              : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
-                          }`;
-                        }}
-                      >
-                        {({ isActive }) => {
-                          const active = item.to.includes('?') ? isCurrentActive : isActive;
-                          return (
-                            <>
-                              <Icon
-                                className={`w-5 h-5 shrink-0 transition-colors ${
-                                  active ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'
-                                }`}
-                              />
-                              {active && (
+                    // Parent is active if direct link matches OR any child subitem matches
+                    const isParentActive = isAccordion
+                      ? item.subItems?.some((sub) => isUrlActive(sub.to))
+                      : isUrlActive(item.to, item.exact);
+
+                    // ==========================================
+                    // 1. COLLAPSED MODE VIEW (Width 20 / 80px)
+                    // ==========================================
+                    if (collapsed) {
+                      return (
+                        <div key={accordionKey} className="relative group flex justify-center">
+                          {isAccordion ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onToggleCollapse?.();
+                                setOpenDropdown(accordionKey);
+                              }}
+                              className={`relative w-10 h-10 flex items-center justify-center rounded-xl text-xs transition-all ${
+                                isParentActive
+                                  ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25 font-bold'
+                                  : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                              }`}
+                            >
+                              <Icon className="w-5 h-5 shrink-0" />
+                              {isParentActive && (
                                 <span className="absolute -left-1 top-2.5 bottom-2.5 w-1 bg-white rounded-r-full shadow-sm" />
                               )}
-                              {/* Floating Tooltip */}
-                              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center z-50 pointer-events-none">
-                                <div className="bg-slate-950 text-white border border-slate-700/90 text-xs font-bold py-1.5 px-3 rounded-lg shadow-2xl whitespace-nowrap flex items-center space-x-2">
-                                  <span>{item.label}</span>
-                                  {item.badge && (
-                                    <span
-                                      className={`text-[9px] px-1.5 py-0.5 rounded font-black tracking-wider uppercase ${
-                                        item.badgeColor || 'bg-brand-500 text-white'
-                                      }`}
-                                    >
-                                      {item.badge}
-                                    </span>
-                                  )}
-                                  {item.shortcut && (
-                                    <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded font-mono text-slate-300">
-                                      {item.shortcut}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </>
-                          );
-                        }}
-                      </NavLink>
-                    );
-                  }
+                              {item.badge && !isParentActive && (
+                                <span
+                                  className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black shadow-md ${
+                                    item.badgeColor || 'bg-brand-500 text-white'
+                                  }`}
+                                >
+                                  {item.badge}
+                                </span>
+                              )}
+                            </button>
+                          ) : (
+                            <NavLink
+                              to={item.to!}
+                              end={item.exact}
+                              className={`relative w-10 h-10 flex items-center justify-center rounded-xl text-xs transition-all ${
+                                isParentActive
+                                  ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25 font-bold'
+                                  : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                              }`}
+                            >
+                              <Icon className="w-5 h-5 shrink-0" />
+                              {isParentActive && (
+                                <span className="absolute -left-1 top-2.5 bottom-2.5 w-1 bg-white rounded-r-full shadow-sm" />
+                              )}
+                              {item.badge && !isParentActive && (
+                                <span
+                                  className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black shadow-md ${
+                                    item.badgeColor || 'bg-brand-500 text-white'
+                                  }`}
+                                >
+                                  {item.badge}
+                                </span>
+                              )}
+                            </NavLink>
+                          )}
 
-                  return (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      end={item.exact}
-                      onClick={isMobileDrawer ? onCloseMobile : undefined}
-                      className={({ isActive }) => {
-                        const active = item.to.includes('?') ? isCurrentActive : isActive;
-                        return `relative flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all group ${
-                          active
-                            ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25 font-extrabold'
-                            : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
-                        }`;
-                      }}
-                    >
-                      {({ isActive }) => {
-                        const active = item.to.includes('?') ? isCurrentActive : isActive;
-                        return (
-                          <>
-                            {active && (
-                              <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-white rounded-r-full shadow-sm" />
+                          {/* Floating Flyout Menu / Tooltip on Hover in Collapsed Mode */}
+                          <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 hidden group-hover:block z-50 pointer-events-auto">
+                            <div className="bg-slate-950 text-white border border-slate-700/90 rounded-xl shadow-2xl p-2 min-w-[200px] space-y-1.5">
+                              <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/80 px-1">
+                                <span className="font-extrabold text-xs text-white">{item.label}</span>
+                                {item.badge && (
+                                  <span
+                                    className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase ${
+                                      item.badgeColor || 'bg-brand-500 text-white'
+                                    }`}
+                                  >
+                                    {item.badge}
+                                  </span>
+                                )}
+                                {item.shortcut && (
+                                  <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded font-mono text-slate-300">
+                                    {item.shortcut}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Accordion Sub-items inside flyout */}
+                              {isAccordion && item.subItems && (
+                                <div className="space-y-0.5">
+                                  {item.subItems.map((sub) => {
+                                    const subActive = isUrlActive(sub.to);
+                                    return (
+                                      <Link
+                                        key={sub.to}
+                                        to={sub.to}
+                                        className={`flex items-center justify-between px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                                          subActive
+                                            ? 'bg-brand-500/20 text-brand-300 font-bold'
+                                            : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                                        }`}
+                                      >
+                                        <span>{sub.label}</span>
+                                        {sub.badge && (
+                                          <span
+                                            className={`text-[9px] px-1 py-0.2 rounded font-black ${
+                                              sub.badgeColor || 'bg-brand-500 text-white'
+                                            }`}
+                                          >
+                                            {sub.badge}
+                                          </span>
+                                        )}
+                                      </Link>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // ==========================================
+                    // 2. EXPANDED MODE ACCORDION DROPDOWN ITEM
+                    // ==========================================
+                    if (isAccordion) {
+                      return (
+                        <div key={accordionKey} className="space-y-0.5">
+                          {/* Accordion Parent Header Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleDropdown(accordionKey)}
+                            aria-expanded={isOpen}
+                            className={`w-full relative flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all group ${
+                              isParentActive
+                                ? 'bg-slate-800/90 text-white font-extrabold border border-slate-700/80 shadow-sm'
+                                : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                            }`}
+                          >
+                            {isParentActive && (
+                              <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-brand-500 rounded-r-full shadow-sm" />
                             )}
                             <div className="flex items-center space-x-2.5 truncate">
                               <Icon
                                 className={`w-4 h-4 shrink-0 transition-colors ${
-                                  active ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'
+                                  isParentActive ? 'text-brand-400' : 'text-slate-400 group-hover:text-slate-200'
                                 }`}
                               />
                               <span className="truncate">{item.label}</span>
                             </div>
 
-                            {/* Item Badge or Shortcut */}
-                            {item.badge ? (
-                              <span
-                                className={`text-[9px] px-1.5 py-0.5 rounded font-black tracking-wider uppercase shrink-0 ${
-                                  item.badgeColor || 'bg-brand-400/20 text-brand-300 border border-brand-400/30'
-                                }`}
-                              >
-                                {item.badge}
-                              </span>
-                            ) : (
-                              <ChevronRight
-                                className={`w-3.5 h-3.5 opacity-0 group-hover:opacity-60 transition-opacity ${
-                                  active ? 'text-white' : 'text-slate-400'
+                            <div className="flex items-center space-x-1.5 shrink-0">
+                              {/* Parent Badge (e.g. pending orders or low stock count) */}
+                              {item.badge && (
+                                <span
+                                  className={`text-[9px] px-1.5 py-0.5 rounded font-black tracking-wider uppercase ${
+                                    item.badgeColor || 'bg-brand-400/20 text-brand-300 border border-brand-400/30'
+                                  }`}
+                                >
+                                  {item.badge}
+                                </span>
+                              )}
+                              {/* Rotating Chevron Icon */}
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                  isOpen ? 'rotate-180 text-brand-400' : 'text-slate-400'
                                 }`}
                               />
-                            )}
-                          </>
-                        );
-                      }}
-                    </NavLink>
-                  );
-                })}
+                            </div>
+                          </button>
+
+                          {/* Accordion Submenu Items (Only rendered when open) */}
+                          {isOpen && item.subItems && (
+                            <div className="ml-4 pl-3 border-l-2 border-slate-800 space-y-0.5 pt-1 pb-1 animate-fade-in">
+                              {item.subItems.map((sub) => {
+                                const subActive = isUrlActive(sub.to);
+                                return (
+                                  <NavLink
+                                    key={sub.to}
+                                    to={sub.to}
+                                    onClick={isMobileDrawer ? onCloseMobile : undefined}
+                                    className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
+                                      subActive
+                                        ? 'bg-brand-500 text-white font-extrabold shadow-sm'
+                                        : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 font-medium'
+                                    }`}
+                                  >
+                                    <div className="flex items-center space-x-2 truncate">
+                                      <span
+                                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                          subActive ? 'bg-white' : 'bg-slate-600'
+                                        }`}
+                                      />
+                                      <span className="truncate">{sub.label}</span>
+                                    </div>
+                                    {sub.badge && (
+                                      <span
+                                        className={`text-[9px] px-1.5 py-0.2 rounded font-black uppercase ${
+                                          sub.badgeColor || 'bg-brand-400 text-slate-900'
+                                        }`}
+                                      >
+                                        {sub.badge}
+                                      </span>
+                                    )}
+                                  </NavLink>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    // ==========================================
+                    // 3. EXPANDED MODE DIRECT NAVLINK ITEM
+                    // ==========================================
+                    return (
+                      <NavLink
+                        key={item.to!}
+                        to={item.to!}
+                        end={item.exact}
+                        onClick={isMobileDrawer ? onCloseMobile : undefined}
+                        className={`relative flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all group ${
+                          isParentActive
+                            ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25 font-extrabold'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                        }`}
+                      >
+                        {isParentActive && (
+                          <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-white rounded-r-full shadow-sm" />
+                        )}
+                        <div className="flex items-center space-x-2.5 truncate">
+                          <Icon
+                            className={`w-4 h-4 shrink-0 transition-colors ${
+                              isParentActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'
+                            }`}
+                          />
+                          <span className="truncate">{item.label}</span>
+                        </div>
+
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          {item.badge && (
+                            <span
+                              className={`text-[9px] px-1.5 py-0.5 rounded font-black tracking-wider uppercase ${
+                                item.badgeColor || 'bg-brand-400/20 text-brand-300 border border-brand-400/30'
+                              }`}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                          {item.shortcut && (
+                            <span className="text-[10px] bg-slate-800/80 px-1.5 py-0.5 rounded font-mono text-slate-300">
+                              {item.shortcut}
+                            </span>
+                          )}
+                        </div>
+                      </NavLink>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
       </div>
 
       {/* Bottom Company & Active Profile Card */}
@@ -600,11 +893,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <>
       {/* 1. Desktop Fixed Navigation Sidebar */}
       <aside
-        className={`${
-          isCollapsed ? 'w-20' : 'w-68 lg:w-72'
-        } h-screen bg-slate-900 dark:bg-[#0b0f19] border-r border-slate-800 text-slate-200 hidden md:flex md:flex-col justify-between shrink-0 transition-all duration-300 ease-in-out relative z-30 select-none shadow-xl`}
+        style={{ width: isCollapsed ? '80px' : `${sidebarWidth}px` }}
+        className={`h-screen bg-slate-900 dark:bg-[#0b0f19] border-r border-slate-800 text-slate-200 hidden md:flex md:flex-col justify-between shrink-0 relative z-30 select-none shadow-xl ${
+          isResizing ? 'transition-none select-none pointer-events-none' : 'transition-[width] duration-150 ease-out'
+        }`}
       >
         {renderContent(isCollapsed, false)}
+
+        {/* Draggable Resize Handle on Right Border (Only when not collapsed) */}
+        {!isCollapsed && (
+          <div
+            onMouseDown={handleMouseDown}
+            title="Drag left/right to resize sidebar (Double click to reset)"
+            onDoubleClick={() => {
+              setSidebarWidth(260);
+              try {
+                localStorage.setItem(storageKey, '260');
+              } catch {}
+            }}
+            className={`absolute -right-1.5 top-0 bottom-0 w-3 cursor-col-resize z-40 group flex items-center justify-center transition-colors pointer-events-auto ${
+              isResizing ? 'bg-brand-500/80' : 'hover:bg-brand-500/30'
+            }`}
+          >
+            <div
+              className={`w-1 h-14 rounded-full transition-colors ${
+                isResizing
+                  ? 'bg-white shadow'
+                  : 'bg-transparent group-hover:bg-brand-400 group-hover:shadow-xs'
+              }`}
+            />
+          </div>
+        )}
       </aside>
 
       {/* 2. Mobile Drawer Navigation Overlay (< md screens) */}

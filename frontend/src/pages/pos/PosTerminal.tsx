@@ -31,6 +31,8 @@ import {
   Moon,
   Radio,
   Wifi,
+  WifiOff,
+  RefreshCw,
   Flame,
   UtensilsCrossed,
   Check,
@@ -50,6 +52,8 @@ import {
   LayoutList,
   LayoutGrid,
   Sparkles,
+  X,
+  UserPlus,
 } from 'lucide-react';
 import { OrderType, PaymentMethod, SystemRole } from '@pos/shared';
 
@@ -83,6 +87,7 @@ export const PosTerminal: React.FC = () => {
   const [orderType, setOrderType] = useState<OrderType>(OrderType.DINE_IN);
   const [selectedTable, setSelectedTable] = useState<any | null>(null);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
+  const [customerId, setCustomerId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [riderName, setRiderName] = useState('');
@@ -95,6 +100,21 @@ export const PosTerminal: React.FC = () => {
   const [isSubmittingKitchen, setIsSubmittingKitchen] = useState(false);
   const [itemViewMode, setItemViewMode] = useState<'list' | 'grid'>('grid');
   const [showCategorySidebar, setShowCategorySidebar] = useState<boolean>(false);
+
+  // Customer & Rider Dropdown State
+  const [customersList, setCustomersList] = useState<Array<{ id: string; name: string; phone: string; address?: string }>>([]);
+  const [ridersList, setRidersList] = useState<Array<{ name: string; phone: string }>>([]);
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const [isRiderDropdownOpen, setIsRiderDropdownOpen] = useState(false);
+  const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false);
+  const [isNewRiderModalOpen, setIsNewRiderModalOpen] = useState(false);
+  const [newCustName, setNewCustName] = useState('');
+  const [newCustPhone, setNewCustPhone] = useState('');
+  const [newCustAddress, setNewCustAddress] = useState('');
+  const [newRiderNameInput, setNewRiderNameInput] = useState('');
+  const [newRiderPhoneInput, setNewRiderPhoneInput] = useState('');
+  const customerDropdownRef = useRef<HTMLDivElement>(null);
+  const riderDropdownRef = useRef<HTMLDivElement>(null);
 
   // Resizable Billing Section width state
   const [billingWidth, setBillingWidth] = useState<number>(() => {
@@ -208,71 +228,45 @@ export const PosTerminal: React.FC = () => {
   const [orderToTransfer, setOrderToTransfer] = useState<any | null>(null);
   const [targetTableId, setTargetTableId] = useState('');
 
-  // Offline Order Queue
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-  const [offlineQueue, setOfflineQueue] = useState<any[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('pos_offline_orders') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  // Online-Only Centralized Connection Monitoring
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
-  // Offline Listeners & Sync
-  const syncOfflineOrders = async () => {
+  const checkCentralServerConnectivity = async () => {
+    setIsReconnecting(true);
     try {
-      const queue = JSON.parse(localStorage.getItem('pos_offline_orders') || '[]');
-      if (!queue || queue.length === 0) return;
-      info(`Syncing ${queue.length} offline orders to cloud server...`);
-      const remaining = [];
-      for (const ord of queue) {
-        try {
-          await api.post('/orders', {
-            branchId: ord.branchId,
-            orderType: ord.orderType,
-            tableId: ord.tableId,
-            customerName: ord.customerName,
-            customerPhone: ord.customerPhone,
-            billDiscountPercent: ord.billDiscountPercent,
-            billDiscountAmount: ord.billDiscountAmount,
-            orderNotes: ord.orderNotes,
-            idempotencyKey: ord.localId,
-            items: ord.items.map((i: any) => ({
-              productId: i.productId,
-              variantId: i.variantId,
-              quantity: i.quantity,
-              unitPrice: i.unitPrice,
-              itemDiscount: i.itemDiscount,
-              notes: i.notes,
-            })),
-          });
-        } catch (e) {
-          remaining.push(ord);
-        }
-      }
-      setOfflineQueue(remaining);
-      localStorage.setItem('pos_offline_orders', JSON.stringify(remaining));
-      if (remaining.length === 0) {
-        success('All queued offline orders synced successfully!');
-      }
+      await api.get('/auth/me');
+      setIsOnline(true);
+      success('Central server reconnected! Latest menu & orders synchronized.');
       fetchInitialData();
       fetchUnpaidOrders();
-    } catch (err) {
-      console.error('Failed to sync offline orders:', err);
+    } catch {
+      setIsOnline(false);
+      error('Could not reach central POS server. Please check your internet connection.');
+    } finally {
+      setIsReconnecting(false);
     }
   };
 
   useEffect(() => {
     const handleOnline = () => {
-      setIsOffline(false);
-      syncOfflineOrders();
+      checkCentralServerConnectivity();
     };
-    const handleOffline = () => setIsOffline(true);
+    const handleOffline = () => {
+      setIsOnline(false);
+      error('Internet connection lost. Transactions are blocked until online connectivity is restored.');
+    };
+    const handleConnectionLost = () => {
+      setIsOnline(false);
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('pos:connection-lost', handleConnectionLost);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('pos:connection-lost', handleConnectionLost);
     };
   }, []);
 
@@ -301,8 +295,116 @@ export const PosTerminal: React.FC = () => {
     }
   };
 
+  // Load Customers and Riders for dropdowns
+  const fetchCustomers = async () => {
+    try {
+      const res = await api.get('/customers');
+      setCustomersList(res.customers || []);
+    } catch (err) {
+      console.error('Failed to load customers for POS:', err);
+    }
+  };
+
+  const fetchRiders = async () => {
+    try {
+      const res = await api.get('/orders/riders');
+      setRidersList(res.riders || []);
+    } catch (err) {
+      console.error('Failed to load riders for POS:', err);
+    }
+  };
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (customerDropdownRef.current && !customerDropdownRef.current.contains(e.target as Node)) {
+        setIsCustomerDropdownOpen(false);
+      }
+      if (riderDropdownRef.current && !riderDropdownRef.current.contains(e.target as Node)) {
+        setIsRiderDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const handleSelectCustomer = (cust: { id?: string; name: string; phone: string; address?: string }) => {
+    setCustomerId(cust.id || null);
+    setCustomerName(cust.name);
+    setCustomerPhone(cust.phone);
+    if (cust.address && !deliveryAddress) {
+      setDeliveryAddress(cust.address);
+    }
+    setIsCustomerDropdownOpen(false);
+  };
+
+  const handleSaveNewCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCustName.trim() || !newCustPhone.trim()) {
+      error('Customer name and phone number are required');
+      return;
+    }
+    try {
+      const res = await api.post('/customers', {
+        name: newCustName.trim(),
+        phone: newCustPhone.trim(),
+        address: newCustAddress.trim() || undefined,
+      });
+      const created = res.customer;
+      success(`Customer "${created.name}" created successfully`);
+      setCustomersList((prev) => [created, ...prev.filter((c) => c.phone !== created.phone)]);
+      handleSelectCustomer(created);
+      setIsNewCustomerModalOpen(false);
+      setNewCustName('');
+      setNewCustPhone('');
+      setNewCustAddress('');
+    } catch (err: any) {
+      // If customer already exists, fetch & select that customer
+      if (err.message && err.message.includes('already exists')) {
+        info('Customer phone exists in system, selecting existing customer');
+        setCustomerName(newCustName.trim());
+        setCustomerPhone(newCustPhone.trim());
+        if (newCustAddress.trim()) setDeliveryAddress(newCustAddress.trim());
+        setIsNewCustomerModalOpen(false);
+        fetchCustomers();
+      } else {
+        error(err.message || 'Failed to create customer');
+      }
+    }
+  };
+
+  const handleSelectRider = (rider: { name: string; phone: string }) => {
+    setRiderName(rider.name);
+    setRiderPhone(rider.phone);
+    setIsRiderDropdownOpen(false);
+  };
+
+  const handleSaveNewRider = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRiderNameInput.trim()) {
+      error('Rider name is required');
+      return;
+    }
+    const newRider = {
+      name: newRiderNameInput.trim(),
+      phone: newRiderPhoneInput.trim(),
+    };
+    setRiderName(newRider.name);
+    setRiderPhone(newRider.phone);
+    setRidersList((prev) => {
+      const exists = prev.some((r) => r.name.toLowerCase() === newRider.name.toLowerCase());
+      return exists ? prev : [newRider, ...prev];
+    });
+    success(`Rider "${newRider.name}" selected`);
+    setIsNewRiderModalOpen(false);
+    setNewRiderNameInput('');
+    setNewRiderPhoneInput('');
+  };
+
   const fetchInitialData = async () => {
     fetchBankAccounts();
+    fetchCustomers();
+    fetchRiders();
     try {
       const [catsRes, prodsRes, tablesRes, shiftRes] = await Promise.all([
         api.get('/menu/categories'),
@@ -527,6 +629,11 @@ export const PosTerminal: React.FC = () => {
 
   // ==================== WORKFLOW 1: SEND ORDER TO KITCHEN (UNPAID) ====================
   const handleSendToKitchen = async () => {
+    if (!isOnline || !navigator.onLine) {
+      error('Online Connection Required: Cannot send orders to kitchen while disconnected from central server.');
+      return;
+    }
+
     if (cartItems.length === 0) {
       error('Please select products to place an order');
       return;
@@ -544,7 +651,7 @@ export const PosTerminal: React.FC = () => {
         branchId: currentBranchId || user?.branchId || branches[0]?.id,
         orderType,
         tableId: selectedTable?.id || null,
-        customerId: null,
+        customerId: customerId || null,
         customerName: customerName || undefined,
         customerPhone: customerPhone || undefined,
         deliveryAddress: orderType === OrderType.DELIVERY ? deliveryAddress || undefined : undefined,
@@ -573,6 +680,7 @@ export const PosTerminal: React.FC = () => {
       // Reset Cart for next waiter order
       setCartItems([]);
       setSelectedTable(null);
+      setCustomerId(null);
       setCustomerName('');
       setCustomerPhone('');
       setRiderName('');
@@ -608,6 +716,7 @@ export const PosTerminal: React.FC = () => {
       cartItems,
       orderType,
       selectedTable,
+      customerId,
       customerName,
       customerPhone,
       riderName,
@@ -621,6 +730,7 @@ export const PosTerminal: React.FC = () => {
     setHeldOrders([...heldOrders, orderToHold]);
     setCartItems([]);
     setSelectedTable(null);
+    setCustomerId(null);
     setCustomerName('');
     setCustomerPhone('');
     setRiderName('');
@@ -634,6 +744,7 @@ export const PosTerminal: React.FC = () => {
     setCartItems(held.cartItems);
     setOrderType(held.orderType);
     setSelectedTable(held.selectedTable);
+    setCustomerId(held.customerId || null);
     setCustomerName(held.customerName);
     setCustomerPhone(held.customerPhone);
     setRiderName(held.riderName || '');
@@ -686,6 +797,11 @@ export const PosTerminal: React.FC = () => {
 
   // Process Final Checkout & Take Payment
   const handleCheckoutSubmit = async () => {
+    if (!isOnline || !navigator.onLine) {
+      error('Online Connection Required: Cannot process payment while disconnected from central server.');
+      return;
+    }
+
     setIsSubmittingCheckout(true);
     try {
       let orderIdToComplete: string;
@@ -701,7 +817,7 @@ export const PosTerminal: React.FC = () => {
           branchId: currentBranchId || user?.branchId || branches[0]?.id,
           orderType,
           tableId: selectedTable?.id || null,
-          customerId: null,
+          customerId: customerId || null,
           customerName: customerName || undefined,
           customerPhone: customerPhone || undefined,
           deliveryAddress: orderType === OrderType.DELIVERY ? deliveryAddress || undefined : undefined,
@@ -758,6 +874,7 @@ export const PosTerminal: React.FC = () => {
       // Reset state
       setCartItems([]);
       setSelectedTable(null);
+      setCustomerId(null);
       setCustomerName('');
       setCustomerPhone('');
       setRiderName('');
@@ -816,6 +933,24 @@ export const PosTerminal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 h-full w-full max-h-screen max-w-screen flex flex-col bg-slate-100 dark:bg-slate-950 overflow-hidden font-sans select-none z-0">
+      {/* Online-Only Internet Connection Status Banner */}
+      {!isOnline && (
+        <div className="bg-rose-600 text-white px-4 py-2 flex items-center justify-between text-xs font-semibold shadow-md shrink-0 z-50">
+          <div className="flex items-center space-x-2">
+            <WifiOff className="w-4 h-4 text-amber-200 animate-pulse" />
+            <span>⚠️ Internet Connection Lost: Online SaaS server connection is required. Transaction submissions are blocked until connection is restored.</span>
+          </div>
+          <button
+            onClick={checkCentralServerConnectivity}
+            disabled={isReconnecting}
+            className="px-3 py-1 bg-white text-rose-700 hover:bg-slate-100 rounded text-xs font-bold transition flex items-center space-x-1 shadow-sm"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isReconnecting ? 'animate-spin' : ''}`} />
+            <span>{isReconnecting ? 'Testing...' : 'Retry Connection'}</span>
+          </button>
+        </div>
+      )}
+
       {/* Top POS Action Header */}
       <header className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between border-b border-slate-800 shrink-0">
         <div className="flex items-center space-x-3">
@@ -1647,175 +1782,440 @@ export const PosTerminal: React.FC = () => {
               </div>
             )}
 
-            {/* TAKEAWAY CUSTOMER DETAILS SECTION */}
+            {/* TAKEAWAY CUSTOMER DETAILS SECTION (Compact dropdown) */}
             {orderType === OrderType.TAKEAWAY && (
-              <div className="p-3 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 rounded-2xl space-y-2.5 animate-in fade-in">
+              <div className="p-2.5 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 rounded-xl space-y-2 animate-in fade-in">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-1.5 text-blue-800 dark:text-blue-300 font-extrabold text-xs">
-                    <ShoppingBag className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    <span>Takeaway Customer Details</span>
+                    <ShoppingBag className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    <span>Customer Details</span>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-200 dark:bg-blue-900 text-blue-900 dark:text-blue-200">
-                    Takeaway Slip
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-blue-200 dark:bg-blue-900 text-blue-900 dark:text-blue-200">
+                    Takeaway
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Customer Selector Dropdown */}
+                <div className="relative" ref={customerDropdownRef}>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomerDropdownOpen((prev) => !prev)}
+                      className="flex-1 flex items-center justify-between px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg hover:border-brand-500 text-left transition-colors"
+                    >
+                      <div className="flex items-center space-x-1.5 truncate">
+                        <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                          {customerName ? `${customerName} (${customerPhone || 'No Phone'})` : 'Select Existing Customer...'}
+                        </span>
+                      </div>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsNewCustomerModalOpen(true)}
+                      className="px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center space-x-1 shrink-0 shadow-xs"
+                      title="Add New Customer"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Add</span>
+                    </button>
+
+                    {customerName && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerId(null);
+                          setCustomerName('');
+                          setCustomerPhone('');
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg shrink-0"
+                        title="Clear customer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Customer Dropdown Popover */}
+                  {isCustomerDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 p-2 max-h-56 overflow-y-auto space-y-1">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Customer</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCustomerDropdownOpen(false);
+                            setIsNewCustomerModalOpen(true);
+                          }}
+                          className="text-[10px] font-bold text-brand-600 hover:underline flex items-center space-x-0.5"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add New</span>
+                        </button>
+                      </div>
+
+                      {customersList.length === 0 ? (
+                        <div className="p-3 text-center text-xs text-slate-400">
+                          <p>No saved customers found.</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCustomerDropdownOpen(false);
+                              setIsNewCustomerModalOpen(true);
+                            }}
+                            className="mt-1 text-xs text-brand-500 font-bold hover:underline"
+                          >
+                            + Add First Customer
+                          </button>
+                        </div>
+                      ) : (
+                        customersList.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => handleSelectCustomer(c)}
+                            className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition-colors"
+                          >
+                            <div className="truncate">
+                              <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
+                              <p className="text-[11px] text-slate-400 font-mono">{c.phone}</p>
+                            </div>
+                            {customerPhone === c.phone && (
+                              <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Inline Name & Phone (Editable if selected or entered directly) */}
+                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-blue-200/50 dark:border-blue-900/40">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
-                      <User className="w-3 h-3 text-slate-400" /> Customer Name
+                    <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 block mb-0.5">
+                      Name
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Bilal Ahmed"
+                      placeholder="Customer Name"
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
+                      className="w-full px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-brand-500 font-medium"
                     />
                   </div>
-
                   <div>
-                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
-                      <Phone className="w-3 h-3 text-slate-400" /> Mobile Number
+                    <label className="text-[9px] font-bold text-slate-500 dark:text-slate-400 block mb-0.5">
+                      Phone Number
                     </label>
                     <input
                       type="tel"
-                      placeholder="e.g. 0300-1234567"
+                      placeholder="0300-XXXXXXX"
                       value={customerPhone}
                       onChange={(e) => setCustomerPhone(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
+                      className="w-full px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-brand-500 font-medium font-mono"
                     />
                   </div>
                 </div>
               </div>
             )}
 
-            {/* DELIVERY CUSTOMER, RIDER & EDITABLE DELIVERY FEE SECTION */}
+            {/* DELIVERY SECTION: CUSTOMER DROPDOWN, RIDER DROPDOWN & MANUAL DELIVERY CHARGES */}
             {orderType === OrderType.DELIVERY && (
-              <div className="p-3 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-2xl space-y-2.5 animate-in fade-in">
+              <div className="p-2.5 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-xl space-y-2.5 animate-in fade-in">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-1.5 text-amber-800 dark:text-amber-300 font-extrabold text-xs">
-                    <Truck className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                    <span>Delivery Order & Dispatch</span>
+                    <Truck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>Delivery Order</span>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
-                    Required for Dispatch
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
+                    Dispatch
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
-                      <User className="w-3 h-3 text-slate-400" /> Customer Name *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Ali Khan"
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
-                    />
+                {/* 1. Customer Dropdown */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <User className="w-3 h-3 text-slate-400" /> Customer Information
+                    </span>
+                  </label>
+
+                  <div className="relative" ref={customerDropdownRef}>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomerDropdownOpen((prev) => !prev)}
+                        className="flex-1 flex items-center justify-between px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg hover:border-brand-500 text-left transition-colors"
+                      >
+                        <div className="flex items-center space-x-1.5 truncate">
+                          <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                            {customerName ? `${customerName} (${customerPhone || 'No Phone'})` : 'Select Existing Customer...'}
+                          </span>
+                        </div>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsNewCustomerModalOpen(true)}
+                        className="px-2 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center space-x-1 shrink-0 shadow-xs"
+                        title="Add New Customer"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Add</span>
+                      </button>
+
+                      {customerName && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomerId(null);
+                            setCustomerName('');
+                            setCustomerPhone('');
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg shrink-0"
+                          title="Clear customer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Customer Dropdown Popover */}
+                    {isCustomerDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 p-2 max-h-56 overflow-y-auto space-y-1">
+                        <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Customer</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCustomerDropdownOpen(false);
+                              setIsNewCustomerModalOpen(true);
+                            }}
+                            className="text-[10px] font-bold text-brand-600 hover:underline flex items-center space-x-0.5"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Add New</span>
+                          </button>
+                        </div>
+
+                        {customersList.length === 0 ? (
+                          <div className="p-3 text-center text-xs text-slate-400">
+                            <p>No saved customers found.</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsCustomerDropdownOpen(false);
+                                setIsNewCustomerModalOpen(true);
+                              }}
+                              className="mt-1 text-xs text-brand-500 font-bold hover:underline"
+                            >
+                              + Add First Customer
+                            </button>
+                          </div>
+                        ) : (
+                          customersList.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => handleSelectCustomer(c)}
+                              className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition-colors"
+                            >
+                              <div className="truncate">
+                                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
+                                <p className="text-[11px] text-slate-400 font-mono">{c.phone}</p>
+                              </div>
+                              {customerPhone === c.phone && (
+                                <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
-                      <Phone className="w-3 h-3 text-slate-400" /> Customer Mobile *
-                    </label>
+                  {/* Customer Name & Phone Editable Inputs */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <input
+                      type="text"
+                      placeholder="Customer Name"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-brand-500 font-medium"
+                    />
                     <input
                       type="tel"
-                      placeholder="e.g. 0300-1234567"
+                      placeholder="Customer Phone"
                       value={customerPhone}
                       onChange={(e) => setCustomerPhone(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
+                      className="w-full px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-brand-500 font-medium font-mono"
                     />
                   </div>
                 </div>
 
+                {/* Delivery Address */}
                 <div>
                   <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-0.5">
-                    <MapPin className="w-3 h-3 text-slate-400" /> Delivery Address *
+                    <MapPin className="w-3 h-3 text-slate-400" /> Delivery Address
                   </label>
                   <textarea
-                    rows={2}
-                    placeholder="House / Street / Area / Landmark..."
+                    rows={1}
+                    placeholder="House / Street / Landmark..."
                     value={deliveryAddress}
                     onChange={(e) => setDeliveryAddress(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium resize-none"
+                    className="w-full px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-brand-500 font-medium resize-none"
                   />
                 </div>
 
-                {/* Rider Details */}
-                <div className="pt-2 border-t border-amber-200/80 dark:border-amber-900/60">
-                  <div className="flex items-center space-x-1.5 text-slate-800 dark:text-slate-200 font-bold text-[11px] mb-1.5">
-                    <Bike className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                    <span>Assigned Rider Details</span>
+                {/* 2. Rider Details Dropdown (Delivery only) */}
+                <div className="space-y-1 pt-1.5 border-t border-amber-200/60 dark:border-amber-900/40">
+                  <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Bike className="w-3 h-3 text-amber-500" /> Rider Information
+                    </span>
+                  </label>
+
+                  <div className="relative" ref={riderDropdownRef}>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsRiderDropdownOpen((prev) => !prev)}
+                        className="flex-1 flex items-center justify-between px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg hover:border-brand-500 text-left transition-colors"
+                      >
+                        <div className="flex items-center space-x-1.5 truncate">
+                          <Bike className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                            {riderName ? `${riderName} (${riderPhone || 'No Phone'})` : 'Select Existing Rider...'}
+                          </span>
+                        </div>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsNewRiderModalOpen(true)}
+                        className="px-2 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center space-x-1 shrink-0 shadow-xs"
+                        title="Add New Rider"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Add</span>
+                      </button>
+
+                      {riderName && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRiderName('');
+                            setRiderPhone('');
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg shrink-0"
+                          title="Clear rider"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Rider Dropdown Popover */}
+                    {isRiderDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 p-2 max-h-56 overflow-y-auto space-y-1">
+                        <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Rider</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsRiderDropdownOpen(false);
+                              setIsNewRiderModalOpen(true);
+                            }}
+                            className="text-[10px] font-bold text-brand-600 hover:underline flex items-center space-x-0.5"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Add New</span>
+                          </button>
+                        </div>
+
+                        {ridersList.length === 0 ? (
+                          <div className="p-3 text-center text-xs text-slate-400">
+                            <p>No saved riders found.</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsRiderDropdownOpen(false);
+                                setIsNewRiderModalOpen(true);
+                              }}
+                              className="mt-1 text-xs text-brand-500 font-bold hover:underline"
+                            >
+                              + Add New Rider
+                            </button>
+                          </div>
+                        ) : (
+                          ridersList.map((r, rIdx) => (
+                            <button
+                              key={rIdx}
+                              type="button"
+                              onClick={() => handleSelectRider(r)}
+                              className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition-colors"
+                            >
+                              <div className="truncate">
+                                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{r.name}</p>
+                                <p className="text-[11px] text-slate-400 font-mono">{r.phone || 'No Phone'}</p>
+                              </div>
+                              {riderName === r.name && (
+                                <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-0.5">
-                        Rider Name
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Tariq Mahmood"
-                        value={riderName}
-                        onChange={(e) => setRiderName(e.target.value)}
-                        className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-0.5">
-                        Rider Mobile Number
-                      </label>
-                      <input
-                        type="tel"
-                        placeholder="e.g. 0321-9876543"
-                        value={riderPhone}
-                        onChange={(e) => setRiderPhone(e.target.value)}
-                        className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 font-medium"
-                      />
-                    </div>
+
+                  {/* Rider Name & Phone Editable Inputs */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <input
+                      type="text"
+                      placeholder="Rider Name"
+                      value={riderName}
+                      onChange={(e) => setRiderName(e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-brand-500 font-medium"
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Rider Phone"
+                      value={riderPhone}
+                      onChange={(e) => setRiderPhone(e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-brand-500 font-medium font-mono"
+                    />
                   </div>
                 </div>
 
-                {/* Editable Delivery Price / Fee */}
-                <div>
+                {/* 3. Delivery Charges – Manual Entry (No fixed charges, no presets) */}
+                <div className="pt-1.5 border-t border-amber-200/60 dark:border-amber-900/40">
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                      <span>Delivery Fee / Additional Charges ({currencySymbol})</span>
+                    <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                      Delivery Charges ({currencySymbol})
                     </label>
-                    <span className="text-[10px] font-extrabold text-brand-600 dark:text-brand-400">
-                      Editable
-                    </span>
+                    <span className="text-[9px] text-slate-400 font-medium">Manual Entry</span>
                   </div>
-
-                  <div className="flex items-center space-x-1.5">
-                    <div className="relative flex-1">
-                      <span className="absolute left-2.5 top-1.5 text-xs text-slate-400 font-bold">{currencySymbol}</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="10"
-                        value={deliveryFee}
-                        onChange={(e) => setDeliveryFee(Math.max(0, Number(e.target.value)))}
-                        className="w-full pl-8 pr-2.5 py-1 text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500"
-                      />
-                    </div>
-                    {/* Quick presets */}
-                    {[0, 100, 150, 200, 250].map((fee) => (
-                      <button
-                        key={fee}
-                        type="button"
-                        onClick={() => setDeliveryFee(fee)}
-                        className={`px-2 py-1 text-[11px] font-bold rounded-lg border transition-all ${
-                          deliveryFee === fee
-                            ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        {fee === 0 ? 'Free' : fee}
-                      </button>
-                    ))}
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1.5 text-xs text-slate-400 font-bold">{currencySymbol}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0"
+                      value={deliveryFee === 0 ? '' : deliveryFee}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setDeliveryFee(val === '' ? 0 : Math.max(0, Number(val)));
+                      }}
+                      className="w-full pl-8 pr-2.5 py-1 text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-brand-500 text-slate-900 dark:text-white"
+                    />
                   </div>
                 </div>
               </div>
@@ -2149,34 +2549,54 @@ export const PosTerminal: React.FC = () => {
 
       {/* Modal: Table Selection for Dine-In */}
       <Modal isOpen={isTableModalOpen} onClose={() => setIsTableModalOpen(false)} title="Select Dining Table" maxWidth="lg">
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 text-xs">
-          {tables.map((t) => {
-            const isAvail = t.status === 'AVAILABLE';
-            const isOccupied = t.status === 'OCCUPIED';
-            return (
-              <button
-                key={t.id}
-                onClick={() => {
-                  setSelectedTable(t);
-                  setIsTableModalOpen(false);
-                }}
-                className={`p-3 rounded-xl border flex flex-col items-center justify-center transition-all ${
-                  isAvail
-                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 hover:border-emerald-500'
-                    : isOccupied
-                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200'
-                    : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200'
-                }`}
+        {tables.length === 0 ? (
+          <div className="py-8 px-4 text-center space-y-3">
+            <UtensilsCrossed className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />
+            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No dining tables configured yet</h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+              Configure your dining floors and tables in Settings to start assigning dine-in orders to specific tables.
+            </p>
+            <div className="pt-2">
+              <Link
+                to="/app/settings?tab=tables"
+                onClick={() => setIsTableModalOpen(false)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold rounded-xl shadow-md transition-all"
               >
-                <span className="font-extrabold text-sm">{t.table_number}</span>
-                <span className="text-[10px] mt-1">{t.floor_name} • {t.capacity} Seats</span>
-                <span className="text-[9px] font-bold uppercase mt-1 px-1.5 py-0.5 rounded bg-white/80 dark:bg-slate-800">
-                  {t.status}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                <Plus className="w-4 h-4" />
+                <span>Configure Floors & Tables</span>
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 text-xs">
+            {tables.map((t) => {
+              const isAvail = t.status === 'AVAILABLE';
+              const isOccupied = t.status === 'OCCUPIED';
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    setSelectedTable(t);
+                    setIsTableModalOpen(false);
+                  }}
+                  className={`p-3 rounded-xl border flex flex-col items-center justify-center transition-all ${
+                    isAvail
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 hover:border-emerald-500'
+                      : isOccupied
+                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+                      : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200'
+                  }`}
+                >
+                  <span className="font-extrabold text-sm">{t.table_number}</span>
+                  <span className="text-[10px] mt-1">{t.floor_name} • {t.capacity} Seats</span>
+                  <span className="text-[9px] font-bold uppercase mt-1 px-1.5 py-0.5 rounded bg-white/80 dark:bg-slate-800">
+                    {t.status}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </Modal>
 
       {/* Modal: Checkout / Fast Payment */}
@@ -2497,6 +2917,126 @@ export const PosTerminal: React.FC = () => {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal: Add New Customer */}
+      <Modal
+        isOpen={isNewCustomerModalOpen}
+        onClose={() => setIsNewCustomerModalOpen(false)}
+        title="Add New Customer"
+        maxWidth="sm"
+      >
+        <form onSubmit={handleSaveNewCustomer} className="space-y-3.5 text-xs">
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Customer Full Name <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Imran Khan"
+              value={newCustName}
+              onChange={(e) => setNewCustName(e.target.value)}
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Customer Phone Number <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="tel"
+              required
+              placeholder="e.g. 03001234567"
+              value={newCustPhone}
+              onChange={(e) => setNewCustPhone(e.target.value)}
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Default Delivery Address (Optional)
+            </label>
+            <textarea
+              rows={2}
+              placeholder="House, Street, Area..."
+              value={newCustAddress}
+              onChange={(e) => setNewCustAddress(e.target.value)}
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 resize-none"
+            />
+          </div>
+
+          <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setIsNewCustomerModalOpen(false)}
+              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-400"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg shadow-md transition-all"
+            >
+              Save & Select Customer
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal: Add New Rider */}
+      <Modal
+        isOpen={isNewRiderModalOpen}
+        onClose={() => setIsNewRiderModalOpen(false)}
+        title="Add New Delivery Rider"
+        maxWidth="sm"
+      >
+        <form onSubmit={handleSaveNewRider} className="space-y-3.5 text-xs">
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Rider Full Name <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Asif Ali"
+              value={newRiderNameInput}
+              onChange={(e) => setNewRiderNameInput(e.target.value)}
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Rider Phone Number (Optional)
+            </label>
+            <input
+              type="tel"
+              placeholder="e.g. 03211234567"
+              value={newRiderPhoneInput}
+              onChange={(e) => setNewRiderPhoneInput(e.target.value)}
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
+          <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setIsNewRiderModalOpen(false)}
+              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-400"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shadow-md transition-all"
+            >
+              Save & Select Rider
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

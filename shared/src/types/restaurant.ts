@@ -77,6 +77,8 @@ export enum TableStatus {
   BILL_PRINTED = 'BILL_PRINTED',
 }
 
+export type TableShape = 'RECTANGLE' | 'ROUND' | 'SQUARE';
+
 export interface Floor {
   id: string;
   tenantId: string;
@@ -94,7 +96,71 @@ export interface Table {
   floorName?: string;
   tableNumber: string;
   capacity: number;
+  shape?: TableShape;
+  posX?: number;
+  posY?: number;
+  assignedWaiterId?: string | null;
+  assignedWaiterName?: string | null;
   status: TableStatus;
   currentOrderId?: string | null;
   isActive: boolean;
+}
+
+export enum ReservationStatus {
+  PENDING = 'PENDING',
+  CONFIRMED = 'CONFIRMED',
+  SEATED = 'SEATED',
+  CANCELLED = 'CANCELLED',
+  NO_SHOW = 'NO_SHOW',
+  COMPLETED = 'COMPLETED',
+}
+
+export interface Reservation {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string | null;
+  guestCount: number;
+  tableId?: string | null;
+  tableNumber?: string | null;
+  floorName?: string | null;
+  reservationDate: string;
+  reservationTime: string;
+  durationMinutes: number;
+  status: ReservationStatus;
+  specialRequests?: string | null;
+  convertedOrderId?: string | null;
+  createdByUserId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export enum WaitlistStatus {
+  WAITING = 'WAITING',
+  NOTIFIED = 'NOTIFIED',
+  SEATED = 'SEATED',
+  CANCELLED = 'CANCELLED',
+  NO_SHOW = 'NO_SHOW',
+}
+
+export interface WaitlistEntry {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  customerName: string;
+  customerPhone: string;
+  guestCount: number;
+  queueNumber: number;
+  estimatedWaitMinutes: number;
+  status: WaitlistStatus;
+  assignedTableId?: string | null;
+  assignedTableNumber?: string | null;
+  notifiedAt?: string | null;
+  seatedAt?: string | null;
+  notes?: string | null;
+  convertedOrderId?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

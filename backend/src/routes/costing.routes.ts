@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { authenticate, requireTenant, requirePermission } from '../middleware/auth.js';
+import { authenticate, requireTenant, requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import { Permission } from '@pos/shared';
 import {
   getMenuItemProfitability,
@@ -19,7 +19,7 @@ export async function costingRoutes(fastify: FastifyInstance) {
    * 1. Get Menu Item Profitability and Portfolio KPI Summary
    */
   fastify.get('/api/costing/menu-profitability', {
-    preHandler: [requirePermission(Permission.MENU_VIEW)],
+    preHandler: [requireAnyPermission(Permission.MENU_VIEW, Permission.INVENTORY_VIEW)],
   }, async (req, reply) => {
     const tenantId = req.user!.tenantId!;
     const { branchId, categoryId, search, sortBy, sortOrder } = req.query as {
@@ -46,7 +46,7 @@ export async function costingRoutes(fastify: FastifyInstance) {
    * 2. Get Recipe Costing Breakdown for a specific Product
    */
   fastify.get('/api/costing/recipe/:productId', {
-    preHandler: [requirePermission(Permission.MENU_VIEW)],
+    preHandler: [requireAnyPermission(Permission.MENU_VIEW, Permission.INVENTORY_VIEW)],
   }, async (req, reply) => {
     const tenantId = req.user!.tenantId!;
     const { productId } = req.params as { productId: string };
@@ -89,7 +89,7 @@ export async function costingRoutes(fastify: FastifyInstance) {
    * 4. Food Cost Analysis (Overall, Category-wise, Trends, Top 10, Branch Comparison)
    */
   fastify.get('/api/costing/food-cost-analysis', {
-    preHandler: [requirePermission(Permission.REPORTS_FINANCIAL)],
+    preHandler: [requireAnyPermission(Permission.REPORTS_FINANCIAL, Permission.REPORTS_INVENTORY, Permission.INVENTORY_VIEW)],
   }, async (req, reply) => {
     const tenantId = req.user!.tenantId!;
     const { branchId, startDate, endDate, groupBy } = req.query as {

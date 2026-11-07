@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
@@ -62,19 +63,24 @@ export const PurchaseManagement: React.FC = () => {
   const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [receivingInvoiceId, setReceivingInvoiceId] = useState<string | null>(null);
+  const [isNewSupplierMode, setIsNewSupplierMode] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
 
   // New Invoice Form
   const [invoiceForm, setInvoiceForm] = useState({
     branchId: currentBranchId || (branches[0]?.id || ''),
     supplierId: '',
-    invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
+    invoiceNumber: '',
     taxAmount: 0,
     paidAmount: 0,
+    receiveNow: true,
     notes: '',
     items: [
-      { ingredientId: '', unit: 'G', purchaseUnit: 'KG', conversionFactor: 1000, quantity: 1, unitPrice: 0 },
+      { ingredientId: '', name: '', unit: 'KG', quantity: 1, unitPrice: 0 },
     ],
   });
+  const [reconciling, setReconciling] = useState(false);
 
   // New Supplier Form
   const [supplierForm, setSupplierForm] = useState({
@@ -97,6 +103,15 @@ export const PurchaseManagement: React.FC = () => {
     taxNumber: '',
   });
 
+  const [searchParams] = useSearchParams();
+  const actionParam = searchParams.get('action');
+
+  useEffect(() => {
+    if (actionParam === 'new-bill') {
+      setIsCreateInvoiceOpen(true);
+    }
+  }, [actionParam]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -113,23 +128,17 @@ export const PurchaseManagement: React.FC = () => {
       if (suppliersRes.suppliers?.length > 0 && !invoiceForm.supplierId) {
         setInvoiceForm((prev) => ({ ...prev, supplierId: suppliersRes.suppliers[0].id }));
       }
-      if (ingredientsRes.ingredients?.length > 0 && !invoiceForm.items[0].ingredientId) {
+      if (ingredientsRes.ingredients?.length > 0 && !invoiceForm.items[0]?.name && !invoiceForm.items[0]?.ingredientId) {
         const firstIng = ingredientsRes.ingredients[0];
-        const bUnit = firstIng.base_unit || firstIng.unit || 'G';
-        const pUnit = firstIng.purchase_unit || firstIng.unit || 'KG';
-        const factor = Number(firstIng.conversion_factor || 1);
-        const pPrice = Number(firstIng.purchase_cost || (Number(firstIng.cost_per_unit || 0) * factor));
-
         setInvoiceForm((prev) => ({
           ...prev,
           items: [
             {
               ingredientId: firstIng.id,
-              unit: bUnit,
-              purchaseUnit: pUnit,
-              conversionFactor: factor,
+              name: firstIng.name,
+              unit: firstIng.unit || firstIng.base_unit || 'KG',
               quantity: 1,
-              unitPrice: pPrice,
+              unitPrice: Number(firstIng.purchase_cost || firstIng.cost_per_unit || 0),
             },
           ],
         }));
@@ -147,23 +156,16 @@ export const PurchaseManagement: React.FC = () => {
 
   // Handle adding an item row to the invoice
   const addItemRow = () => {
-    const firstIng = ingredients[0];
-    const bUnit = firstIng?.base_unit || firstIng?.unit || 'G';
-    const pUnit = firstIng?.purchase_unit || firstIng?.unit || 'KG';
-    const factor = Number(firstIng?.conversion_factor || 1);
-    const pPrice = Number(firstIng?.purchase_cost || (Number(firstIng?.cost_per_unit || 0) * factor));
-
     setInvoiceForm((prev) => ({
       ...prev,
       items: [
         ...prev.items,
         {
-          ingredientId: firstIng ? firstIng.id : '',
-          unit: bUnit,
-          purchaseUnit: pUnit,
-          conversionFactor: factor,
+          ingredientId: '',
+          name: '',
+          unit: 'KG',
           quantity: 1,
-          unitPrice: pPrice,
+          unitPrice: 0,
         },
       ],
     }));
@@ -177,49 +179,38 @@ export const PurchaseManagement: React.FC = () => {
     }));
   };
 
-  const updateItemRow = (index: number, field: string, value: any) => {
+  const handleItemNameChange = (index: number, val: string) => {
     setInvoiceForm((prev) => {
       const newItems = [...prev.items];
-      if (field === 'ingredientId') {
-        const found = ingredients.find((i) => i.id === value);
-        const bUnit = found?.base_unit || found?.unit || 'G';
-        const pUnit = found?.purchase_unit || found?.unit || 'KG';
-        const factor = Number(found?.conversion_factor || 1);
-        const pPrice = Number(found?.purchase_cost || (Number(found?.cost_per_unit || 0) * factor));
-
+      const match = ingredients.find(
+        (i) => i.name.toLowerCase().trim() === val.toLowerCase().trim()
+      );
+      if (match) {
         newItems[index] = {
           ...newItems[index],
-          ingredientId: value,
-          unit: bUnit,
-          purchaseUnit: pUnit,
-          conversionFactor: factor,
-          unitPrice: pPrice,
-        };
-      } else if (field === 'purchaseUnit') {
-        const found = ingredients.find((i) => i.id === newItems[index].ingredientId);
-        const bUnit = found?.base_unit || found?.unit || 'G';
-        const pUnit = value;
-        let factor = newItems[index].conversionFactor;
-        if (pUnit === found?.purchase_unit && Number(found?.conversion_factor) > 0) {
-          factor = Number(found.conversion_factor);
-        } else if (pUnit === 'KG' && bUnit === 'G') factor = 1000;
-        else if (pUnit === 'L' && bUnit === 'ML') factor = 1000;
-        else if (pUnit === 'DOZEN' && bUnit === 'PCS') factor = 12;
-        else if (pUnit === 'TRAY' && bUnit === 'PCS') factor = 30;
-        else if (pUnit === 'CARTON' && bUnit === 'PCS') factor = 24;
-        else if (pUnit === bUnit) factor = 1;
-
-        newItems[index] = {
-          ...newItems[index],
-          purchaseUnit: pUnit,
-          conversionFactor: factor,
+          ingredientId: match.id,
+          name: match.name,
+          unit: match.unit || match.base_unit || 'KG',
+          unitPrice: Number(match.purchase_cost || match.cost_per_unit || 0) || newItems[index].unitPrice,
         };
       } else {
         newItems[index] = {
           ...newItems[index],
-          [field]: value,
+          ingredientId: '',
+          name: val,
         };
       }
+      return { ...prev, items: newItems };
+    });
+  };
+
+  const updateItemRow = (index: number, field: string, value: any) => {
+    setInvoiceForm((prev) => {
+      const newItems = [...prev.items];
+      newItems[index] = {
+        ...newItems[index],
+        [field]: value,
+      };
       return { ...prev, items: newItems };
     });
   };
@@ -231,72 +222,89 @@ export const PurchaseManagement: React.FC = () => {
 
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!invoiceForm.supplierId) {
-      error('Please select a supplier');
+    if (!isNewSupplierMode && !invoiceForm.supplierId) {
+      error('Please select an existing supplier or click "+ Add New Supplier"');
+      return;
+    }
+    if (isNewSupplierMode && !newSupplierName.trim()) {
+      error('Please enter the supplier name');
       return;
     }
     if (!invoiceForm.branchId) {
       error('Please select a destination branch');
       return;
     }
-    if (invoiceForm.items.some((it) => !it.ingredientId || it.quantity <= 0)) {
-      error('Please provide valid quantities for all ingredients');
+
+    const hasInvalidItems = invoiceForm.items.some(
+      (it) => (!it.ingredientId && !it.name.trim()) || Number(it.quantity) <= 0
+    );
+    if (hasInvalidItems) {
+      error('Please specify an item name and valid quantity for all purchase items');
       return;
     }
 
     try {
+      const isReceiveNow = invoiceForm.receiveNow !== false;
       await api.post('/inventory/purchases', {
         branchId: invoiceForm.branchId,
-        supplierId: invoiceForm.supplierId,
-        invoiceNumber: invoiceForm.invoiceNumber,
+        supplierId: !isNewSupplierMode ? invoiceForm.supplierId : undefined,
+        newSupplierName: isNewSupplierMode ? newSupplierName.trim() : undefined,
+        invoiceNumber: invoiceForm.invoiceNumber?.trim() || undefined,
+        purchaseDate,
         taxAmount: Number(invoiceForm.taxAmount || 0),
         paidAmount: Number(invoiceForm.paidAmount || 0),
         notes: invoiceForm.notes,
-        items: invoiceForm.items.map((it) => {
-          const ing = ingredients.find((i) => i.id === it.ingredientId);
-          const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (it.unit || 'G');
-          const pUnit = it.purchaseUnit || ing?.purchase_unit || baseU;
-          const factor = Number(it.conversionFactor || ing?.conversion_factor || 1);
-          return {
-            ingredientId: it.ingredientId,
-            unit: baseU,
-            purchaseUnit: pUnit,
-            conversionFactor: factor,
-            quantity: Number(it.quantity),
-            unitPrice: Number(it.unitPrice),
-          };
-        }),
+        receiveNow: isReceiveNow,
+        items: invoiceForm.items.map((it) => ({
+          ingredientId: it.ingredientId || undefined,
+          name: it.name.trim() || undefined,
+          itemName: it.name.trim() || undefined,
+          unit: it.unit || 'KG',
+          quantity: Number(it.quantity),
+          unitPrice: Number(it.unitPrice),
+        })),
       });
 
-      success('Purchase invoice draft created successfully with automatic base unit conversion!');
-      setIsCreateInvoiceOpen(false);
-      const firstIng = ingredients[0];
-      const bUnit = firstIng?.base_unit || firstIng?.unit || 'G';
-      const pUnit = firstIng?.purchase_unit || firstIng?.unit || 'KG';
-      const factor = Number(firstIng?.conversion_factor || 1);
-      const pPrice = Number(firstIng?.purchase_cost || (Number(firstIng?.cost_per_unit || 0) * factor));
+      if (isReceiveNow) {
+        success('Purchase recorded and stock received into inventory with FIFO batch tracking!');
+      } else {
+        success('Purchase invoice draft created successfully!');
+      }
 
+      setIsCreateInvoiceOpen(false);
+      setIsNewSupplierMode(false);
+      setNewSupplierName('');
       setInvoiceForm({
         branchId: currentBranchId || (branches[0]?.id || ''),
         supplierId: suppliers[0]?.id || '',
-        invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
+        invoiceNumber: '',
         taxAmount: 0,
         paidAmount: 0,
+        receiveNow: true,
         notes: '',
         items: [
-          {
-            ingredientId: firstIng?.id || '',
-            unit: bUnit,
-            purchaseUnit: pUnit,
-            conversionFactor: factor,
-            quantity: 1,
-            unitPrice: pPrice,
-          },
+          { ingredientId: '', name: '', unit: 'KG', quantity: 1, unitPrice: 0 },
         ],
       });
       fetchData();
     } catch (err: any) {
-      error(err.message || 'Failed to create purchase invoice');
+      error(err.message || 'Failed to record purchase');
+    }
+  };
+
+  const handleReconcilePurchases = async () => {
+    if (!window.confirm('Reconcile historical inward purchases into inventory stock? This will safely find any unposted purchases and create corresponding FIFO batches and ledger entries without double-counting.')) return;
+    setReconciling(true);
+    try {
+      const res = await api.post('/inventory/purchases/reconcile', {
+        branchId: currentBranchId || undefined,
+      });
+      success(res.message || 'Historical inward purchases reconciled successfully!');
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to reconcile inward purchases');
+    } finally {
+      setReconciling(false);
     }
   };
 
@@ -489,13 +497,24 @@ export const PurchaseManagement: React.FC = () => {
           </div>
 
           {activeTab === 'INVOICES' ? (
-            <button
-              onClick={() => setIsCreateInvoiceOpen(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-xl shadow-md transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New Purchase</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleReconcilePurchases}
+                disabled={reconciling}
+                className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all disabled:opacity-50"
+                title="Sync and post unposted historical purchases to stock ledger and FIFO lots"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${reconciling ? 'animate-spin text-brand-500' : ''}`} />
+                <span>{reconciling ? 'Reconciling...' : 'Reconcile Stock'}</span>
+              </button>
+              <button
+                onClick={() => setIsCreateInvoiceOpen(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-xl shadow-md transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New Purchase</span>
+              </button>
+            </div>
           ) : (
             <button
               onClick={() => setIsAddSupplierOpen(true)}
@@ -895,278 +914,379 @@ export const PurchaseManagement: React.FC = () => {
       <Modal
         isOpen={isCreateInvoiceOpen}
         onClose={() => setIsCreateInvoiceOpen(false)}
-        title="Record Inward Purchase Shipment"
-        maxWidth="xl"
-      >
-        <form onSubmit={handleCreateInvoice} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {branches.length > 1 && (
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Destination Branch *
-                </label>
-                <select
-                  value={invoiceForm.branchId}
-                  onChange={(e) => setInvoiceForm({ ...invoiceForm, branchId: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-brand-500"
-                  required
-                >
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({b.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <Truck className="w-5 h-5" />
+            </div>
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Supplier / Vendor *
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setIsAddSupplierOpen(true)}
-                  className="text-[10px] text-brand-600 dark:text-brand-400 font-bold hover:underline"
-                >
-                  + Quick Add
-                </button>
-              </div>
-              <select
-                value={invoiceForm.supplierId}
-                onChange={(e) => setInvoiceForm({ ...invoiceForm, supplierId: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-brand-500"
-                required
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Record New Purchase & Stock Inward</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Enter vendor supplies, create FIFO inventory batches, and update ingredient balances</p>
+            </div>
+          </div>
+        }
+        maxWidth="6xl"
+      >
+        <form onSubmit={handleCreateInvoice} className="space-y-6">
+          <div className="bg-slate-50/80 dark:bg-slate-850/60 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-800">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                1. Vendor & Invoice Details
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsNewSupplierMode(!isNewSupplierMode)}
+                className="inline-flex items-center space-x-1.5 text-xs text-brand-600 dark:text-brand-400 font-bold hover:underline"
               >
-                <option value="">Select Supplier</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.phone})
-                  </option>
-                ))}
-              </select>
+                <span>{isNewSupplierMode ? '← Choose Existing Supplier' : '+ Add Brand New Supplier'}</span>
+              </button>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Invoice Number *
-              </label>
-              <input
-                type="text"
-                value={invoiceForm.invoiceNumber}
-                onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceNumber: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold focus:ring-2 focus:ring-brand-500"
-                placeholder="e.g. INV-100234"
-                required
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {branches.length > 1 && (
+                <div>
+                  <label className="form-label">
+                    Receiving Branch <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={invoiceForm.branchId}
+                    onChange={(e) => setInvoiceForm({ ...invoiceForm, branchId: e.target.value })}
+                    className="form-select"
+                    required
+                  >
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className={branches.length > 1 ? 'lg:col-span-1' : 'lg:col-span-2'}>
+                <label className="form-label">
+                  {isNewSupplierMode ? 'New Supplier / Vendor Name' : 'Supplier / Vendor'} <span className="text-rose-500">*</span>
+                </label>
+                {isNewSupplierMode ? (
+                  <input
+                    type="text"
+                    value={newSupplierName}
+                    onChange={(e) => setNewSupplierName(e.target.value)}
+                    placeholder="e.g. Metro Cash & Carry, Local Poultry Farm"
+                    className="form-input border-brand-300 dark:border-brand-700 font-bold"
+                    required
+                  />
+                ) : (
+                  <select
+                    value={invoiceForm.supplierId}
+                    onChange={(e) => setInvoiceForm({ ...invoiceForm, supplierId: e.target.value })}
+                    className="form-select"
+                    required
+                  >
+                    <option value="">Select Supplier...</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.phone || 'No phone'})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="form-label">
+                  Purchase Date <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={purchaseDate}
+                  onChange={(e) => setPurchaseDate(e.target.value)}
+                  className="form-input"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="form-label">
+                  Vendor Invoice / Ref # <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={invoiceForm.invoiceNumber}
+                  onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceNumber: e.target.value })}
+                  className="form-input font-mono font-bold"
+                  placeholder="e.g. INV-100234 (auto)"
+                />
+              </div>
             </div>
           </div>
 
           {/* Line Items Table */}
-          <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mt-3">
-            <div className="bg-slate-100 dark:bg-slate-800/80 px-3 py-2 flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
-              <span className="flex items-center space-x-1.5">
-                <Boxes className="w-3.5 h-3.5 text-brand-500" />
-                <span>Purchased Raw Materials / Ingredients</span>
-              </span>
+          <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
+            <div className="bg-slate-100 dark:bg-slate-800/90 px-4 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-1.5 bg-brand-500/10 dark:bg-brand-500/20 rounded-lg text-brand-600 dark:text-brand-400">
+                  <Boxes className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                    2. Purchased Items & FIFO Batches
+                  </h4>
+                  <p className="text-[11px] text-slate-500 font-normal">Select existing inventory items or type a new raw material name</p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={addItemRow}
-                className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[11px] font-bold flex items-center space-x-1 transition-colors"
+                className="px-3.5 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all shadow-xs"
               >
-                <Plus className="w-3 h-3" />
-                <span>Add Item</span>
+                <Plus className="w-4 h-4" />
+                <span>Add Item Row</span>
               </button>
             </div>
 
-            <div className="p-2 space-y-2 max-h-72 overflow-y-auto">
-              {invoiceForm.items.map((row, idx) => {
-                const ing = ingredients.find((i) => i.id === row.ingredientId);
-                const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (row.unit || 'G');
-                const purchaseU = row.purchaseUnit || ing?.purchase_unit || baseU;
-                const factor = Number(row.conversionFactor || ing?.conversion_factor || 1);
-                const baseQty = convertPurchaseQtyToBase(row.quantity, purchaseU, baseU, factor);
-                const baseCost = calculateBaseUnitCost(row.unitPrice, factor);
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50/80 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 uppercase font-bold text-xs">
+                  <tr>
+                    <th className="px-4 py-3 min-w-[280px]">Item / Raw Ingredient Name</th>
+                    <th className="px-3 py-3 w-36">Quantity</th>
+                    <th className="px-3 py-3 w-36">Unit</th>
+                    <th className="px-3 py-3 w-44">Unit Purchase Price</th>
+                    <th className="px-4 py-3 w-40 text-right">Line Total</th>
+                    <th className="px-3 py-3 w-14 text-center"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900">
+                  {invoiceForm.items.map((row, idx) => {
+                    const isNewItem = !row.ingredientId && Boolean(row.name?.trim());
+                    const isExistingItem = Boolean(row.ingredientId);
 
-                return (
-                  <div key={idx} className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <div className="flex-1">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Ingredient</label>
-                        <select
-                          value={row.ingredientId}
-                          onChange={(e) => updateItemRow(idx, 'ingredientId', e.target.value)}
-                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                          required
-                        >
-                          {ingredients.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name} (Base: {item.base_unit || item.unit})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                    return (
+                      <tr key={idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/40 transition-colors">
+                        <td className="px-4 py-3 align-top">
+                          <div className="space-y-1.5">
+                            <input
+                              type="text"
+                              list={`ing-list-${idx}`}
+                              value={row.name}
+                              onChange={(e) => handleItemNameChange(idx, e.target.value)}
+                              placeholder="Search ingredient or type new (e.g. Chicken Boneless, Dough, Cheese)..."
+                              className="form-input text-sm font-semibold"
+                              required
+                            />
+                            <datalist id={`ing-list-${idx}`}>
+                              {ingredients.map((ing) => (
+                                <option key={ing.id} value={ing.name}>
+                                  Existing: {ing.name} ({ing.unit || ing.base_unit || 'UNIT'})
+                                </option>
+                              ))}
+                            </datalist>
 
-                      <div className="w-28">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Purchase Unit</label>
-                        <select
-                          value={row.purchaseUnit}
-                          onChange={(e) => updateItemRow(idx, 'purchaseUnit', e.target.value)}
-                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold"
-                        >
-                          {Object.values(STANDARD_UNITS).map((u) => (
-                            <option key={u.code} value={u.code}>
-                              {u.name} ({u.code})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                            <div>
+                              {isNewItem && (
+                                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                  <span>✨ New item will be created in Inventory</span>
+                                </span>
+                              )}
+                              {isExistingItem && (
+                                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                  <span>✓ Existing inventory item</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
 
-                      <div className="w-24">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Quantity</label>
-                        <input
-                          type="number"
-                          step="any"
-                          min="0.0001"
-                          value={row.quantity}
-                          onChange={(e) => updateItemRow(idx, 'quantity', parseFloat(e.target.value) || 0)}
-                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold"
-                          required
-                        />
-                      </div>
+                        <td className="px-3 py-3 align-top">
+                          <input
+                            type="number"
+                            step="any"
+                            min="0.001"
+                            value={row.quantity || ''}
+                            onChange={(e) => updateItemRow(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                            placeholder="1"
+                            className="form-input font-mono font-bold text-center"
+                            required
+                          />
+                        </td>
 
-                      <div className="w-28">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Unit Price ({currencySymbol})</label>
-                        <input
-                          type="number"
-                          step="any"
-                          min="0"
-                          value={row.unitPrice}
-                          onChange={(e) => updateItemRow(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
-                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold"
-                          required
-                        />
-                      </div>
+                        <td className="px-3 py-3 align-top">
+                          <select
+                            value={row.unit}
+                            onChange={(e) => updateItemRow(idx, 'unit', e.target.value)}
+                            className="form-select font-mono font-bold"
+                          >
+                            {['KG', 'G', 'L', 'ML', 'PCS', 'PACKET', 'BOX', 'CAN', 'BOTTLE', 'DOZEN', 'TRAY', 'PORTION'].map((u) => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                        </td>
 
-                      <div className="w-28 text-right">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Total</label>
-                        <div className="py-1.5 font-mono font-bold text-xs text-brand-600 dark:text-brand-400">
-                          {currencySymbol} {(row.quantity * row.unitPrice).toFixed(2)}
-                        </div>
-                      </div>
+                        <td className="px-3 py-3 align-top">
+                          <div className="relative">
+                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                              {currencySymbol}
+                            </span>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              value={row.unitPrice || ''}
+                              onChange={(e) => updateItemRow(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
+                              placeholder="0.00"
+                              className="form-input pl-8 pr-3 font-mono font-bold text-right"
+                              required
+                            />
+                          </div>
+                        </td>
 
-                      {invoiceForm.items.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeItemRow(idx)}
-                          className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg transition-colors mt-3"
-                          title="Remove Row"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
+                        <td className="px-4 py-3 align-top pt-5 text-right font-mono font-bold text-sm text-brand-600 dark:text-brand-400 whitespace-nowrap">
+                          {currencySymbol} {(Number(row.quantity || 0) * Number(row.unitPrice || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
 
-                    <div className="flex items-center justify-between text-[11px] px-1 text-slate-500 bg-white/60 dark:bg-slate-900/40 p-1.5 rounded-lg border border-slate-200/60 dark:border-slate-800">
-                      <span className="font-mono">
-                        Base Stock Increment: <strong className="text-emerald-600 dark:text-emerald-400 font-bold">{baseQty.toLocaleString()} {baseU}</strong> (1 {purchaseU} = {factor.toLocaleString()} {baseU})
-                      </span>
-                      <span className="font-mono">
-                        Base Unit Cost: <strong className="text-brand-600 dark:text-brand-400 font-bold">{currencySymbol} {baseCost.toFixed(4)} / {baseU}</strong>
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+                        <td className="px-3 py-3 align-top pt-4 text-center">
+                          {invoiceForm.items.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeItemRow(idx)}
+                              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors"
+                              title="Remove item"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
 
-          {/* Tax, Payment, and Financial Calculations */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Purchase Notes / Remarks
-              </label>
-              <textarea
-                value={invoiceForm.notes}
-                onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
-                rows={3}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500"
-                placeholder="Optional supplier terms, delivery slip #, or carrier info..."
-              />
+          {/* Section 3: Notes & Financial Calculation Breakdown */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-2">
+            <div className="space-y-4">
+              <div>
+                <label className="form-label">
+                  Purchase Notes & Delivery Terms <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  value={invoiceForm.notes}
+                  onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
+                  rows={4}
+                  className="form-textarea"
+                  placeholder="Optional supplier payment terms, delivery receipt numbers, carrier details, or memo..."
+                />
+              </div>
+
+              <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl">
+                <label className="flex items-start space-x-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={invoiceForm.receiveNow !== false}
+                    onChange={(e) => setInvoiceForm({ ...invoiceForm, receiveNow: e.target.checked })}
+                    className="mt-0.5 rounded text-brand-600 focus:ring-brand-500 w-4 h-4"
+                  />
+                  <div>
+                    <span className="block text-xs font-bold text-emerald-900 dark:text-emerald-200">
+                      Receive Stock & Post Inward Immediately
+                    </span>
+                    <span className="block text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                      Automatically creates FIFO batch lots and immediately updates the on-hand stock balances in inventory.
+                    </span>
+                  </div>
+                </label>
+              </div>
             </div>
 
-            <div className="bg-slate-50 dark:bg-slate-800/80 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-2 text-xs">
-              <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                <span>Subtotal ({invoiceForm.items.length} items):</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white">
+            <div className="bg-slate-50 dark:bg-slate-850 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 pb-1 border-b border-slate-200 dark:border-slate-800">
+                3. Financial Breakdown
+              </h4>
+
+              <div className="flex justify-between items-center text-sm text-slate-600 dark:text-slate-400">
+                <span className="font-medium">Subtotal ({invoiceForm.items.length} item lines):</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white text-base">
                   {currencySymbol} {formSubtotal.toFixed(2)}
                 </span>
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-slate-600 dark:text-slate-400">Tax Amount ({currencySymbol}):</span>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={invoiceForm.taxAmount}
-                  onChange={(e) => setInvoiceForm({ ...invoiceForm, taxAmount: parseFloat(e.target.value) || 0 })}
-                  className="w-28 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-right font-mono font-bold text-xs"
-                />
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Tax / GST Amount:</span>
+                <div className="relative w-36">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                    {currencySymbol}
+                  </span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={invoiceForm.taxAmount}
+                    onChange={(e) => setInvoiceForm({ ...invoiceForm, taxAmount: parseFloat(e.target.value) || 0 })}
+                    className="form-input pl-7 pr-3 py-1.5 text-right font-mono font-bold text-sm h-10"
+                  />
+                </div>
               </div>
 
-              <div className="flex justify-between border-t border-slate-200 dark:border-slate-700 pt-1 text-sm font-extrabold text-slate-900 dark:text-white">
-                <span>Grand Total:</span>
-                <span className="font-mono text-brand-600 dark:text-brand-400">
+              <div className="flex justify-between items-center border-t border-b border-slate-200 dark:border-slate-800 py-3 text-slate-900 dark:text-white">
+                <span className="text-base font-extrabold">Grand Total:</span>
+                <span className="font-mono text-xl font-black text-brand-600 dark:text-brand-400">
                   {currencySymbol} {formGrandTotal.toFixed(2)}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <div className="flex items-center space-x-1.5">
-                  <span className="text-slate-600 dark:text-slate-400">Paid Now:</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Amount Paid Now:</span>
                   <button
                     type="button"
                     onClick={() => setInvoiceForm({ ...invoiceForm, paidAmount: formGrandTotal })}
-                    className="text-[10px] text-brand-600 dark:text-brand-400 font-bold hover:underline"
+                    className="text-xs text-brand-600 dark:text-brand-400 font-bold hover:underline"
                   >
-                    (Full)
+                    (Pay Full)
                   </button>
                 </div>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={invoiceForm.paidAmount}
-                  onChange={(e) => setInvoiceForm({ ...invoiceForm, paidAmount: parseFloat(e.target.value) || 0 })}
-                  className="w-28 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-right font-mono font-bold text-xs"
-                />
+                <div className="relative w-36">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                    {currencySymbol}
+                  </span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={invoiceForm.paidAmount}
+                    onChange={(e) => setInvoiceForm({ ...invoiceForm, paidAmount: parseFloat(e.target.value) || 0 })}
+                    className="form-input pl-7 pr-3 py-1.5 text-right font-mono font-bold text-sm h-10"
+                  />
+                </div>
               </div>
 
-              <div className="flex justify-between text-xs font-bold pt-1 border-t border-slate-200 dark:border-slate-700">
-                <span className="text-slate-600 dark:text-slate-400">Balance Payable:</span>
-                <span className={`font-mono ${formBalancePayable > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+              <div className="flex justify-between items-center text-sm font-bold pt-1">
+                <span className="text-slate-600 dark:text-slate-400">Balance Due / Payable:</span>
+                <span className={`font-mono text-base ${formBalancePayable > 0 ? 'text-rose-500 font-extrabold' : 'text-emerald-500 font-bold'}`}>
                   {currencySymbol} {formBalancePayable.toFixed(2)}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+          {/* Section 4: Modal Actions */}
+          <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setIsCreateInvoiceOpen(false)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-xs font-bold"
+              className="px-5 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-sm font-bold transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold shadow-md"
+              className="px-7 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg flex items-center space-x-2 transition-all transform active:scale-95"
             >
-              Save Invoice (Draft)
+              <CheckCircle2 className="w-5 h-5" />
+              <span>Save & Record Purchase</span>
             </button>
           </div>
         </form>
@@ -1177,28 +1297,38 @@ export const PurchaseManagement: React.FC = () => {
         <Modal
           isOpen={isDetailModalOpen}
           onClose={() => setIsDetailModalOpen(false)}
-          title={`Purchase Invoice: ${selectedInvoice.invoice_number}`}
-          maxWidth="lg"
+          title={
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Purchase Invoice Details</h3>
+                <p className="text-xs font-mono text-slate-500 font-normal mt-0.5">{selectedInvoice.invoice_number}</p>
+              </div>
+            </div>
+          }
+          maxWidth="5xl"
         >
-          <div className="space-y-4">
+          <div className="space-y-5">
             {/* Summary details */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs">
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Supplier</span>
-                <strong className="text-slate-900 dark:text-white font-bold">{selectedInvoice.supplier_name}</strong>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">Supplier</span>
+                <strong className="text-slate-900 dark:text-white font-bold text-sm">{selectedInvoice.supplier_name}</strong>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Destination</span>
-                <strong className="text-slate-900 dark:text-white font-bold">{selectedInvoice.branch_name}</strong>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">Destination</span>
+                <strong className="text-slate-900 dark:text-white font-bold text-sm">{selectedInvoice.branch_name}</strong>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Date</span>
-                <span className="text-slate-700 dark:text-slate-300">{new Date(selectedInvoice.created_at).toLocaleDateString()}</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">Date</span>
+                <span className="text-slate-700 dark:text-slate-300 font-medium text-sm">{new Date(selectedInvoice.created_at).toLocaleDateString()}</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Status</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">Status</span>
                 <span
-                  className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                  className={`inline-block px-2.5 py-1 rounded-full text-xs font-black uppercase ${
                     selectedInvoice.status === 'DRAFT'
                       ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
                       : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'
@@ -1210,65 +1340,71 @@ export const PurchaseManagement: React.FC = () => {
             </div>
 
             {/* Line items */}
-            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold uppercase text-[10px]">
-                  <tr>
-                    <th className="px-3 py-2">Ingredient Item</th>
-                    <th className="px-3 py-2 text-right">Purchased Qty</th>
-                    <th className="px-3 py-2 text-right">Inward Base Stock</th>
-                    <th className="px-3 py-2 text-right">Purchase Price</th>
-                    <th className="px-3 py-2 text-right">Base Cost</th>
-                    <th className="px-3 py-2 text-right">Total Price</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                  {invoiceItems.map((it: any) => {
-                    const factor = Number(it.conversion_factor) > 0 ? Number(it.conversion_factor) : 1;
-                    const baseQ = it.base_quantity !== null && it.base_quantity !== undefined ? Number(it.base_quantity) : Number(it.quantity) * factor;
-                    const baseC = it.base_unit_cost !== null && it.base_unit_cost !== undefined ? Number(it.base_unit_cost) : Number(it.unit_price) / factor;
-                    const pUnit = it.purchase_unit || it.unit;
+            <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold uppercase text-[11px]">
+                    <tr>
+                      <th className="px-4 py-3">Ingredient Item</th>
+                      <th className="px-3 py-3 text-right">Purchased Qty</th>
+                      <th className="px-3 py-3 text-right">Inward Base Stock</th>
+                      <th className="px-3 py-3 text-right">Purchase Price</th>
+                      <th className="px-3 py-3 text-right">Base Cost</th>
+                      <th className="px-4 py-3 text-right">Total Price</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                    {invoiceItems.map((it: any) => {
+                      const factor = Number(it.conversion_factor) > 0 ? Number(it.conversion_factor) : 1;
+                      const baseQ = it.base_quantity !== null && it.base_quantity !== undefined ? Number(it.base_quantity) : Number(it.quantity) * factor;
+                      const baseC = it.base_unit_cost !== null && it.base_unit_cost !== undefined ? Number(it.base_unit_cost) : Number(it.unit_price) / factor;
+                      const pUnit = it.purchase_unit || it.unit;
 
-                    return (
-                      <tr key={it.id}>
-                        <td className="px-3 py-2 font-bold text-slate-900 dark:text-white">
-                          {it.ingredient_name}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
-                          {Number(it.quantity).toLocaleString()} {pUnit}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          {baseQ.toLocaleString()} {it.unit}
-                          {pUnit !== it.unit && factor > 1 && (
-                            <span className="block text-[10px] text-slate-400 font-normal">
-                              (1 {pUnit} = {factor} {it.unit})
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-slate-500">
-                          {currencySymbol} {Number(it.unit_price).toFixed(2)} / {pUnit}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-slate-500">
-                          {currencySymbol} {baseC.toFixed(4)} / {it.unit}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-brand-600 dark:text-brand-400">
-                          {currencySymbol} {Number(it.total_price).toFixed(2)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      return (
+                        <tr key={it.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                          <td className="px-4 py-3 font-bold text-slate-900 dark:text-white text-sm">
+                            {it.ingredient_name}
+                          </td>
+                          <td className="px-3 py-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200 text-sm">
+                            {Number(it.quantity).toLocaleString()} {pUnit}
+                          </td>
+                          <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                            {baseQ.toLocaleString()} {it.unit}
+                            {pUnit !== it.unit && factor > 1 && (
+                              <span className="block text-[10px] text-slate-400 font-normal">
+                                (1 {pUnit} = {factor} {it.unit})
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right font-mono text-slate-500 text-xs">
+                            {currencySymbol} {Number(it.unit_price).toFixed(2)} / {pUnit}
+                          </td>
+                          <td className="px-3 py-3 text-right font-mono text-slate-500 text-xs">
+                            {currencySymbol} {baseC.toFixed(4)} / {it.unit}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-brand-600 dark:text-brand-400 text-sm">
+                            {currencySymbol} {Number(it.total_price).toFixed(2)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {/* Totals */}
-            <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 text-xs">
-              <div className="space-y-0.5">
-                <p className="text-slate-500">Recorded By: <strong className="text-slate-700 dark:text-slate-300">{selectedInvoice.recorded_by_name || 'System'}</strong></p>
-                {selectedInvoice.notes && <p className="text-slate-400 italic">Notes: {selectedInvoice.notes}</p>}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs">
+              <div className="space-y-1">
+                <p className="text-slate-600 dark:text-slate-400">
+                  Recorded By: <strong className="text-slate-900 dark:text-white">{selectedInvoice.recorded_by_name || 'System'}</strong>
+                </p>
+                {selectedInvoice.notes && <p className="text-slate-500 italic">Notes: {selectedInvoice.notes}</p>}
               </div>
-              <div className="text-right space-y-1">
-                <p className="text-slate-500">Grand Total: <strong className="font-mono text-slate-900 dark:text-white font-extrabold text-sm">{currencySymbol} {Number(selectedInvoice.total_amount).toLocaleString()}</strong></p>
+              <div className="text-left sm:text-right space-y-1">
+                <p className="text-slate-600 dark:text-slate-400">
+                  Grand Total: <strong className="font-mono text-slate-900 dark:text-white font-black text-base">{currencySymbol} {Number(selectedInvoice.total_amount).toLocaleString()}</strong>
+                </p>
                 <p className="text-slate-500">
                   Paid: <strong className="font-mono text-emerald-500 font-bold">{currencySymbol} {Number(selectedInvoice.paid_amount || 0).toLocaleString()}</strong> • 
                   Balance Due: <strong className="font-mono text-rose-500 font-bold">{currencySymbol} {Number(selectedInvoice.balance_payable || 0).toLocaleString()}</strong>
@@ -1277,12 +1413,12 @@ export const PurchaseManagement: React.FC = () => {
             </div>
 
             {/* Actions */}
-            <div className="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex flex-wrap justify-between items-center gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
               <div className="flex items-center space-x-2">
                 <button
                   type="button"
                   onClick={() => handleDownloadInvoicePdf(selectedInvoice, invoiceItems)}
-                  className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-all"
+                  className="px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-all"
                 >
                   <Download className="w-4 h-4" />
                   <span>Download A4 PDF</span>
@@ -1290,7 +1426,7 @@ export const PurchaseManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handlePrintInvoicePdf(selectedInvoice, invoiceItems)}
-                  className="px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm"
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-all"
                 >
                   <Printer className="w-4 h-4" />
                   <span>Print A4 Invoice</span>
@@ -1301,7 +1437,7 @@ export const PurchaseManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsDetailModalOpen(false)}
-                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-xs font-bold"
+                  className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-xs font-bold"
                 >
                   Close
                 </button>
@@ -1311,7 +1447,7 @@ export const PurchaseManagement: React.FC = () => {
                     type="button"
                     onClick={() => handleReceiveStock(selectedInvoice.id)}
                     disabled={receivingInvoiceId === selectedInvoice.id}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-md disabled:opacity-50"
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-md disabled:opacity-50 transition-all"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     <span>{receivingInvoiceId === selectedInvoice.id ? 'Receiving Stock...' : 'Receive Stock & Generate FIFO Lots'}</span>
@@ -1327,103 +1463,113 @@ export const PurchaseManagement: React.FC = () => {
       <Modal
         isOpen={isAddSupplierOpen}
         onClose={() => setIsAddSupplierOpen(false)}
-        title="Add Raw Material Supplier"
-        maxWidth="md"
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <Truck className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Add Raw Material Supplier</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Register a new vendor for procurement and invoice tracking</p>
+            </div>
+          </div>
+        }
+        maxWidth="2xl"
       >
-        <form onSubmit={handleCreateSupplier} className="space-y-3">
+        <form onSubmit={handleCreateSupplier} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Supplier / Company Name *
+            <label className="form-label">
+              Supplier / Company Name <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
               value={supplierForm.name}
               onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500"
+              className="form-input"
               placeholder="e.g. Al-Madina Fresh Poultry Supplies"
               required
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Contact Person
+              <label className="form-label">
+                Contact Person Name
               </label>
               <input
                 type="text"
                 value={supplierForm.contactPerson}
                 onChange={(e) => setSupplierForm({ ...supplierForm, contactPerson: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500"
+                className="form-input"
                 placeholder="e.g. Haji Muhammad"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Phone Number *
+              <label className="form-label">
+                Phone Number <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 value={supplierForm.phone}
                 onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500"
+                className="form-input"
                 placeholder="e.g. 0300-1234567"
                 required
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="form-label">
                 Email Address
               </label>
               <input
                 type="email"
                 value={supplierForm.email}
                 onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500"
+                className="form-input"
                 placeholder="e.g. supplier@domain.com"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Tax / NTN Number
+              <label className="form-label">
+                Tax / NTN Registration Number
               </label>
               <input
                 type="text"
                 value={supplierForm.taxNumber}
                 onChange={(e) => setSupplierForm({ ...supplierForm, taxNumber: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500"
+                className="form-input"
                 placeholder="e.g. NTN-987654"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+            <label className="form-label">
               Address / Warehouse Location
             </label>
             <input
               type="text"
               value={supplierForm.address}
               onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500"
+              className="form-input"
               placeholder="e.g. Wholesale Grain Market, Shop #12"
             />
           </div>
 
-          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setIsAddSupplierOpen(false)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-xs font-bold"
+              className="px-5 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-sm font-bold transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold shadow-md"
+              className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-sm font-bold shadow-md transition-all"
             >
               Save Supplier
             </button>

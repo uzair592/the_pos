@@ -8,6 +8,38 @@
   }
 }
 
+@layer components {
+  /* Standard Form Input Field */
+  .form-input {
+    @apply w-full h-11 px-3.5 py-2 text-sm font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/80 focus:border-brand-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm;
+  }
+
+  /* Compact Table/Line-Item Form Input */
+  .form-input-compact {
+    @apply w-full h-10 px-3 py-1.5 text-sm font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/80 focus:border-brand-500 transition-all shadow-sm;
+  }
+
+  /* Standard Form Select Dropdown */
+  .form-select {
+    @apply w-full h-11 px-3.5 py-2 text-sm font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/80 focus:border-brand-500 transition-all disabled:opacity-50 shadow-sm;
+  }
+
+  /* Compact Table/Line-Item Form Select */
+  .form-select-compact {
+    @apply w-full h-10 px-2.5 py-1.5 text-sm font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/80 focus:border-brand-500 transition-all shadow-sm;
+  }
+
+  /* Standard Form Field Label */
+  .form-label {
+    @apply block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 tracking-tight;
+  }
+
+  /* Standard Form Textarea */
+  .form-textarea {
+    @apply w-full px-3.5 py-2.5 text-sm font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/80 focus:border-brand-500 transition-all shadow-sm;
+  }
+}
+
 /* Custom Scrollbar for sleek POS terminals */
 ::-webkit-scrollbar {
   width: 6px;

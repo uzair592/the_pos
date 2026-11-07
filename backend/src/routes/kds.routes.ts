@@ -22,16 +22,22 @@ export async function kdsRoutes(fastify: FastifyInstance) {
     preHandler: [requirePermission(Permission.KDS_VIEW)],
   }, async (req, reply) => {
     const tenantId = req.user!.tenantId!;
-    const { branchId, station, status } = req.query as {
+    const { branchId, station, status, sort = 'DESC', dateFilter = 'ALL', search } = req.query as {
       branchId?: string;
       station?: string;
       status?: string;
+      sort?: string;
+      dateFilter?: string;
+      search?: string;
     };
 
     let sql = `
-      SELECT kt.*, b.name as branch_name, b.code as branch_code
+      SELECT kt.*, b.name as branch_name, b.code as branch_code,
+             o.payment_status, o.customer_name, o.customer_phone, o.delivery_address,
+             o.grand_total, o.paid_amount, o.order_number as live_order_number
       FROM kitchen_tickets kt
       LEFT JOIN branches b ON b.id = kt.branch_id
+      LEFT JOIN orders o ON o.id = kt.order_id
       WHERE kt.tenant_id = $1
     `;
     const params: any[] = [tenantId];
@@ -56,7 +62,19 @@ export async function kdsRoutes(fastify: FastifyInstance) {
       sql += " AND kt.status NOT IN ('COMPLETED', 'CANCELLED')";
     }
 
-    sql += ' ORDER BY kt.created_at ASC';
+    // Only restrict to CURRENT_DATE if viewing served/historical tickets or not active,
+    // active kitchen tickets must NEVER be hidden while in-flight
+    if (dateFilter === 'TODAY' && status !== 'ACTIVE') {
+      sql += ' AND kt.created_at >= CURRENT_DATE';
+    }
+
+    if (search && search.trim()) {
+      params.push(`%${search.trim()}%`);
+      sql += ` AND (kt.kot_number ILIKE $${params.length} OR kt.order_number ILIKE $${params.length} OR o.customer_name ILIKE $${params.length} OR kt.table_number ILIKE $${params.length})`;
+    }
+
+    const sortDirection = sort === 'ASC' ? 'ASC' : 'DESC';
+    sql += ` ORDER BY kt.created_at ${sortDirection}`;
 
     const { rows: tickets } = await query(sql, params, { tenantId });
 
@@ -129,7 +147,7 @@ export async function kdsRoutes(fastify: FastifyInstance) {
 
       if (orderNextStatus) {
         await query(
-          'UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3',
+          'UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3 AND status != \'COMPLETED\'',
           [orderNextStatus, ticket.order_id, tenantId],
           { tenantId }
         );
@@ -181,5 +199,31 @@ export async function kdsRoutes(fastify: FastifyInstance) {
 
     if (rows.length === 0) return reply.status(404).send({ error: 'Ticket item not found' });
     return reply.send({ item: rows[0] });
+  });
+
+  /**
+   * Clear Stale / Completed Tickets (> 24 hours) from active cooking board
+   */
+  fastify.post('/api/kds/tickets/clear-stale', {
+    preHandler: [requirePermission(Permission.KDS_UPDATE)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, hours = 24 } = (req.body as { branchId?: string; hours?: number }) || {};
+
+    let sql = `
+      UPDATE kitchen_tickets
+      SET status = 'SERVED', completed_at = CURRENT_TIMESTAMP
+      WHERE tenant_id = $1
+        AND status IN ('PENDING', 'ACCEPTED', 'PREPARING', 'READY')
+        AND created_at < NOW() - (INTERVAL '1 hour' * $2)
+    `;
+    const params: any[] = [tenantId, Math.max(1, Number(hours) || 24)];
+    if (branchId && branchId !== 'ALL') {
+      params.push(branchId);
+      sql += ` AND branch_id = $${params.length}`;
+    }
+
+    const res = await query(sql, params, { tenantId });
+    return reply.send({ success: true, clearedCount: res.rowCount || 0 });
   });
 }

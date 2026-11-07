@@ -326,6 +326,11 @@ export async function createOrder(params: CreateOrderParams) {
       );
     }
 
+    // 11. Deduct Inventory if stock deduction trigger is ON_ORDER_CREATE
+    if (settings.stock_deduction_trigger === 'ON_ORDER_CREATE') {
+      await deductInventoryForOrder(client, tenantId, branchId, createdOrder.id, cashierId);
+    }
+
     return { order: createdOrder, duplicate: false };
   }, { tenantId: params.tenantId });
 }
@@ -452,6 +457,25 @@ export async function completeOrderCheckout(params: CompleteCheckoutParams) {
       await client.query(
         'UPDATE restaurant_tables SET status = $1, current_order_id = NULL WHERE id = $2 AND tenant_id = $3',
         [TableStatus.AVAILABLE, order.table_id, tenantId]
+      );
+    }
+
+    // 4. Synchronize Kitchen Tickets
+    // Note: In restaurant operations, checkout/payment does NOT mean the kitchen has finished cooking.
+    // For counter/takeaway/delivery orders and newly placed orders, tickets must remain active for the kitchen.
+    // We only synchronize tickets to SERVED for settled dine-in table orders where cooking was already in progress or ready.
+    if (order.table_id && order.order_type === OrderType.DINE_IN) {
+      await client.query(
+        `UPDATE kitchen_tickets
+         SET status = 'SERVED', completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)
+         WHERE order_id = $1 AND tenant_id = $2 AND status IN ('ACCEPTED', 'PREPARING', 'READY')`,
+        [orderId, tenantId]
+      );
+      await client.query(
+        `UPDATE kitchen_ticket_items
+         SET status = 'SERVED'
+         WHERE kot_id IN (SELECT id FROM kitchen_tickets WHERE order_id = $1 AND tenant_id = $2) AND status IN ('ACCEPTED', 'PREPARING', 'READY')`,
+        [orderId, tenantId]
       );
     }
 

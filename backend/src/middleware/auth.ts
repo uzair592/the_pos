@@ -101,6 +101,7 @@ export async function authenticate(req: FastifyRequest, reply: FastifyReply) {
       role: normalizedRole,
       permissions: effectivePermissions,
       isActive: rows[0].is_active,
+      deviceId: decoded.deviceId,
     };
     req.tenantId = rows[0].tenant_id;
   } catch (err) {
@@ -191,6 +192,33 @@ export function requirePermission(permission: Permission) {
 
     return reply.status(403).send({
       error: `Forbidden: Missing required permission [${permission}]`,
+    });
+  };
+}
+
+/**
+ * Role-Based Access Control (RBAC) Check where ANY of the listed permissions is sufficient
+ */
+export function requireAnyPermission(...permissions: Permission[]) {
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!req.user) {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+
+    if (
+      req.user.role === SystemRole.SUPER_ADMIN ||
+      req.user.role === SystemRole.RESTAURANT_OWNER ||
+      (req.user.role as string) === 'OWNER'
+    ) {
+      return;
+    }
+
+    if (req.user.permissions && permissions.some((p) => req.user!.permissions.includes(p))) {
+      return;
+    }
+
+    return reply.status(403).send({
+      error: `Forbidden: Missing required permission [${permissions.join(' or ')}]`,
     });
   };
 }

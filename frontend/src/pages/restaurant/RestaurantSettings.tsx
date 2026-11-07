@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
+import { FloorTableManagement } from '../../components/restaurant/FloorTableManagement.js';
 import {
   Settings,
   Save,
@@ -21,6 +23,8 @@ import {
   Eye,
   Sliders,
   Sparkles,
+  Armchair,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   ReceiptPreview,
@@ -118,12 +122,28 @@ const getSettingsSampleReceipt = (currentSettings: any, restaurantName: string =
 export const RestaurantSettings: React.FC = () => {
   const { tenant, refreshProfile } = useAuth();
   const { success, error, info } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'general';
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
+
   const [settings, setSettings] = useState<any>(null);
   const [devices, setDevices] = useState<any[]>([]);
   const [backups, setBackups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && tabParam !== activeTab) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
 
   // Backup & Restore states
   const [generatingBackup, setGeneratingBackup] = useState(false);
@@ -304,7 +324,7 @@ export const RestaurantSettings: React.FC = () => {
             <span>Store & POS Settings</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Manage tax rates, currency, billing templates, print themes, device terminals, and disaster recovery
+            Manage tax rates, currency, billing templates, print themes, floor tables, device terminals, and disaster recovery
           </p>
         </div>
 
@@ -316,77 +336,127 @@ export const RestaurantSettings: React.FC = () => {
         )}
       </div>
 
-      <form onSubmit={handleSave} className="space-y-6">
-        {/* Core Localization & Tax Settings */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4 text-xs">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-800 pb-2">
-            Financial & Tax Configuration
-          </h3>
+      {/* Tabs Navigation */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-1 overflow-x-auto pb-0.5">
+        {[
+          { id: 'general', label: 'Financial & Store', icon: Settings },
+          { id: 'tables', label: 'Floor & Table Management', icon: Armchair },
+          { id: 'printing', label: 'Print Themes & Receipt Designer', icon: Printer },
+          { id: 'devices', label: 'Device Terminals', icon: Smartphone },
+          { id: 'backups', label: 'Backup & Recovery', icon: Database },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => handleTabChange(tab.id)}
+              className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all whitespace-nowrap rounded-t-xl ${
+                isActive
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400 bg-brand-50/40 dark:bg-brand-950/30'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Currency Code</label>
-              <input
-                type="text"
-                value={settings?.currency || 'PKR'}
-                onChange={(e) => setSettings({ ...settings, currency: e.target.value })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Currency Symbol</label>
-              <input
-                type="text"
-                value={settings?.currency_symbol || 'Rs.'}
-                onChange={(e) => setSettings({ ...settings, currency_symbol: e.target.value })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Sales Tax %</label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={settings?.tax_rate_percent ?? 16}
-                onChange={(e) => setSettings({ ...settings, tax_rate_percent: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">STRN / NTN Tax Reg #</label>
-              <input
-                type="text"
-                placeholder="12-34-5678-9"
-                value={settings?.tax_registration_number || ''}
-                onChange={(e) => setSettings({ ...settings, tax_registration_number: e.target.value })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Service Charge %</label>
-              <input
-                type="number"
-                step="0.5"
-                min="0"
-                value={settings?.service_charge_percent ?? 0}
-                onChange={(e) => setSettings({ ...settings, service_charge_percent: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
-              />
-            </div>
-            <div className="flex items-center pt-5">
-              <label className="flex items-center space-x-2 cursor-pointer">
+      {/* TAB 1: FINANCIAL & GENERAL SETTINGS */}
+      {activeTab === 'general' && (
+        <form onSubmit={handleSave} className="space-y-6">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4 text-xs">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-800 pb-2">
+              Financial & Tax Configuration
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Currency Code</label>
                 <input
-                  type="checkbox"
-                  checked={!!settings?.is_tax_inclusive}
-                  onChange={(e) => setSettings({ ...settings, is_tax_inclusive: e.target.checked })}
-                  className="rounded text-brand-500 focus:ring-brand-500"
+                  type="text"
+                  value={settings?.currency || 'PKR'}
+                  onChange={(e) => setSettings({ ...settings, currency: e.target.value })}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
                 />
-                <span className="font-semibold text-slate-700 dark:text-slate-300">Menu prices already include tax</span>
-              </label>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Currency Symbol</label>
+                <input
+                  type="text"
+                  value={settings?.currency_symbol || 'Rs.'}
+                  onChange={(e) => setSettings({ ...settings, currency_symbol: e.target.value })}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Sales Tax %</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={settings?.tax_rate_percent ?? 16}
+                  onChange={(e) => setSettings({ ...settings, tax_rate_percent: parseFloat(e.target.value) || 0 })}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">STRN / NTN Tax Reg #</label>
+                <input
+                  type="text"
+                  placeholder="12-34-5678-9"
+                  value={settings?.tax_registration_number || ''}
+                  onChange={(e) => setSettings({ ...settings, tax_registration_number: e.target.value })}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Service Charge %</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={settings?.service_charge_percent ?? 0}
+                  onChange={(e) => setSettings({ ...settings, service_charge_percent: parseFloat(e.target.value) || 0 })}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+              <div className="flex items-center pt-5">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!settings?.is_tax_inclusive}
+                    onChange={(e) => setSettings({ ...settings, is_tax_inclusive: e.target.checked })}
+                    className="rounded text-brand-500 focus:ring-brand-500"
+                  />
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">Menu prices already include tax</span>
+                </label>
+              </div>
             </div>
           </div>
-        </div>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex items-center space-x-2 bg-brand-500 hover:bg-brand-600 text-white font-bold py-2.5 px-6 rounded-xl shadow-md text-xs transition-all disabled:opacity-50"
+          >
+            <Save className="w-4 h-4" />
+            <span>{saving ? 'Saving...' : 'Save Financial Settings'}</span>
+          </button>
+        </form>
+      )}
+
+      {/* TAB 2: FLOOR & TABLE MANAGEMENT */}
+      {activeTab === 'tables' && (
+        <FloorTableManagement />
+      )}
+
+      {/* TAB 3: PRINT THEMES & RECEIPT DESIGNER */}
+      {activeTab === 'printing' && (
+        <form onSubmit={handleSave} className="space-y-6">
 
         {/* ==================== PRINT THEMES & RECEIPT DESIGNER ==================== */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6 text-xs">
@@ -642,11 +712,13 @@ export const RestaurantSettings: React.FC = () => {
           className="flex items-center space-x-2 bg-brand-500 hover:bg-brand-600 text-white font-bold py-2.5 px-6 rounded-xl shadow-md text-xs transition-all disabled:opacity-50"
         >
           <Save className="w-4 h-4" />
-          <span>{saving ? 'Saving...' : 'Save Settings'}</span>
+          <span>{saving ? 'Saving...' : 'Save Print Settings'}</span>
         </button>
       </form>
+      )}
 
-      {/* ==================== BACKUP & RESTORE SECTION ==================== */}
+      {/* TAB 4: BACKUP & RESTORE SECTION */}
+      {activeTab === 'backups' && (
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-5 text-xs">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center space-x-2.5">
@@ -735,6 +807,7 @@ export const RestaurantSettings: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Restore Confirmation Safety Modal */}
       <Modal
@@ -796,7 +869,8 @@ export const RestaurantSettings: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Registered Multi-Device Terminals Management */}
+      {/* TAB 5: Registered Multi-Device Terminals Management */}
+      {activeTab === 'devices' && (
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4 text-xs">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center space-x-2.5">
@@ -898,6 +972,7 @@ export const RestaurantSettings: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

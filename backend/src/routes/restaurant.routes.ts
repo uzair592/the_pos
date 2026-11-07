@@ -8,7 +8,10 @@ import {
   CreateUserSchema,
   UpdateUserSchema,
   CreateFloorSchema,
+  UpdateFloorSchema,
   CreateTableSchema,
+  UpdateTableSchema,
+  UpdateTableLayoutSchema,
   Permission,
   SystemRole,
   DEFAULT_ROLE_PERMISSIONS,
@@ -469,7 +472,31 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
 
     const tenantId = req.user!.tenantId!;
-    const { branchId, name, sortOrder } = parsed.data;
+    let { branchId, name, sortOrder } = parsed.data;
+
+    if (!branchId) {
+      if (req.user?.branchId) {
+        branchId = req.user.branchId;
+      } else {
+        const bRes = await query(
+          'SELECT id FROM branches WHERE tenant_id = $1 ORDER BY is_main_branch DESC, created_at ASC LIMIT 1',
+          [tenantId],
+          { tenantId }
+        );
+        if (bRes.rows.length > 0) {
+          branchId = bRes.rows[0].id;
+        } else {
+          const newB = await query(
+            `INSERT INTO branches (tenant_id, name, code, phone, address, city, is_main_branch, is_active)
+             VALUES ($1, 'Main Branch', 'MAIN', '0000000000', 'Main Location', 'Karachi', true, true)
+             RETURNING id`,
+            [tenantId],
+            { tenantId }
+          );
+          branchId = newB.rows[0].id;
+        }
+      }
+    }
 
     const { rows } = await query(
       'INSERT INTO floors (tenant_id, branch_id, name, sort_order) VALUES ($1, $2, $3, $4) RETURNING *',
@@ -479,14 +506,63 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({ floor: rows[0] });
   });
 
+  fastify.put('/api/restaurant/floors/:id', {
+    preHandler: [requirePermission(Permission.TABLES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    const parsed = UpdateFloorSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const { name, sortOrder, isActive } = parsed.data;
+    const { rows } = await query(
+      `UPDATE floors
+       SET name = COALESCE($1, name),
+           sort_order = COALESCE($2, sort_order),
+           is_active = COALESCE($3, is_active),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4 AND tenant_id = $5
+       RETURNING *`,
+      [name || null, sortOrder !== undefined ? sortOrder : null, isActive !== undefined ? isActive : null, id, tenantId],
+      { tenantId }
+    );
+    if (rows.length === 0) return reply.status(404).send({ error: 'Floor not found' });
+    return reply.send({ floor: rows[0] });
+  });
+
+  fastify.delete('/api/restaurant/floors/:id', {
+    preHandler: [requirePermission(Permission.TABLES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    const tableCheck = await query(
+      'SELECT COUNT(*)::int as count FROM restaurant_tables WHERE floor_id = $1 AND tenant_id = $2 AND is_active = true',
+      [id, tenantId],
+      { tenantId }
+    );
+    if ((tableCheck.rows[0]?.count || 0) > 0) {
+      return reply.status(400).send({ error: 'Cannot delete floor that contains active tables. Move or delete tables first.' });
+    }
+
+    await query('DELETE FROM floors WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+    return reply.send({ success: true, message: 'Floor deleted successfully' });
+  });
+
   fastify.get('/api/restaurant/tables', async (req, reply) => {
     const tenantId = req.user!.tenantId!;
     const { branchId, floorId } = req.query as { branchId?: string; floorId?: string };
 
     let sql = `
-      SELECT t.*, f.name as floor_name
+      SELECT t.*,
+             f.name as floor_name,
+             o.order_number as current_order_number,
+             o.grand_total as current_order_amount,
+             o.created_at as current_order_time,
+             (SELECT COUNT(*)::int FROM reservations r WHERE r.table_id = t.id AND r.status IN ('CONFIRMED', 'PENDING') AND r.reservation_date = CURRENT_DATE) as today_reservations_count
       FROM restaurant_tables t
-      JOIN floors f ON f.id = t.floor_id
+      LEFT JOIN floors f ON f.id = t.floor_id
+      LEFT JOIN orders o ON o.id = t.current_order_id
       WHERE t.tenant_id = $1 AND t.is_active = true
     `;
     const params: any[] = [tenantId];
@@ -513,15 +589,91 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
 
     const tenantId = req.user!.tenantId!;
-    const { branchId, floorId, tableNumber, capacity } = parsed.data;
+    let { branchId, floorId, floorName, tableNumber, capacity, shape, posX, posY, assignedWaiterId, assignedWaiterName } = parsed.data;
+
+    if (!branchId) {
+      if (req.user?.branchId) {
+        branchId = req.user.branchId;
+      } else {
+        const bRes = await query(
+          'SELECT id FROM branches WHERE tenant_id = $1 ORDER BY is_main_branch DESC, created_at ASC LIMIT 1',
+          [tenantId],
+          { tenantId }
+        );
+        if (bRes.rows.length > 0) {
+          branchId = bRes.rows[0].id;
+        } else {
+          const newB = await query(
+            `INSERT INTO branches (tenant_id, name, code, phone, address, city, is_main_branch, is_active)
+             VALUES ($1, 'Main Branch', 'MAIN', '0000000000', 'Main Location', 'Karachi', true, true)
+             RETURNING id`,
+            [tenantId],
+            { tenantId }
+          );
+          branchId = newB.rows[0].id;
+        }
+      }
+    }
+
+    let resolvedFloorId = floorId;
+    if (floorName && floorName.trim()) {
+      // Find or create floor with this name for this branch
+      const floorCheck = await query(
+        'SELECT id FROM floors WHERE tenant_id = $1 AND branch_id = $2 AND LOWER(name) = LOWER($3)',
+        [tenantId, branchId, floorName.trim()],
+        { tenantId }
+      );
+      if (floorCheck.rows.length > 0) {
+        resolvedFloorId = floorCheck.rows[0].id;
+      } else {
+        const newFloor = await query(
+          'INSERT INTO floors (tenant_id, branch_id, name, sort_order) VALUES ($1, $2, $3, 0) RETURNING id',
+          [tenantId, branchId, floorName.trim()],
+          { tenantId }
+        );
+        resolvedFloorId = newFloor.rows[0].id;
+      }
+    } else if (!resolvedFloorId) {
+      // If neither floorId nor floorName is provided, default to first existing floor or auto-create default
+      const anyFloor = await query(
+        'SELECT id FROM floors WHERE tenant_id = $1 AND branch_id = $2 ORDER BY sort_order ASC, name ASC LIMIT 1',
+        [tenantId, branchId],
+        { tenantId }
+      );
+      if (anyFloor.rows.length > 0) {
+        resolvedFloorId = anyFloor.rows[0].id;
+      } else {
+        const defaultFloor = await query(
+          'INSERT INTO floors (tenant_id, branch_id, name, sort_order) VALUES ($1, $2, $3, 0) RETURNING id',
+          [tenantId, branchId, 'Main Dining Area'],
+          { tenantId }
+        );
+        resolvedFloorId = defaultFloor.rows[0].id;
+      }
+    }
 
     const { rows } = await query(
       `
-      INSERT INTO restaurant_tables (tenant_id, branch_id, floor_id, table_number, capacity, status, is_active)
-      VALUES ($1, $2, $3, $4, $5, 'AVAILABLE', true)
+      INSERT INTO restaurant_tables (
+        tenant_id, branch_id, floor_id, table_number, capacity,
+        shape, pos_x, pos_y, assigned_waiter_id, assigned_waiter_name,
+        status, is_active
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'AVAILABLE', true)
       RETURNING *
       `,
-      [tenantId, branchId, floorId, tableNumber, capacity],
+      [
+        tenantId,
+        branchId,
+        resolvedFloorId,
+        tableNumber,
+        capacity,
+        shape || 'RECTANGLE',
+        posX || 0,
+        posY || 0,
+        assignedWaiterId || null,
+        assignedWaiterName || null,
+      ],
       { tenantId }
     );
     return reply.status(201).send({ table: rows[0] });
@@ -532,24 +684,246 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const tenantId = req.user!.tenantId!;
-    const { status, tableNumber, capacity, currentOrderId } = req.body as any;
+
+    const parsed = UpdateTableSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const {
+      floorId,
+      tableNumber,
+      capacity,
+      status,
+      shape,
+      posX,
+      posY,
+      assignedWaiterId,
+      assignedWaiterName,
+      currentOrderId,
+      isActive,
+    } = parsed.data;
 
     const { rows } = await query(
       `
       UPDATE restaurant_tables
-      SET status = COALESCE($1, status),
+      SET floor_id = COALESCE($1, floor_id),
           table_number = COALESCE($2, table_number),
           capacity = COALESCE($3, capacity),
-          current_order_id = COALESCE($4, current_order_id)
-      WHERE id = $5 AND tenant_id = $6
+          status = COALESCE($4, status),
+          shape = COALESCE($5, shape),
+          pos_x = COALESCE($6, pos_x),
+          pos_y = COALESCE($7, pos_y),
+          assigned_waiter_id = COALESCE($8, assigned_waiter_id),
+          assigned_waiter_name = COALESCE($9, assigned_waiter_name),
+          current_order_id = COALESCE($10, current_order_id),
+          is_active = COALESCE($11, is_active),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $12 AND tenant_id = $13
       RETURNING *
       `,
-      [status, tableNumber, capacity, currentOrderId, id, tenantId],
+      [
+        floorId || null,
+        tableNumber || null,
+        capacity || null,
+        status || null,
+        shape || null,
+        posX !== undefined ? posX : null,
+        posY !== undefined ? posY : null,
+        assignedWaiterId !== undefined ? assignedWaiterId : null,
+        assignedWaiterName !== undefined ? assignedWaiterName : null,
+        currentOrderId !== undefined ? currentOrderId : null,
+        isActive !== undefined ? isActive : null,
+        id,
+        tenantId,
+      ],
       { tenantId }
     );
 
     if (rows.length === 0) return reply.status(404).send({ error: 'Table not found' });
     return reply.send({ table: rows[0] });
+  });
+
+  fastify.delete('/api/restaurant/tables/:id', {
+    preHandler: [requirePermission(Permission.TABLES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    const existing = await query(
+      'SELECT status, current_order_id FROM restaurant_tables WHERE id = $1 AND tenant_id = $2',
+      [id, tenantId],
+      { tenantId }
+    );
+    if (existing.rows.length === 0) return reply.status(404).send({ error: 'Table not found' });
+    if (existing.rows[0].status === 'OCCUPIED' || existing.rows[0].current_order_id) {
+      return reply.status(400).send({ error: 'Cannot delete an occupied table with active order. Settle or cancel order first.' });
+    }
+
+    await query(
+      'UPDATE restaurant_tables SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2',
+      [id, tenantId],
+      { tenantId }
+    );
+
+    return reply.send({ success: true, message: 'Table removed successfully' });
+  });
+
+  fastify.put('/api/restaurant/tables/layout', {
+    preHandler: [requirePermission(Permission.TABLES_MANAGE)],
+  }, async (req, reply) => {
+    const parsed = UpdateTableLayoutSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const tenantId = req.user!.tenantId!;
+    const { tables } = parsed.data;
+
+    await withTransaction(async (client) => {
+      for (const t of tables) {
+        await client.query(
+          `UPDATE restaurant_tables
+           SET pos_x = $1, pos_y = $2, shape = COALESCE($3, shape), updated_at = CURRENT_TIMESTAMP
+           WHERE id = $4 AND tenant_id = $5`,
+          [t.posX, t.posY, t.shape || null, t.id, tenantId]
+        );
+      }
+    }, { tenantId });
+
+    return reply.send({ success: true, message: 'Table layout coordinates saved successfully' });
+  });
+
+  /**
+   * Real-Time Sidebar Badges Endpoint
+   */
+  fastify.get('/api/restaurant/sidebar-badges', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId } = req.query as { branchId?: string };
+
+    const branchParam = branchId ? 'AND branch_id = $2' : '';
+    const params: any[] = [tenantId];
+    if (branchId) params.push(branchId);
+
+    // 1. Active Orders Count
+    const activeOrdersRes = await query(
+      `SELECT COUNT(*)::int as count FROM orders WHERE tenant_id = $1 ${branchParam} AND status IN ('NEW', 'PENDING', 'QUEUED', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'OUT_FOR_DELIVERY', 'ON_HOLD')`,
+      params,
+      { tenantId }
+    );
+
+    // 2. Pending Kitchen Tickets Count
+    const pendingKtsRes = await query(
+      `SELECT COUNT(*)::int as count FROM kitchen_tickets WHERE tenant_id = $1 ${branchParam} AND status IN ('PENDING', 'ACCEPTED', 'PREPARING')`,
+      params,
+      { tenantId }
+    );
+
+    // 3. Low Stock Ingredients Count
+    const lowStockRes = await query(
+      `SELECT COUNT(DISTINCT i.id)::int as count
+       FROM ingredients i
+       JOIN branch_stocks bs ON bs.ingredient_id = i.id ${branchId ? 'AND bs.branch_id = $2' : ''}
+       WHERE i.tenant_id = $1 AND i.is_active = true AND bs.current_stock <= i.min_stock_alert`,
+      params,
+      { tenantId }
+    );
+
+    // 4. Pending / Today Reservations Count
+    const reservationsRes = await query(
+      `SELECT COUNT(*)::int as count FROM reservations WHERE tenant_id = $1 ${branchParam} AND status IN ('CONFIRMED', 'PENDING') AND reservation_date = CURRENT_DATE`,
+      params,
+      { tenantId }
+    );
+
+    // 5. Active Waitlist Count
+    const waitlistRes = await query(
+      `SELECT COUNT(*)::int as count FROM waitlist WHERE tenant_id = $1 ${branchParam} AND status IN ('WAITING', 'NOTIFIED')`,
+      params,
+      { tenantId }
+    );
+
+    return reply.send({
+      badges: {
+        activeOrders: activeOrdersRes.rows[0]?.count || 0,
+        pendingKitchen: pendingKtsRes.rows[0]?.count || 0,
+        lowStock: lowStockRes.rows[0]?.count || 0,
+        pendingReservations: reservationsRes.rows[0]?.count || 0,
+        waitlistCount: waitlistRes.rows[0]?.count || 0,
+      },
+    });
+  });
+
+  /**
+   * Unified Global Search (Ctrl + K)
+   * Searches orders, menu products, ingredients, customers, and suppliers in real-time
+   */
+  fastify.get('/api/restaurant/global-search', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { q, branchId } = req.query as { q?: string; branchId?: string };
+
+    if (!q || q.trim().length < 2) {
+      return reply.send({ results: { orders: [], products: [], ingredients: [], customers: [], suppliers: [] } });
+    }
+
+    const searchTerm = `%${q.trim()}%`;
+
+    const [ordersRes, prodsRes, ingsRes, custsRes, suppsRes] = await Promise.all([
+      // 1. Orders
+      query(
+        `SELECT id, order_number, customer_name, customer_phone, grand_total, status, order_type, created_at
+         FROM orders
+         WHERE tenant_id = $1 AND (order_number ILIKE $2 OR customer_name ILIKE $2 OR customer_phone ILIKE $2)
+         ORDER BY created_at DESC LIMIT 5`,
+        [tenantId, searchTerm],
+        { tenantId }
+      ),
+      // 2. Menu Products
+      query(
+        `SELECT p.id, p.name, p.sku, p.base_price, c.name as category_name
+         FROM products p
+         LEFT JOIN categories c ON c.id = p.category_id
+         WHERE p.tenant_id = $1 AND p.is_active = true AND (p.name ILIKE $2 OR p.sku ILIKE $2)
+         ORDER BY p.name ASC LIMIT 5`,
+        [tenantId, searchTerm],
+        { tenantId }
+      ),
+      // 3. Ingredients & Stock
+      query(
+        `SELECT i.id, i.name, i.sku, i.base_unit, i.purchase_unit, i.purchase_cost,
+                COALESCE(bs.current_stock, 0) as current_stock
+         FROM ingredients i
+         LEFT JOIN branch_stocks bs ON bs.ingredient_id = i.id ${branchId ? 'AND bs.branch_id = $3' : ''}
+         WHERE i.tenant_id = $1 AND i.is_active = true AND (i.name ILIKE $2 OR i.sku ILIKE $2)
+         ORDER BY i.name ASC LIMIT 5`,
+        branchId ? [tenantId, searchTerm, branchId] : [tenantId, searchTerm],
+        { tenantId }
+      ),
+      // 4. Customers
+      query(
+        `SELECT id, name, phone, email, outstanding_balance, total_orders
+         FROM customers
+         WHERE tenant_id = $1 AND is_active = true AND (name ILIKE $2 OR phone ILIKE $2 OR email ILIKE $2)
+         ORDER BY total_spent DESC, name ASC LIMIT 5`,
+        [tenantId, searchTerm],
+        { tenantId }
+      ),
+      // 5. Suppliers
+      query(
+        `SELECT id, name, contact_person, phone, balance_payable
+         FROM suppliers
+         WHERE tenant_id = $1 AND is_active = true AND (name ILIKE $2 OR contact_person ILIKE $2 OR phone ILIKE $2)
+         ORDER BY name ASC LIMIT 5`,
+        [tenantId, searchTerm],
+        { tenantId }
+      ),
+    ]);
+
+    return reply.send({
+      results: {
+        orders: ordersRes.rows,
+        products: prodsRes.rows,
+        ingredients: ingsRes.rows,
+        customers: custsRes.rows,
+        suppliers: suppsRes.rows,
+      },
+    });
   });
 
   /**

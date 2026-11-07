@@ -135,7 +135,7 @@ export const PlatformLogin: React.FC = () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Password:</span>
-                <span className="font-mono text-emerald-400 font-bold">SuperAdmin123!</span>
+                <span className="font-mono text-emerald-400 font-bold">AdminPass123!</span>
               </div>
             </div>
           )}

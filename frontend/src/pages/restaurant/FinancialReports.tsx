@@ -27,6 +27,7 @@ import {
   Bike,
   UtensilsCrossed,
   Layers,
+  Building2,
 } from 'lucide-react';
 import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import { getLocalYMD, getLocalDayRangeISO } from '../../utils/dateUtils.js';
@@ -40,9 +41,22 @@ import {
   exportNetProfitReportPdf,
   exportBillWiseProfitLossPdf,
   exportSingleBillProfitLossPdf,
+  exportMonthlyProfitLossPdf,
+  exportBranchFinancialReportPdf,
 } from '../../utils/pdfExport.js';
 
-export type ReportTab = 'OVERVIEW' | 'DAYBOOK' | 'CASH_BANK' | 'BILL_PROFIT_LOSS' | 'SALES' | 'PURCHASES' | 'EXPENSES' | 'GROSS_PROFIT';
+export type ReportTab =
+  | 'OVERVIEW'
+  | 'SALES'
+  | 'BILL_PROFIT_LOSS'
+  | 'DAILY_PL'
+  | 'GROSS_PROFIT'
+  | 'MONTHLY_PL'
+  | 'EXPENSES'
+  | 'BRANCH_FINANCIAL'
+  | 'PURCHASES'
+  | 'DAYBOOK'
+  | 'CASH_BANK';
 
 interface FinancialReportsProps {
   defaultTab?: ReportTab;
@@ -91,6 +105,8 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
   const [purchases, setPurchases] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [dailyProfits, setDailyProfits] = useState<any[]>([]);
+  const [monthlyProfits, setMonthlyProfits] = useState<any[]>([]);
+  const [branchSummary, setBranchSummary] = useState<any>(null);
 
   // Bill-Wise Profit & Loss state
   const [billProfitLossReport, setBillProfitLossReport] = useState<any>(null);
@@ -139,9 +155,17 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
         const expRes = await api.get(`/financial/reports/expenses-detailed?startDate=${start}&endDate=${end}${branchParam}`);
         setExpenses(expRes.expenses || []);
       }
-      if (activeTab === 'GROSS_PROFIT' || activeTab === 'OVERVIEW') {
+      if (activeTab === 'DAILY_PL' || activeTab === 'GROSS_PROFIT' || activeTab === 'OVERVIEW') {
         const gpRes = await api.get(`/financial/reports/gross-profit-report?startDate=${start}&endDate=${end}${branchParam}`);
         setDailyProfits(gpRes.dailyProfit || []);
+      }
+      if (activeTab === 'MONTHLY_PL' || activeTab === 'OVERVIEW') {
+        const mpRes = await api.get(`/financial/reports/monthly-profit-loss?startDate=${start}&endDate=${end}${branchParam}`);
+        setMonthlyProfits(mpRes.monthlyProfit || []);
+      }
+      if (activeTab === 'BRANCH_FINANCIAL' || activeTab === 'OVERVIEW') {
+        const bsRes = await api.get(`/financial/reports/head-office-summary?startDate=${start}&endDate=${end}`);
+        setBranchSummary(bsRes);
       }
       if (activeTab === 'BILL_PROFIT_LOSS' || activeTab === 'OVERVIEW') {
         const bplRes = await api.get(
@@ -306,19 +330,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
           }`}
         >
           <BarChart3 className="w-4 h-4" />
-          <span>Net Profit (P&L Overview)</span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('BILL_PROFIT_LOSS')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
-            activeTab === 'BILL_PROFIT_LOSS'
-              ? 'bg-brand-500 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Receipt className="w-4 h-4 text-amber-400" />
-          <span>Bill-Wise Profit & Loss</span>
+          <span>1. Financial Overview</span>
         </button>
 
         <button
@@ -330,31 +342,43 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
           }`}
         >
           <ShoppingBag className="w-4 h-4" />
-          <span>Sales Report</span>
+          <span>2. Sales & Revenue</span>
         </button>
 
         <button
-          onClick={() => handleTabChange('GROSS_PROFIT')}
+          onClick={() => handleTabChange('BILL_PROFIT_LOSS')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
-            activeTab === 'GROSS_PROFIT'
+            activeTab === 'BILL_PROFIT_LOSS'
+              ? 'bg-brand-500 text-white shadow-md'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Receipt className="w-4 h-4 text-amber-400" />
+          <span>3. Bill-Wise Profit & Loss</span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('DAILY_PL')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
+            activeTab === 'DAILY_PL' || activeTab === 'GROSS_PROFIT'
               ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
           <TrendingUp className="w-4 h-4 text-emerald-500" />
-          <span>FIFO Gross Profit & COGS</span>
+          <span>4. Daily Profit & Loss</span>
         </button>
 
         <button
-          onClick={() => handleTabChange('PURCHASES')}
+          onClick={() => handleTabChange('MONTHLY_PL')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
-            activeTab === 'PURCHASES'
+            activeTab === 'MONTHLY_PL'
               ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <ShoppingCart className="w-4 h-4" />
-          <span>Purchase Report</span>
+          <Calendar className="w-4 h-4 text-indigo-500" />
+          <span>5. Monthly Profit & Loss</span>
         </button>
 
         <button
@@ -365,8 +389,20 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <Receipt className="w-4 h-4" />
-          <span>Expenses Report</span>
+          <Receipt className="w-4 h-4 text-rose-500" />
+          <span>6. Expense Analysis</span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('BRANCH_FINANCIAL')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
+            activeTab === 'BRANCH_FINANCIAL'
+              ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Building2 className="w-4 h-4 text-cyan-500" />
+          <span>7. Branch-wise Financial Reports</span>
         </button>
       </div>
 
@@ -616,7 +652,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
       )}
 
       {/* ==================== SUB-SECTION: FIFO GROSS PROFIT ==================== */}
-      {activeTab === 'GROSS_PROFIT' && (
+      {(activeTab === 'DAILY_PL' || activeTab === 'GROSS_PROFIT') && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <div>
@@ -681,6 +717,276 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                             {d.gross_margin_percent}%
                           </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== SUB-SECTION: MONTHLY PROFIT & LOSS ==================== */}
+      {activeTab === 'MONTHLY_PL' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div>
+              <div className="flex items-center space-x-2">
+                <Calendar className="w-5 h-5 text-indigo-500" />
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm">Monthly Profit & Loss Performance</h3>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Consolidated month-by-month financial statement: Sales, FIFO COGS, Operating Expenses, and Net Operating Margin
+              </p>
+            </div>
+            <div className="flex items-center space-x-2 self-start sm:self-auto">
+              <button
+                onClick={() => exportMonthlyProfitLossPdf(meta, dates, monthlyProfits)}
+                className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold text-xs shadow-md transition-all"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download Monthly P&L (PDF)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-bold uppercase text-slate-400">Total Net Sales</span>
+              <p className="text-lg font-black text-slate-900 dark:text-white mt-1">
+                {currencySymbol} {monthlyProfits.reduce((acc, m) => acc + Number(m.net_sales || 0), 0).toLocaleString()}
+              </p>
+            </div>
+            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-bold uppercase text-slate-400">FIFO Ingredient COGS</span>
+              <p className="text-lg font-black text-amber-600 dark:text-amber-400 mt-1">
+                {currencySymbol} {monthlyProfits.reduce((acc, m) => acc + Number(m.fifo_cogs || 0), 0).toLocaleString()}
+              </p>
+            </div>
+            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-bold uppercase text-slate-400">Gross Margin</span>
+              <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                {currencySymbol} {monthlyProfits.reduce((acc, m) => acc + Number(m.gross_profit || 0), 0).toLocaleString()}
+              </p>
+            </div>
+            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-bold uppercase text-slate-400">Net Operating Profit</span>
+              <p className="text-lg font-black text-brand-600 dark:text-brand-400 mt-1">
+                {currencySymbol} {monthlyProfits.reduce((acc, m) => acc + Number(m.net_profit || 0), 0).toLocaleString()}
+              </p>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase font-semibold">
+                  <tr>
+                    <th className="px-6 py-3.5">Month</th>
+                    <th className="px-6 py-3.5 text-center">Orders</th>
+                    <th className="px-6 py-3.5 text-right">Net Sales</th>
+                    <th className="px-6 py-3.5 text-right">FIFO COGS</th>
+                    <th className="px-6 py-3.5 text-right">Gross Profit</th>
+                    <th className="px-6 py-3.5 text-center">Gross Margin %</th>
+                    <th className="px-6 py-3.5 text-right">Expenses</th>
+                    <th className="px-6 py-3.5 text-right">Net Profit</th>
+                    <th className="px-6 py-3.5 text-center">Net Margin %</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {monthlyProfits.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-6 py-10 text-center text-slate-400">
+                        No financial activity found in the selected date range.
+                      </td>
+                    </tr>
+                  ) : (
+                    monthlyProfits.map((m, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-6 py-3.5 font-bold text-slate-900 dark:text-white">
+                          {m.month_label}
+                        </td>
+                        <td className="px-6 py-3.5 text-center font-semibold text-slate-700 dark:text-slate-300">
+                          {m.order_count}
+                        </td>
+                        <td className="px-6 py-3.5 text-right font-bold text-slate-900 dark:text-white">
+                          {currencySymbol} {Number(m.net_sales).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3.5 text-right font-mono text-amber-600 dark:text-amber-400">
+                          {currencySymbol} {Number(m.fifo_cogs).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3.5 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                          {currencySymbol} {Number(m.gross_profit).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3.5 text-center">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            {Number(m.gross_margin_percent).toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="px-6 py-3.5 text-right font-bold text-rose-600 dark:text-rose-400">
+                          {currencySymbol} {Number(m.total_expenses).toLocaleString()}
+                        </td>
+                        <td className={`px-6 py-3.5 text-right font-black ${
+                          Number(m.net_profit) >= 0 ? 'text-brand-600 dark:text-brand-400' : 'text-rose-600 dark:text-rose-400'
+                        }`}>
+                          {currencySymbol} {Number(m.net_profit).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3.5 text-center">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                            Number(m.net_margin_percent) >= 20
+                              ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                              : Number(m.net_margin_percent) >= 0
+                              ? 'bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'
+                              : 'bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
+                          }`}>
+                            {Number(m.net_margin_percent).toFixed(1)}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== SUB-SECTION: BRANCH-WISE FINANCIAL REPORTS ==================== */}
+      {activeTab === 'BRANCH_FINANCIAL' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div>
+              <div className="flex items-center space-x-2">
+                <Building2 className="w-5 h-5 text-cyan-500" />
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm">Branch-Wise Comparative Financial Report</h3>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Head office multi-outlet financial breakdown: Sales, COGS, Gross Profit, Expenses, Net Profit, and Inventory Valuation
+              </p>
+            </div>
+            <div className="flex items-center space-x-2 self-start sm:self-auto">
+              <button
+                onClick={() => exportBranchFinancialReportPdf(meta, dates, branchSummary?.branchBreakdown || [])}
+                className="flex items-center space-x-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-xl font-bold text-xs shadow-md transition-all"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download Outlets Report (PDF)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Consolidated Network Totals */}
+          {branchSummary?.consolidated && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <span className="text-[11px] font-bold uppercase text-slate-400">Total Active Outlets</span>
+                <p className="text-lg font-black text-slate-900 dark:text-white mt-1">
+                  {branchSummary.consolidated.totalBranches} Branches
+                </p>
+                <span className="text-[10px] text-slate-400">{branchSummary.consolidated.totalOrders} total completed orders</span>
+              </div>
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <span className="text-[11px] font-bold uppercase text-slate-400">Consolidated Net Sales</span>
+                <p className="text-lg font-black text-slate-900 dark:text-white mt-1">
+                  {currencySymbol} {Number(branchSummary.consolidated.netSales || 0).toLocaleString()}
+                </p>
+                <span className="text-[10px] text-amber-500">COGS: {currencySymbol} {Number(branchSummary.consolidated.fifoCogs || 0).toLocaleString()}</span>
+              </div>
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <span className="text-[11px] font-bold uppercase text-slate-400">Network Gross Profit</span>
+                <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                  {currencySymbol} {Number(branchSummary.consolidated.grossProfit || 0).toLocaleString()}
+                </p>
+                <span className="text-[10px] text-emerald-600">
+                  {branchSummary.consolidated.netSales > 0
+                    ? ((branchSummary.consolidated.grossProfit / branchSummary.consolidated.netSales) * 100).toFixed(1)
+                    : 0}% margin
+                </span>
+              </div>
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <span className="text-[11px] font-bold uppercase text-slate-400">Network Net Profit</span>
+                <p className="text-lg font-black text-brand-600 dark:text-brand-400 mt-1">
+                  {currencySymbol} {Number(branchSummary.consolidated.netProfit || 0).toLocaleString()}
+                </p>
+                <span className="text-[10px] text-rose-500">Expenses: {currencySymbol} {Number(branchSummary.consolidated.totalExpenses || 0).toLocaleString()}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Branch Breakdown Table */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase font-semibold">
+                  <tr>
+                    <th className="px-6 py-3.5">Branch Outlet</th>
+                    <th className="px-6 py-3.5 text-center">City</th>
+                    <th className="px-6 py-3.5 text-center">Orders</th>
+                    <th className="px-6 py-3.5 text-right">Net Sales</th>
+                    <th className="px-6 py-3.5 text-right">FIFO COGS</th>
+                    <th className="px-6 py-3.5 text-right">Gross Profit</th>
+                    <th className="px-6 py-3.5 text-center">Margin %</th>
+                    <th className="px-6 py-3.5 text-right">Expenses</th>
+                    <th className="px-6 py-3.5 text-right">Net Profit</th>
+                    <th className="px-6 py-3.5 text-right">Stock Valuation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {(!branchSummary?.branchBreakdown || branchSummary.branchBreakdown.length === 0) ? (
+                    <tr>
+                      <td colSpan={10} className="px-6 py-10 text-center text-slate-400">
+                        No branch data available for this tenant.
+                      </td>
+                    </tr>
+                  ) : (
+                    branchSummary.branchBreakdown.map((b: any) => (
+                      <tr key={b.branch_id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-6 py-3.5">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-bold text-slate-900 dark:text-white">{b.branch_name}</span>
+                            {b.is_main_branch && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800">
+                                Main
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-400 block">{b.branch_code}</span>
+                        </td>
+                        <td className="px-6 py-3.5 text-center font-semibold text-slate-600 dark:text-slate-300">
+                          {b.city || '-'}
+                        </td>
+                        <td className="px-6 py-3.5 text-center font-bold text-slate-800 dark:text-slate-200">
+                          {b.total_orders}
+                        </td>
+                        <td className="px-6 py-3.5 text-right font-bold text-slate-900 dark:text-white">
+                          {currencySymbol} {Number(b.net_sales).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3.5 text-right font-mono text-amber-600 dark:text-amber-400">
+                          {currencySymbol} {Number(b.fifo_cogs).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3.5 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                          {currencySymbol} {Number(b.gross_profit).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3.5 text-center">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            {Number(b.gross_margin_percent).toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="px-6 py-3.5 text-right font-bold text-rose-600 dark:text-rose-400">
+                          {currencySymbol} {Number(b.total_expenses).toLocaleString()}
+                        </td>
+                        <td className={`px-6 py-3.5 text-right font-black ${
+                          Number(b.net_profit) >= 0 ? 'text-brand-600 dark:text-brand-400' : 'text-rose-600 dark:text-rose-400'
+                        }`}>
+                          {currencySymbol} {Number(b.net_profit).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3.5 text-right font-semibold text-slate-600 dark:text-slate-300">
+                          {currencySymbol} {Number(b.inventory_valuation || 0).toLocaleString()}
                         </td>
                       </tr>
                     ))

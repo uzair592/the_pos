@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { SystemRole, Permission } from '../types/auth.js';
 import { SubscriptionStatus, SubscriptionPaymentMethod, FeatureKey } from '../types/subscription.js';
-import { TableStatus } from '../types/restaurant.js';
+import { TableStatus, ReservationStatus, WaitlistStatus } from '../types/restaurant.js';
 import { PrepStation } from '../types/menu.js';
 import { OrderType, OrderStatus, PaymentMethod } from '../types/order.js';
 import { PrepStatus } from '../types/kds.js';
@@ -44,17 +44,17 @@ export const UpdateUserSchema = z.object({
 
 // Platform Super Admin - Restaurant creation
 export const CreateTenantSchema = z.object({
-  name: z.string().min(2),
-  legalName: z.string().optional(),
-  ownerName: z.string().min(2),
-  email: z.string().email(),
-  phone: z.string().min(6),
+  name: z.string().min(2, 'Restaurant name must be at least 2 characters'),
+  legalName: z.string().optional().nullable(),
+  ownerName: z.string().min(2, 'Owner name must be at least 2 characters'),
+  email: z.string().email('Please enter a valid owner email address'),
+  phone: z.string().optional().default(''),
   country: z.string().default('Pakistan'),
   currency: z.string().default('PKR'),
   timeZone: z.string().default('Asia/Karachi'),
-  businessType: z.enum(['CAFE', 'FAST_FOOD', 'FINE_DINE', 'TAKEAWAY', 'BAKERY', 'FOOD_TRUCK', 'OTHER']).default('CAFE'),
-  planId: z.string().uuid(),
-  initialAdminPassword: z.string().min(6),
+  businessType: z.enum(['CAFE', 'FAST_FOOD', 'FINE_DINE', 'TAKEAWAY', 'BAKERY', 'FOOD_TRUCK', 'RESTAURANT', 'OTHER']).default('CAFE'),
+  planId: z.string().optional().nullable().or(z.literal('')),
+  initialAdminPassword: z.string().min(6, 'Password must be at least 6 characters'),
   trialDays: z.number().int().min(0).default(14),
 });
 
@@ -129,16 +129,97 @@ export const CreateBranchSchema = z.object({
 });
 
 export const CreateFloorSchema = z.object({
-  branchId: z.string().uuid(),
+  branchId: z.string().uuid().optional().nullable().or(z.literal('')).transform(val => val || undefined),
   name: z.string().min(1),
   sortOrder: z.number().int().default(0),
 });
 
+export const UpdateFloorSchema = z.object({
+  name: z.string().min(1).optional(),
+  sortOrder: z.number().int().optional(),
+  isActive: z.boolean().optional(),
+});
+
 export const CreateTableSchema = z.object({
-  branchId: z.string().uuid(),
-  floorId: z.string().uuid(),
+  branchId: z.string().uuid().optional().nullable().or(z.literal('')).transform(val => val || undefined),
+  floorId: z.string().uuid().optional().nullable().or(z.literal('')).transform(val => val || undefined),
+  floorName: z.string().min(1).optional().nullable(),
   tableNumber: z.string().min(1),
   capacity: z.number().int().positive().default(4),
+  shape: z.enum(['RECTANGLE', 'ROUND', 'SQUARE']).default('RECTANGLE').optional(),
+  posX: z.number().int().default(0).optional(),
+  posY: z.number().int().default(0).optional(),
+  assignedWaiterId: z.string().uuid().nullable().optional(),
+  assignedWaiterName: z.string().nullable().optional(),
+});
+
+export const UpdateTableSchema = z.object({
+  floorId: z.string().uuid().optional(),
+  tableNumber: z.string().min(1).optional(),
+  capacity: z.number().int().positive().optional(),
+  status: z.nativeEnum(TableStatus).optional(),
+  shape: z.enum(['RECTANGLE', 'ROUND', 'SQUARE']).optional(),
+  posX: z.number().int().optional(),
+  posY: z.number().int().optional(),
+  assignedWaiterId: z.string().uuid().nullable().optional(),
+  assignedWaiterName: z.string().nullable().optional(),
+  currentOrderId: z.string().uuid().nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const UpdateTableLayoutSchema = z.object({
+  tables: z.array(
+    z.object({
+      id: z.string().uuid(),
+      posX: z.number().int(),
+      posY: z.number().int(),
+      shape: z.enum(['RECTANGLE', 'ROUND', 'SQUARE']).optional(),
+    })
+  ),
+});
+
+// Reservations & Waitlist
+export const CreateReservationSchema = z.object({
+  branchId: z.string().uuid(),
+  customerName: z.string().min(2),
+  customerPhone: z.string().min(5),
+  customerEmail: z.string().email().nullable().optional(),
+  guestCount: z.number().int().positive().default(2),
+  tableId: z.string().uuid().nullable().optional(),
+  reservationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  reservationTime: z.string().min(2),
+  durationMinutes: z.number().int().positive().default(90),
+  specialRequests: z.string().nullable().optional(),
+});
+
+export const UpdateReservationSchema = z.object({
+  tableId: z.string().uuid().nullable().optional(),
+  customerName: z.string().min(2).optional(),
+  customerPhone: z.string().min(5).optional(),
+  customerEmail: z.string().email().nullable().optional(),
+  guestCount: z.number().int().positive().optional(),
+  reservationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  reservationTime: z.string().min(2).optional(),
+  durationMinutes: z.number().int().positive().optional(),
+  status: z.nativeEnum(ReservationStatus).optional(),
+  specialRequests: z.string().nullable().optional(),
+});
+
+export const CreateWaitlistSchema = z.object({
+  branchId: z.string().uuid(),
+  customerName: z.string().min(2),
+  customerPhone: z.string().min(5),
+  guestCount: z.number().int().positive().default(2),
+  estimatedWaitMinutes: z.number().int().min(0).default(15),
+  notes: z.string().nullable().optional(),
+  assignedTableId: z.string().uuid().nullable().optional(),
+});
+
+export const UpdateWaitlistSchema = z.object({
+  status: z.nativeEnum(WaitlistStatus).optional(),
+  assignedTableId: z.string().uuid().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  estimatedWaitMinutes: z.number().int().min(0).optional(),
 });
 
 // Categories & Products
@@ -217,7 +298,7 @@ export const OrderItemInputSchema = z.object({
 });
 
 export const CreateOrderSchema = z.object({
-  branchId: z.string().uuid(),
+  branchId: z.string().uuid().optional().nullable().or(z.literal('')).transform(val => val || undefined),
   orderType: z.nativeEnum(OrderType),
   tableId: z.string().uuid().nullable().optional(),
   coverCount: z.number().int().positive().optional(),
@@ -299,6 +380,11 @@ export const StockAdjustmentSchema = z.object({
     StockMovementType.ADJUSTMENT_ADD,
     StockMovementType.ADJUSTMENT_SUBTRACT,
     StockMovementType.WASTAGE,
+    StockMovementType.DAMAGED,
+    StockMovementType.EXPIRED,
+    StockMovementType.PHYSICAL_COUNT,
+    StockMovementType.OPENING_STOCK,
+    StockMovementType.CORRECTION,
   ]),
   quantity: z.number().positive(),
   reason: z.string().min(2),
@@ -315,14 +401,19 @@ export const CreateSupplierSchema = z.object({
 
 export const CreatePurchaseInvoiceSchema = z.object({
   branchId: z.string().uuid(),
-  supplierId: z.string().uuid(),
-  invoiceNumber: z.string().min(1),
+  supplierId: z.string().uuid().optional(),
+  newSupplierName: z.string().min(1).optional(),
+  invoiceNumber: z.string().optional(),
+  purchaseDate: z.string().optional(),
   taxAmount: z.number().min(0).default(0),
   paidAmount: z.number().min(0).default(0),
+  receiveNow: z.boolean().default(false).optional(),
   notes: z.string().optional(),
   items: z.array(
     z.object({
-      ingredientId: z.string().uuid(),
+      ingredientId: z.string().uuid().optional(),
+      name: z.string().min(1).optional(),
+      itemName: z.string().min(1).optional(),
       unit: z.string().min(1),
       purchaseUnit: z.string().min(1).optional(),
       conversionFactor: z.number().positive().optional(),
@@ -353,12 +444,28 @@ export const CloseShiftSchema = z.object({
 
 // Expenses & Refunds
 export const CreateExpenseSchema = z.object({
-  branchId: z.string().uuid(),
+  branchId: z.string().uuid().optional(),
   categoryId: z.string().uuid(),
+  title: z.string().min(2).optional(),
   amount: z.number().positive(),
   paymentMethod: z.nativeEnum(PaymentMethod),
   bankAccountId: z.string().uuid().optional(),
-  description: z.string().min(2),
+  paidTo: z.string().optional(),
+  description: z.string().optional(),
+  notes: z.string().optional(),
+  expenseDate: z.string().optional(),
+});
+
+export const UpdateExpenseSchema = z.object({
+  branchId: z.string().uuid().optional(),
+  categoryId: z.string().uuid().optional(),
+  title: z.string().min(2).optional(),
+  amount: z.number().positive().optional(),
+  paymentMethod: z.nativeEnum(PaymentMethod).optional(),
+  bankAccountId: z.string().uuid().optional().nullable(),
+  paidTo: z.string().optional().nullable(),
+  description: z.string().optional(),
+  notes: z.string().optional().nullable(),
   expenseDate: z.string().optional(),
 });
 

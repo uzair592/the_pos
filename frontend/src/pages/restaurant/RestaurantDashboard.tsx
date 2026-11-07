@@ -250,32 +250,6 @@ export const RestaurantDashboard: React.FC = () => {
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-brand-500' : ''}`} />
             </button>
           </div>
-
-          <Link
-            to="/app/orders"
-            className="flex items-center space-x-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-sm"
-          >
-            <ListOrdered className="w-4 h-4 text-brand-600" />
-            <span>Orders Hub</span>
-          </Link>
-
-          <Link
-            to="/pos"
-            className="flex items-center space-x-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md transition-all"
-          >
-            <Monitor className="w-4 h-4" />
-            <span>Open POS Terminal</span>
-          </Link>
-
-          {hasFeature(FeatureKey.KDS) && (
-            <Link
-              to="/kds"
-              className="flex items-center space-x-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-sm"
-            >
-              <ChefHat className="w-4 h-4 text-orange-500" />
-              <span>Kitchen Screen</span>
-            </Link>
-          )}
         </div>
       </div>
 
@@ -294,7 +268,7 @@ export const RestaurantDashboard: React.FC = () => {
             </div>
           </div>
           <Link
-            to="/app/inventory"
+            to="/app/inventory?tab=low_stock"
             className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs shrink-0 ml-4"
           >
             Restock
@@ -368,7 +342,7 @@ export const RestaurantDashboard: React.FC = () => {
                   } rounded-xl p-3.5 flex items-center justify-between shadow-sm`}
                 >
                   <div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                       <span className="font-extrabold text-slate-900 dark:text-white font-mono text-xs">
                         #{o.order_number}
                       </span>
@@ -376,6 +350,17 @@ export const RestaurantDashboard: React.FC = () => {
                         {o.table_name ? `Table ${o.table_name}` : (o.order_type || 'Takeaway')}
                       </span>
                       {renderStatusBadge(o.status)}
+                      {o.kitchen_status && (
+                        <span className="px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-bold text-[10px] inline-flex items-center space-x-1">
+                          <ChefHat className="w-3 h-3 inline mr-1" />
+                          <span>KOT: {o.kitchen_status}</span>
+                        </span>
+                      )}
+                      {o.latest_kot_number && (
+                        <span className="text-[10px] font-mono text-slate-400">
+                          #{o.latest_kot_number}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                       Staff: <span className="font-semibold text-slate-700 dark:text-slate-300">{o.waiter_name || o.cashier_name || 'Staff'}</span> • {new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -587,13 +572,18 @@ export const RestaurantDashboard: React.FC = () => {
                   className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800"
                 >
                   <div>
-                    <div className="flex items-center space-x-1.5">
+                    <div className="flex items-center space-x-1.5 flex-wrap gap-y-0.5">
                       <span className="font-bold text-slate-900 dark:text-white font-mono text-xs">
                         #{o.order_number}
                       </span>
                       <span className="text-slate-400 text-[10px]">
                         {new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
+                      {o.kitchen_status && (
+                        <span className="px-1.5 py-0.2 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-semibold text-[9px]">
+                          KOT: {o.kitchen_status}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[10px] text-slate-500 mt-0.5">
                       {o.table_name ? `Table ${o.table_name}` : (o.order_type || 'Order')} • {o.items?.length || 0} item(s)

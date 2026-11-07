@@ -198,11 +198,11 @@ describe('Recipe Costing, Food Cost Analysis, and Menu Item Profitability', () =
         invoiceNumber: `INV-WHOLESALE-${Date.now()}`,
         invoiceDate: new Date().toISOString(),
         items: [
-          { ingredientId: chickenIngId, unit: 'KG', purchaseUnit: 'KG', quantity: 20, unitPrice: 1000 }, // 20,000 G
-          { ingredientId: cheeseIngId, unit: 'KG', purchaseUnit: 'KG', quantity: 5, unitPrice: 1500 },   // 5,000 G
-          { ingredientId: bunIngId, unit: 'PACK', purchaseUnit: 'PACK', quantity: 10, unitPrice: 300 },    // 120 PCS
-          { ingredientId: sauceIngId, unit: 'KG', purchaseUnit: 'KG', quantity: 4, unitPrice: 500 },     // 4,000 G
-          { ingredientId: oilIngId, unit: 'L', purchaseUnit: 'L', quantity: 10, unitPrice: 333.3333 },   // 10,000 ML
+          { ingredientId: chickenIngId, unit: 'G', purchaseUnit: 'G', quantity: 20000, unitPrice: 1.0 }, // 20,000 G @ 1 PKR/G
+          { ingredientId: cheeseIngId, unit: 'G', purchaseUnit: 'G', quantity: 5000, unitPrice: 1.5 },   // 5,000 G @ 1.5 PKR/G
+          { ingredientId: bunIngId, unit: 'PCS', purchaseUnit: 'PCS', quantity: 120, unitPrice: 25 },    // 120 PCS @ 25 PKR/PCS
+          { ingredientId: sauceIngId, unit: 'G', purchaseUnit: 'G', quantity: 4000, unitPrice: 0.5 },    // 4,000 G @ 0.5 PKR/G
+          { ingredientId: oilIngId, unit: 'ML', purchaseUnit: 'ML', quantity: 10000, unitPrice: 0.3333333 }, // 10,000 ML
         ],
       },
     });

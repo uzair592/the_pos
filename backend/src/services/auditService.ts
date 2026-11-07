@@ -37,7 +37,7 @@ export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
         entry.resourceType,
         safeResourceId,
         JSON.stringify(entry.metadata || {}),
-        entry.ipAddress || null,
+        entry.ipAddress ? entry.ipAddress.slice(0, 255) : null,
       ],
       { isSuperAdmin: true }
     );

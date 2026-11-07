@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
@@ -6,6 +7,7 @@ import { Modal } from '../../components/common/Modal.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
 import {
   Utensils,
+  UtensilsCrossed,
   Plus,
   Search,
   Edit2,
@@ -52,8 +54,23 @@ import {
 export const MenuCatalog: React.FC = () => {
   const { tenant } = useAuth();
   const { success, error } = useToast();
+  const [searchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState<'PRODUCTS' | 'CATEGORIES' | 'MODIFIERS'>('PRODUCTS');
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab')?.toLowerCase();
+    if (tabParam === 'categories') {
+      setActiveTab('CATEGORIES');
+    } else if (tabParam === 'addons' || tabParam === 'modifiers') {
+      setActiveTab('MODIFIERS');
+    } else if (tabParam === 'recipes') {
+      setActiveTab('PRODUCTS');
+      setStockFilter('WITH_RECIPE');
+    } else if (tabParam === 'items' || tabParam === 'products') {
+      setActiveTab('PRODUCTS');
+    }
+  }, [searchParams]);
   const [categories, setCategories] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [ingredients, setIngredients] = useState<any[]>([]);
@@ -159,9 +176,21 @@ export const MenuCatalog: React.FC = () => {
     }
   };
 
+  const actionParam = searchParams.get('action');
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (actionParam === 'new-product') {
+      handleOpenCreateProduct();
+    } else if (actionParam === 'new-category') {
+      handleOpenCreateCategory();
+    } else if (actionParam === 'new-modifier') {
+      handleOpenCreateModifier();
+    }
+  }, [actionParam]);
 
   // Category Handlers
   const handleOpenCreateCategory = () => {
@@ -414,39 +443,28 @@ export const MenuCatalog: React.FC = () => {
     const curr = updated[index];
     if (field === 'ingredientId') {
       const ing = ingredients.find((i) => i.id === value);
-      const baseU = ing ? (ing.base_unit || ing.unit || 'G') : 'G';
-      const factor = Number(ing?.conversion_factor || 1);
+      const baseU = ing ? (ing.base_unit || ing.unit || 'KG') : 'KG';
       const enteredQ = Number(curr.enteredQuantity || curr.quantity || 1);
-      const baseQ = convertRecipeQtyToBase(enteredQ, baseU, baseU, factor);
       updated[index] = {
         ...curr,
         ingredientId: value,
         unit: baseU,
         recipeUnit: baseU,
         enteredQuantity: enteredQ,
-        quantity: baseQ,
+        quantity: enteredQ,
       };
     } else if (field === 'recipeUnit') {
-      const ing = ingredients.find((i) => i.id === curr.ingredientId);
-      const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (curr.unit || 'G');
-      const factor = Number(ing?.conversion_factor || 1);
-      const enteredQ = Number(curr.enteredQuantity || curr.quantity || 0);
-      const baseQ = convertRecipeQtyToBase(enteredQ, value, baseU, factor);
       updated[index] = {
         ...curr,
         recipeUnit: value,
-        quantity: baseQ,
+        unit: value,
       };
-    } else if (field === 'enteredQuantity') {
-      const ing = ingredients.find((i) => i.id === curr.ingredientId);
-      const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (curr.unit || 'G');
-      const factor = Number(ing?.conversion_factor || 1);
+    } else if (field === 'enteredQuantity' || field === 'quantity') {
       const val = parseFloat(value) || 0;
-      const baseQ = convertRecipeQtyToBase(val, curr.recipeUnit || baseU, baseU, factor);
       updated[index] = {
         ...curr,
         enteredQuantity: val,
-        quantity: baseQ,
+        quantity: val,
       };
     } else {
       updated[index] = { ...curr, [field]: value };
@@ -1626,13 +1644,25 @@ export const MenuCatalog: React.FC = () => {
       <Modal
         isOpen={isCategoryModalOpen}
         onClose={() => setIsCategoryModalOpen(false)}
-        title={editingCategory ? 'Edit Menu Category' : 'Create Menu Category / Sub-Category'}
-        maxWidth="md"
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <Layers className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {editingCategory ? 'Edit Menu Category' : 'Create Menu Category / Sub-Category'}
+              </h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Organize POS menu items into customer-facing departments</p>
+            </div>
+          </div>
+        }
+        maxWidth="xl"
       >
-        <form onSubmit={handleSaveCategory} className="space-y-4 text-xs">
+        <form onSubmit={handleSaveCategory} className="space-y-4">
           <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Category Name (English) *
+            <label className="form-label">
+              Category Name (English) <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -1640,43 +1670,41 @@ export const MenuCatalog: React.FC = () => {
               placeholder="e.g. Traditional Karahi, Smash Burgers, Hot Beverages"
               value={categoryForm.name}
               onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
+              className="form-input"
             />
           </div>
 
-          
-
           <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Parent Category (Optional: Leave empty for Top-Level)
+            <label className="form-label">
+              Parent Category <span className="text-slate-400 font-normal">(Optional: Leave empty for Top-Level)</span>
             </label>
             <select
               value={categoryForm.parentId || ''}
               onChange={(e) => setCategoryForm({ ...categoryForm, parentId: e.target.value || null })}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
+              className="form-select"
             >
               <option value="">None (Top-Level Category)</option>
               {categories
                 .filter((c) => !c.parent_id && (!editingCategory || c.id !== editingCategory.id))
                 .map((c) => (
                   <option key={c.id} value={c.id}>
-                    ↳ Make Subcategory under: {c.name}
+                    ↳ Subcategory under: {c.name}
                   </option>
                 ))}
             </select>
           </div>
 
-          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setIsCategoryModalOpen(false)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-white"
+              className="px-5 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md"
+              className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all"
             >
               {editingCategory ? 'Update Category' : 'Save Category'}
             </button>
@@ -1690,98 +1718,106 @@ export const MenuCatalog: React.FC = () => {
       <Modal
         isOpen={isModifierModalOpen}
         onClose={() => setIsModifierModalOpen(false)}
-        title={editingModifierGroup ? 'Edit Addon Group' : 'Create New Addon Group'}
-        maxWidth="lg"
-      >
-        <form onSubmit={handleSaveModifierGroup} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Addon Group Name (English) *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Extra Sauces, Cheese Upgrades"
-                value={modifierForm.name}
-                onChange={(e) => setModifierForm({ ...modifierForm, name: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
-              />
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-amber-50 dark:bg-amber-950/50 rounded-xl text-amber-600 dark:text-amber-400">
+              <Sparkles className="w-5 h-5" />
             </div>
-
-            
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {editingModifierGroup ? 'Edit Addon Group' : 'Create New Addon Group'}
+              </h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Define customization options, upgrades, and sauce additions</p>
+            </div>
+          </div>
+        }
+        maxWidth="2xl"
+      >
+        <form onSubmit={handleSaveModifierGroup} className="space-y-4">
+          <div>
+            <label className="form-label">
+              Addon Group Name (English) <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Extra Sauces, Cheese Upgrades, Sides"
+              value={modifierForm.name}
+              onChange={(e) => setModifierForm({ ...modifierForm, name: e.target.value })}
+              className="form-input"
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Max Options Selectable</label>
+              <label className="form-label">Max Options Selectable</label>
               <input
                 type="number"
                 min={1}
                 max={20}
                 value={modifierForm.maxSelect}
                 onChange={(e) => setModifierForm({ ...modifierForm, maxSelect: parseInt(e.target.value) || 1 })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 font-mono"
+                className="form-input font-mono font-bold"
               />
             </div>
-            <div className="flex items-center space-x-2 pt-4">
+            <div className="flex items-center space-x-3 pt-6">
               <input
                 type="checkbox"
                 id="isRequired"
                 checked={modifierForm.isRequired}
                 onChange={(e) => setModifierForm({ ...modifierForm, isRequired: e.target.checked })}
-                className="rounded text-brand-500 focus:ring-brand-400"
+                className="rounded text-brand-500 focus:ring-brand-400 w-4 h-4"
               />
-              <label htmlFor="isRequired" className="font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+              <label htmlFor="isRequired" className="text-sm font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
                 Required / Mandatory choice
               </label>
             </div>
           </div>
 
           {/* Addon Options Editor */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center space-x-1">
+          <div className="space-y-3">
+            <div className="flex justify-between items-center pb-1 border-b border-slate-200 dark:border-slate-800">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center space-x-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                 <span>Addon Items & Prices</span>
               </span>
               <button
                 type="button"
                 onClick={addModifierOption}
-                className="px-2.5 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 rounded-lg font-bold text-[11px] flex items-center space-x-1 transition-colors"
+                className="px-3 py-1.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 rounded-xl font-bold text-xs flex items-center space-x-1 transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Option</span>
               </button>
             </div>
 
-            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+            <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
               {modifierForm.options.map((opt, idx) => (
-                <div key={idx} className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-800/80 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                <div key={idx} className="flex items-center space-x-3 bg-slate-50 dark:bg-slate-850 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
                   <input
                     type="text"
                     required
                     placeholder="Option name (e.g. Extra Cheese)"
                     value={opt.name}
                     onChange={(e) => updateModifierOption(idx, 'name', e.target.value)}
-                    className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white"
+                    className="form-input"
                   />
-                  <div className="w-28 relative">
-                    <span className="absolute left-2 top-1.5 text-slate-400 font-bold text-[10px]">{currencySymbol}</span>
+                  <div className="w-36 relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">{currencySymbol}</span>
                     <input
                       type="number"
                       required
                       min={0}
-                      placeholder="Price"
+                      placeholder="0.00"
                       value={opt.price}
                       onChange={(e) => updateModifierOption(idx, 'price', parseFloat(e.target.value) || 0)}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-7 pr-2 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-white"
+                      className="form-input pl-8 pr-2 font-mono font-bold text-slate-900 dark:text-white"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={() => removeModifierOption(idx)}
-                    className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                    className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors"
                     title="Remove Option"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -1791,17 +1827,17 @@ export const MenuCatalog: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setIsModifierModalOpen(false)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-white"
+              className="px-5 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md"
+              className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all"
             >
               Save Addon Group
             </button>
@@ -1815,150 +1851,166 @@ export const MenuCatalog: React.FC = () => {
       <Modal
         isOpen={isProductModalOpen}
         onClose={() => setIsProductModalOpen(false)}
-        title={editingProduct ? 'Edit Menu Product & Recipe' : 'Add New Menu Item'}
-        maxWidth="2xl"
-      >
-        <form onSubmit={handleSaveProduct} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Product Name (English) *</label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Special Mutton Karahi Full"
-                value={productForm.name}
-                onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
-              />
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <UtensilsCrossed className="w-5 h-5" />
             </div>
-            
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {editingProduct ? 'Edit Menu Product & Recipe' : 'Add New Menu Item'}
+              </h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Configure selling prices, prep station, addon options, and FIFO recipe formulations</p>
+            </div>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Category *</label>
-              <select
-                required
-                value={productForm.categoryId}
-                onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value, subCategoryId: '' })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.parent_name ? `↳ ${c.name}` : c.name}
-                  </option>
-                ))}
-              </select>
+        }
+        maxWidth="5xl"
+      >
+        <form onSubmit={handleSaveProduct} className="space-y-5">
+          {/* Section 1: Item Basic Identifiers */}
+          <div className="bg-slate-50/80 dark:bg-slate-850/60 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="form-label">Product Name (English) <span className="text-rose-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Special Mutton Karahi Full"
+                  value={productForm.name}
+                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                  className="form-input text-base font-semibold"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Subcategory (Optional)</label>
-              <select
-                value={productForm.subCategoryId || ''}
-                onChange={(e) => setProductForm({ ...productForm, subCategoryId: e.target.value || null })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
-              >
-                <option value="">None (Direct under category)</option>
-                {categories
-                  .filter((c) => c.parent_id === productForm.categoryId)
-                  .map((sub) => (
-                    <option key={sub.id} value={sub.id}>
-                      {sub.name}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="form-label">Category <span className="text-rose-500">*</span></label>
+                <select
+                  required
+                  value={productForm.categoryId}
+                  onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value, subCategoryId: '' })}
+                  className="form-select font-semibold"
+                >
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.parent_name ? `↳ ${c.name}` : c.name}
                     </option>
                   ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Prep Station</label>
-              <select
-                value={productForm.station}
-                onChange={(e) => setProductForm({ ...productForm, station: e.target.value as any })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
-              >
-                <option value={PrepStation.KITCHEN}>Kitchen / Main Station</option>
-                <option value={PrepStation.DRINKS}>Beverage Bar / Drinks</option>
-                <option value={PrepStation.BBQ}>Live BBQ / Grill Station</option>
-                <option value={PrepStation.DESSERTS}>Dessert Counter</option>
-                <option value={PrepStation.PACKAGING}>Packaging / Dispatch Counter</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">SKU Code *</label>
-              <input
-                type="text"
-                required
-                placeholder="SKU-101"
-                value={productForm.sku}
-                onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Barcode</label>
-              <input
-                type="text"
-                placeholder="Optional"
-                value={productForm.barcode}
-                onChange={(e) => setProductForm({ ...productForm, barcode: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Selling Price ({currencySymbol}) *</label>
-              <input
-                type="number"
-                required
-                min={0}
-                step="any"
-                value={productForm.basePrice}
-                onChange={(e) => setProductForm({ ...productForm, basePrice: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-mono font-bold text-slate-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block font-bold text-slate-700 dark:text-slate-300">Cost Price ({currencySymbol})</label>
-                {modalCalculatedCost > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setProductForm({ ...productForm, costPrice: parseFloat(modalCalculatedCost.toFixed(2)) })}
-                    className="text-[10px] text-brand-600 dark:text-brand-400 font-bold hover:underline"
-                    title="Copy calculated recipe cost into manual cost price"
-                  >
-                    Sync Recipe
-                  </button>
-                )}
+                </select>
               </div>
-              <input
-                type="number"
-                min={0}
-                step="any"
-                placeholder={modalCalculatedCost > 0 ? modalCalculatedCost.toFixed(2) : '0'}
-                value={productForm.costPrice || ''}
-                onChange={(e) => setProductForm({ ...productForm, costPrice: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white"
-              />
+
+              <div>
+                <label className="form-label">Subcategory <span className="text-slate-400 font-normal">(Optional)</span></label>
+                <select
+                  value={productForm.subCategoryId || ''}
+                  onChange={(e) => setProductForm({ ...productForm, subCategoryId: e.target.value || null })}
+                  className="form-select font-semibold"
+                >
+                  <option value="">None (Direct under category)</option>
+                  {categories
+                    .filter((c) => c.parent_id === productForm.categoryId)
+                    .map((sub) => (
+                      <option key={sub.id} value={sub.id}>
+                        {sub.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="form-label">Prep Station <span className="text-rose-500">*</span></label>
+                <select
+                  value={productForm.station}
+                  onChange={(e) => setProductForm({ ...productForm, station: e.target.value as any })}
+                  className="form-select font-semibold"
+                >
+                  <option value={PrepStation.KITCHEN}>Kitchen / Main Station</option>
+                  <option value={PrepStation.DRINKS}>Beverage Bar / Drinks</option>
+                  <option value={PrepStation.BBQ}>Live BBQ / Grill Station</option>
+                  <option value={PrepStation.DESSERTS}>Dessert Counter</option>
+                  <option value={PrepStation.PACKAGING}>Packaging / Dispatch Counter</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div>
+                <label className="form-label">SKU Code <span className="text-rose-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  placeholder="SKU-101"
+                  value={productForm.sku}
+                  onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })}
+                  className="form-input font-mono font-bold"
+                />
+              </div>
+              <div>
+                <label className="form-label">Barcode / UPC</label>
+                <input
+                  type="text"
+                  placeholder="Optional"
+                  value={productForm.barcode}
+                  onChange={(e) => setProductForm({ ...productForm, barcode: e.target.value })}
+                  className="form-input font-mono"
+                />
+              </div>
+              <div>
+                <label className="form-label">Selling Price ({currencySymbol}) <span className="text-rose-500">*</span></label>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  step="any"
+                  value={productForm.basePrice}
+                  onChange={(e) => setProductForm({ ...productForm, basePrice: parseFloat(e.target.value) || 0 })}
+                  className="form-input font-mono font-bold text-slate-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="form-label mb-0">Cost Price ({currencySymbol})</label>
+                  {modalCalculatedCost > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setProductForm({ ...productForm, costPrice: parseFloat(modalCalculatedCost.toFixed(2)) })}
+                      className="text-xs text-brand-600 dark:text-brand-400 font-bold hover:underline"
+                      title="Copy calculated recipe cost into manual cost price"
+                    >
+                      Sync Recipe
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  placeholder={modalCalculatedCost > 0 ? modalCalculatedCost.toFixed(2) : '0.00'}
+                  value={productForm.costPrice || ''}
+                  onChange={(e) => setProductForm({ ...productForm, costPrice: parseFloat(e.target.value) || 0 })}
+                  className="form-input font-mono text-slate-900 dark:text-white"
+                />
+              </div>
             </div>
           </div>
 
           {/* Real-time Profitability & Margin Preview Card */}
-          <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center space-x-2">
-              <TrendingUp className="w-4 h-4 text-emerald-500" />
-              <span className="font-bold text-slate-700 dark:text-slate-300">Unit Profitability:</span>
-              <span className="text-slate-500">Effective Cost: <strong className="font-mono text-slate-700 dark:text-slate-200">{currencySymbol} {effectiveCostPrice.toFixed(2)}</strong></span>
+          <div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="p-1.5 bg-emerald-50 dark:bg-emerald-950/50 rounded-lg text-emerald-600 dark:text-emerald-400">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+              <span className="font-bold text-slate-900 dark:text-white text-sm">Unit Profitability:</span>
+              <span className="text-slate-500">Effective Cost: <strong className="font-mono text-slate-800 dark:text-slate-200">{currencySymbol} {effectiveCostPrice.toFixed(2)}</strong></span>
               <span className="text-slate-300">•</span>
-              <span className="text-slate-500">Profit: <strong className="font-mono text-emerald-600 dark:text-emerald-400">{currencySymbol} {modalGrossProfit.toFixed(2)}</strong></span>
+              <span className="text-slate-500">Gross Profit: <strong className="font-mono text-emerald-600 dark:text-emerald-400 text-sm font-bold">{currencySymbol} {modalGrossProfit.toFixed(2)}</strong></span>
             </div>
 
-            <div className="flex items-center space-x-1.5">
+            <div className="flex items-center space-x-2">
               <span className="text-slate-500 font-medium">Gross Margin:</span>
               <span
-                className={`px-2.5 py-0.5 rounded-full font-black text-xs ${
+                className={`px-3 py-1 rounded-full font-black text-xs ${
                   modalGrossMarginPercent >= 50
                     ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
                     : modalGrossMarginPercent >= 25
@@ -1973,15 +2025,17 @@ export const MenuCatalog: React.FC = () => {
 
           {/* Applicable Addon Groups Checkbox Selector */}
           {modifierGroups.length > 0 && (
-            <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-3 bg-amber-50/30 dark:bg-amber-950/20">
-              <label className="block font-bold text-slate-800 dark:text-slate-200 mb-1 flex items-center space-x-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Attach Addon Groups (Extra Sauces, Cheese, Upgrades)</span>
-              </label>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                Selected addons will be presented as customization options when this item is tapped in POS.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="border border-slate-200 dark:border-slate-800 rounded-2xl p-4 bg-amber-50/20 dark:bg-amber-950/10 space-y-3">
+              <div>
+                <label className="font-bold text-slate-900 dark:text-white flex items-center space-x-2 text-xs uppercase tracking-wider">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span>Attach Addon Groups (Extra Sauces, Cheese, Upgrades)</span>
+                </label>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Selected addons will be presented as customization options when this item is tapped in POS.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {modifierGroups.map((mg) => {
                   const isChecked = productForm.modifierGroupIds.includes(mg.id);
                   let optNames = '';
@@ -1993,10 +2047,10 @@ export const MenuCatalog: React.FC = () => {
                   return (
                     <label
                       key={mg.id}
-                      className={`flex items-start space-x-2 p-2 rounded-xl border cursor-pointer transition-colors ${
+                      className={`flex items-start space-x-3 p-3 rounded-xl border cursor-pointer transition-all ${
                         isChecked
-                          ? 'border-amber-400 bg-amber-50/80 dark:bg-amber-950/50'
-                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'
+                          ? 'border-amber-400 bg-amber-50/80 dark:bg-amber-950/50 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300'
                       }`}
                     >
                       <input
@@ -2015,11 +2069,11 @@ export const MenuCatalog: React.FC = () => {
                             });
                           }
                         }}
-                        className="mt-0.5 rounded text-amber-500 focus:ring-amber-400"
+                        className="mt-0.5 rounded text-amber-500 focus:ring-amber-400 w-4 h-4"
                       />
                       <div className="text-xs">
                         <span className="font-bold text-slate-900 dark:text-white block">{mg.name}</span>
-                        {optNames && <span className="text-[10px] text-slate-500 line-clamp-1">{optNames}</span>}
+                        {optNames && <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{optNames}</span>}
                       </div>
                     </label>
                   );
@@ -2029,34 +2083,34 @@ export const MenuCatalog: React.FC = () => {
           )}
 
           {/* Embedded Recipe Ingredients Section */}
-          <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50 dark:bg-slate-800/40 space-y-3">
-            <div className="flex items-center justify-between">
+          <div className="border border-slate-200 dark:border-slate-800 rounded-2xl p-4 bg-slate-50 dark:bg-slate-850 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
               <div>
-                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center space-x-1.5">
+                <span className="font-bold text-slate-900 dark:text-white flex items-center space-x-2 text-xs uppercase tracking-wider">
                   <ChefHat className="w-4 h-4 text-brand-500" />
-                  <span>Recipe Ingredients & Automatic Inventory Depletion</span>
+                  <span>Recipe Formulation & Automatic Stock Depletion</span>
                 </span>
-                <p className="text-[11px] text-slate-500">
-                  Exact raw ingredients deducted per order checkout via First-In, First-Out (FIFO) costing.
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Raw materials deducted automatically upon sale via First-In, First-Out (FIFO) costing.
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={addRecipeIngredient}
-                className="px-2.5 py-1 bg-brand-500/10 text-brand-600 dark:text-brand-400 hover:bg-brand-500/20 rounded-lg font-bold text-xs flex items-center space-x-1 transition-colors"
+                className="px-3.5 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold text-xs flex items-center space-x-1.5 transition-all shadow-xs"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add Ingredient</span>
+                <span>Add Ingredient Line</span>
               </button>
             </div>
 
             {productForm.recipe.ingredients.length === 0 ? (
-              <div className="py-4 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg">
-                No recipe ingredients linked. Click "Add Ingredient" to configure automatic batch stock deduction.
+              <div className="py-6 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl text-xs">
+                No recipe ingredients linked yet. Click "Add Ingredient Line" to configure automatic batch stock deduction.
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {productForm.recipe.ingredients.map((item, idx) => {
                   const ing = ingredients.find((i) => i.id === item.ingredientId);
                   const baseU = ing ? (ing.base_unit || ing.unit || 'G') : (item.unit || 'G');
@@ -2069,22 +2123,24 @@ export const MenuCatalog: React.FC = () => {
                   return (
                     <div
                       key={idx}
-                      className="p-2.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs shadow-sm"
+                      className="p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2 shadow-xs"
                     >
-                      <div className="flex items-center space-x-2">
-                        <select
-                          value={item.ingredientId}
-                          onChange={(e) => updateRecipeIngredient(idx, 'ingredientId', e.target.value)}
-                          className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 font-semibold text-slate-900 dark:text-white"
-                        >
-                          {ingredients.map((ingItem) => (
-                            <option key={ingItem.id} value={ingItem.id}>
-                              {ingItem.name} ({ingItem.category || 'General'} • Base: {ingItem.base_unit || ingItem.unit})
-                            </option>
-                          ))}
-                        </select>
+                      <div className="flex items-center space-x-3">
+                        <div className="flex-1">
+                          <select
+                            value={item.ingredientId}
+                            onChange={(e) => updateRecipeIngredient(idx, 'ingredientId', e.target.value)}
+                            className="form-select font-semibold"
+                          >
+                            {ingredients.map((ingItem) => (
+                              <option key={ingItem.id} value={ingItem.id}>
+                                {ingItem.name} ({ingItem.category || 'General'} • Base: {ingItem.base_unit || ingItem.unit})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                        <div className="w-24">
+                        <div className="w-32">
                           <input
                             type="number"
                             step="any"
@@ -2092,16 +2148,16 @@ export const MenuCatalog: React.FC = () => {
                             required
                             value={enteredQ}
                             onChange={(e) => updateRecipeIngredient(idx, 'enteredQuantity', e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-right font-mono font-bold text-slate-900 dark:text-white"
+                            className="form-input font-mono font-bold text-center"
                             placeholder="Qty"
                           />
                         </div>
 
-                        <div className="w-28">
+                        <div className="w-32">
                           <select
                             value={recipeU}
                             onChange={(e) => updateRecipeIngredient(idx, 'recipeUnit', e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 font-mono font-bold text-slate-900 dark:text-white"
+                            className="form-select font-mono font-bold"
                           >
                             {getCompatibleUnits(baseU).map((u) => (
                               <option key={u.code} value={u.code}>
@@ -2111,26 +2167,26 @@ export const MenuCatalog: React.FC = () => {
                           </select>
                         </div>
 
-                        <div className="w-24 text-right font-mono text-slate-700 dark:text-slate-300 font-bold">
+                        <div className="w-32 text-right font-mono text-slate-800 dark:text-slate-200 font-bold text-sm">
                           {currencySymbol} {lineCost.toFixed(2)}
                         </div>
 
                         <button
                           type="button"
                           onClick={() => removeRecipeIngredient(idx)}
-                          className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                          className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors"
                           title="Remove Ingredient"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
 
-                      <div className="flex items-center justify-between text-[11px] px-1 text-slate-500">
-                        <span className="font-mono bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800">
-                          Auto-Converted: <strong className="text-brand-600 dark:text-brand-400 font-bold">{baseQ.toLocaleString()} {baseU}</strong> base stock
+                      <div className="flex items-center justify-between text-xs px-1 text-slate-500 pt-1">
+                        <span className="font-mono bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800">
+                          Portion Deduction: <strong className="text-brand-600 dark:text-brand-400 font-bold">{enteredQ.toLocaleString()} {recipeU}</strong> per serving
                         </span>
-                        <span className="font-mono text-slate-400">
-                          Cost: {currencySymbol} {Number(ing?.cost_per_unit || 0).toFixed(4)} / {baseU}
+                        <span className="font-mono text-slate-500 text-xs">
+                          FIFO Ingredient Cost: <strong className="text-slate-700 dark:text-slate-300 font-bold">{currencySymbol} {lineCost.toFixed(2)}</strong>
                         </span>
                       </div>
                     </div>
@@ -2140,19 +2196,19 @@ export const MenuCatalog: React.FC = () => {
             )}
           </div>
 
-          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setIsProductModalOpen(false)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-white"
+              className="px-5 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md"
+              className="px-7 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all"
             >
-              {editingProduct ? 'Update Product' : 'Save Product & Recipe'}
+              {editingProduct ? 'Update Product & Recipe' : 'Save Product & Recipe'}
             </button>
           </div>
         </form>

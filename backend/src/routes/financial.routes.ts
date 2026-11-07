@@ -6,12 +6,14 @@ import {
   CashMovementSchema,
   CloseShiftSchema,
   CreateExpenseSchema,
+  UpdateExpenseSchema,
   Permission,
   ShiftStatus,
   CreateBankAccountSchema,
   UpdateBankAccountSchema,
   CreateCashBankTransferSchema,
 } from '@pos/shared';
+import { logAuditEvent } from '../services/auditService.js';
 import {
   openShift,
   recordCashMovement,
@@ -178,18 +180,27 @@ export async function financialRoutes(fastify: FastifyInstance) {
     preHandler: [requirePermission(Permission.EXPENSES_VIEW)],
   }, async (req, reply) => {
     const tenantId = req.user!.tenantId!;
-    const { branchId, startDate, endDate } = req.query as {
+    const { branchId, categoryId, search, startDate, endDate, limit = 100 } = req.query as {
       branchId?: string;
+      categoryId?: string;
+      search?: string;
       startDate?: string;
       endDate?: string;
+      limit?: number;
     };
 
     let sql = `
-      SELECT e.*, ec.name as category_name, b.name as branch_name, u.full_name as recorded_by_name
+      SELECT e.*, 
+             ec.name as category_name, 
+             b.name as branch_name, 
+             u.full_name as recorded_by_name,
+             ba.bank_name,
+             ba.account_name as bank_account_name
       FROM expenses e
       JOIN expense_categories ec ON ec.id = e.category_id
       JOIN branches b ON b.id = e.branch_id
       LEFT JOIN users u ON u.id = e.recorded_by_user_id
+      LEFT JOIN bank_accounts ba ON ba.id = e.bank_account_id
       WHERE e.tenant_id = $1
     `;
     const params: any[] = [tenantId];
@@ -197,6 +208,10 @@ export async function financialRoutes(fastify: FastifyInstance) {
     if (branchId) {
       params.push(branchId);
       sql += ` AND e.branch_id = $${params.length}`;
+    }
+    if (categoryId) {
+      params.push(categoryId);
+      sql += ` AND e.category_id = $${params.length}`;
     }
     if (startDate) {
       params.push(startDate);
@@ -206,8 +221,13 @@ export async function financialRoutes(fastify: FastifyInstance) {
       params.push(endDate);
       sql += ` AND e.expense_date <= $${params.length}`;
     }
+    if (search && search.trim()) {
+      params.push(`%${search.trim().toLowerCase()}%`);
+      sql += ` AND (LOWER(COALESCE(e.title, '')) LIKE $${params.length} OR LOWER(COALESCE(e.description, '')) LIKE $${params.length} OR LOWER(COALESCE(e.paid_to, '')) LIKE $${params.length} OR LOWER(ec.name) LIKE $${params.length})`;
+    }
 
-    sql += ' ORDER BY e.expense_date DESC, e.created_at DESC';
+    sql += ` ORDER BY e.expense_date DESC, e.created_at DESC LIMIT $${params.length + 1}`;
+    params.push(Number(limit) || 100);
 
     const { rows } = await query(sql, params, { tenantId });
     return reply.send({ expenses: rows });
@@ -220,17 +240,50 @@ export async function financialRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
 
     const tenantId = req.user!.tenantId!;
-    const { branchId, categoryId, amount, paymentMethod, description, expenseDate, bankAccountId } = parsed.data as any;
+    let { branchId, categoryId, title, amount, paymentMethod, description, notes, paidTo, expenseDate, bankAccountId } = parsed.data as any;
+
+    if (!branchId) {
+      branchId = req.user!.branchId;
+      if (!branchId) {
+        const { rows: bRows } = await query(
+          'SELECT id FROM branches WHERE tenant_id = $1 ORDER BY is_main_branch DESC, created_at ASC LIMIT 1',
+          [tenantId],
+          { tenantId }
+        );
+        branchId = bRows[0]?.id;
+      }
+    }
+
+    const effectiveTitle = (title || description || 'Expense').trim();
+    const effectiveDesc = (description || title || notes || '').trim();
 
     const { rows } = await query(
       `
-      INSERT INTO expenses (tenant_id, branch_id, category_id, amount, payment_method, description, recorded_by_user_id, expense_date, bank_account_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, CURRENT_DATE), $9)
+      INSERT INTO expenses (
+        tenant_id, branch_id, category_id, title, amount, payment_method, 
+        description, notes, paid_to, recorded_by_user_id, expense_date, bank_account_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, CURRENT_DATE), $12)
       RETURNING *
       `,
-      [tenantId, branchId, categoryId, amount, paymentMethod, description, req.user!.id, expenseDate || null, bankAccountId || null],
+      [
+        tenantId,
+        branchId,
+        categoryId,
+        effectiveTitle,
+        amount,
+        paymentMethod,
+        effectiveDesc,
+        notes || null,
+        paidTo || null,
+        req.user!.id,
+        expenseDate || null,
+        bankAccountId || null,
+      ],
       { tenantId }
     );
+
+    const createdExpense = rows[0];
 
     // If paid via bank, deduct from bank account balance
     if (bankAccountId && paymentMethod !== 'CASH') {
@@ -241,32 +294,210 @@ export async function financialRoutes(fastify: FastifyInstance) {
       );
     }
 
-    return reply.status(201).send({ expense: rows[0] });
+    await logAuditEvent({
+      tenantId,
+      branchId,
+      actorId: req.user!.id,
+      actorRole: req.user!.role,
+      action: 'EXPENSE_RECORDED',
+      resourceType: 'EXPENSE',
+      resourceId: createdExpense.id,
+      metadata: {
+        title: effectiveTitle,
+        amount,
+        paymentMethod,
+        paidTo: paidTo || null,
+        bankAccountId: bankAccountId || null,
+      },
+      ipAddress: req.ip,
+    });
+
+    return reply.status(201).send({ expense: createdExpense });
+  });
+
+  fastify.put('/api/financial/expenses/:id', {
+    preHandler: [requirePermission(Permission.EXPENSES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const parsed = UpdateExpenseSchema.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.format() });
+
+    const tenantId = req.user!.tenantId!;
+    const { rows: existingRows } = await query(
+      'SELECT * FROM expenses WHERE id = $1 AND tenant_id = $2',
+      [id, tenantId],
+      { tenantId }
+    );
+
+    if (existingRows.length === 0) {
+      return reply.status(404).send({ error: 'Expense record not found' });
+    }
+
+    const old = existingRows[0];
+    const data = parsed.data;
+
+    const newBranchId = data.branchId || old.branch_id;
+    const newCategoryId = data.categoryId || old.category_id;
+    const newTitle = data.title !== undefined ? data.title : old.title;
+    const newAmount = data.amount !== undefined ? data.amount : Number(old.amount);
+    const newPaymentMethod = data.paymentMethod || old.payment_method;
+    const newBankAccountId = data.bankAccountId !== undefined ? data.bankAccountId : old.bank_account_id;
+    const newPaidTo = data.paidTo !== undefined ? data.paidTo : old.paid_to;
+    const newDesc = data.description !== undefined ? data.description : (newTitle || old.description);
+    const newNotes = data.notes !== undefined ? data.notes : old.notes;
+    const newDate = data.expenseDate || old.expense_date;
+
+    // Handle bank balance reversal and re-deduction if bank accounts or amounts changed
+    if (old.bank_account_id && old.payment_method !== 'CASH') {
+      await query(
+        `UPDATE bank_accounts SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+        [Number(old.amount), old.bank_account_id, tenantId],
+        { tenantId }
+      );
+    }
+    if (newBankAccountId && newPaymentMethod !== 'CASH') {
+      await query(
+        `UPDATE bank_accounts SET current_balance = current_balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+        [newAmount, newBankAccountId, tenantId],
+        { tenantId }
+      );
+    }
+
+    const { rows: updatedRows } = await query(
+      `
+      UPDATE expenses
+      SET branch_id = $1,
+          category_id = $2,
+          title = $3,
+          amount = $4,
+          payment_method = $5,
+          bank_account_id = $6,
+          paid_to = $7,
+          description = $8,
+          notes = $9,
+          expense_date = $10
+      WHERE id = $11 AND tenant_id = $12
+      RETURNING *
+      `,
+      [
+        newBranchId,
+        newCategoryId,
+        newTitle,
+        newAmount,
+        newPaymentMethod,
+        newBankAccountId,
+        newPaidTo,
+        newDesc,
+        newNotes,
+        newDate,
+        id,
+        tenantId,
+      ],
+      { tenantId }
+    );
+
+    await logAuditEvent({
+      tenantId,
+      branchId: newBranchId,
+      actorId: req.user!.id,
+      actorRole: req.user!.role,
+      action: 'EXPENSE_UPDATED',
+      resourceType: 'EXPENSE',
+      resourceId: id,
+      metadata: {
+        oldAmount: Number(old.amount),
+        newAmount,
+        oldTitle: old.title,
+        newTitle,
+      },
+      ipAddress: req.ip,
+    });
+
+    return reply.send({ expense: updatedRows[0] });
+  });
+
+  fastify.delete('/api/financial/expenses/:id', {
+    preHandler: [requirePermission(Permission.EXPENSES_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+
+    const { rows } = await query(
+      'SELECT * FROM expenses WHERE id = $1 AND tenant_id = $2',
+      [id, tenantId],
+      { tenantId }
+    );
+
+    if (rows.length === 0) {
+      return reply.status(404).send({ error: 'Expense record not found' });
+    }
+
+    const exp = rows[0];
+
+    // If paid via bank, refund/restore balance
+    if (exp.bank_account_id && exp.payment_method !== 'CASH') {
+      await query(
+        `UPDATE bank_accounts SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+        [Number(exp.amount), exp.bank_account_id, tenantId],
+        { tenantId }
+      );
+    }
+
+    await query('DELETE FROM expenses WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+
+    await logAuditEvent({
+      tenantId,
+      branchId: exp.branch_id,
+      actorId: req.user!.id,
+      actorRole: req.user!.role,
+      action: 'EXPENSE_DELETED',
+      resourceType: 'EXPENSE',
+      resourceId: id,
+      metadata: {
+        amount: Number(exp.amount),
+        title: exp.title || exp.description,
+      },
+      ipAddress: req.ip,
+    });
+
+    return reply.send({ success: true, message: 'Expense deleted successfully' });
   });
 
   fastify.get('/api/financial/expenses/categories', async (req, reply) => {
     const tenantId = req.user!.tenantId!;
-    let { rows } = await query('SELECT * FROM expense_categories WHERE tenant_id = $1 ORDER BY name ASC', [tenantId], { tenantId });
+    
+    // Core categories requested by restaurant management
+    const coreDefaults = [
+      { name: 'Staff Salaries', description: 'Monthly salaries, wages, and staff advances' },
+      { name: 'Restaurant Rent', description: 'Store, kitchen, or building lease and rent' },
+      { name: 'Electricity & Gas Bills', description: 'WAPDA/KESC electricity, Sui Gas bills' },
+      { name: 'Water Bills', description: 'Water tanker, supply, and sewerage charges' },
+      { name: 'Crockery & Kitchen Equipment', description: 'Plates, utensils, pans, glasses, cutlery' },
+      { name: 'Repairs & Maintenance', description: 'Equipment servicing, AC maintenance, plumbing, electrical' },
+      { name: 'Cleaning Supplies', description: 'Detergents, dishwashing, mop, sanitizers, trash bags' },
+      { name: 'Transportation & Fuel', description: 'Delivery bike petrol, staff conveyance, logistics' },
+      { name: 'Miscellaneous Expenses', description: 'Petty cash, office stationery, unexpected overheads' },
+    ];
 
-    if (rows.length === 0) {
-      const defaults = [
-        { name: 'Utilities & Bills', description: 'Electricity, gas, water, internet' },
-        { name: 'Kitchen & Cleaning Supplies', description: 'Disposables, dishwashing, packaging' },
-        { name: 'Staff Welfare & Meals', description: 'Staff food, tea, allowances' },
-        { name: 'Maintenance & Repairs', description: 'Equipment servicing, plumbing, electrical' },
-        { name: 'Fuel & Delivery Operations', description: 'Bike fuel, delivery logistics' },
-        { name: 'Miscellaneous Expenses', description: 'Petty cash, general expenses' },
-      ];
-      for (const d of defaults) {
-        await query(
-          'INSERT INTO expense_categories (tenant_id, name, description) VALUES ($1, $2, $3)',
-          [tenantId, d.name, d.description],
-          { tenantId }
-        );
-      }
-      const seeded = await query('SELECT * FROM expense_categories WHERE tenant_id = $1 ORDER BY name ASC', [tenantId], { tenantId });
-      rows = seeded.rows;
+    for (const d of coreDefaults) {
+      await query(
+        `
+        INSERT INTO expense_categories (tenant_id, name, description)
+        SELECT $1::uuid, $2::varchar, $3::text
+        WHERE NOT EXISTS (
+          SELECT 1 FROM expense_categories WHERE tenant_id = $1::uuid AND LOWER(name) = LOWER($2::varchar)
+        )
+        `,
+        [tenantId, d.name, d.description],
+        { tenantId }
+      );
     }
+
+    const { rows } = await query(
+      'SELECT * FROM expense_categories WHERE tenant_id = $1 ORDER BY name ASC',
+      [tenantId],
+      { tenantId }
+    );
 
     return reply.send({ categories: rows });
   });
@@ -621,6 +852,120 @@ export async function financialRoutes(fastify: FastifyInstance) {
 
     const { rows } = await query(sql, params, { tenantId });
     return reply.send({ dailyProfit: rows });
+  });
+
+  /**
+   * Dedicated Sub-Reports: Monthly Profit & Loss Report
+   * Aggregates completed orders, net sales, FIFO COGS, gross profit, expenses, and net profit per month
+   */
+  fastify.get('/api/financial/reports/monthly-profit-loss', {
+    preHandler: [requirePermission(Permission.REPORTS_FINANCIAL)],
+  }, async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId, startDate, endDate } = req.query as {
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+    };
+
+    const now = new Date();
+    const defaultStart = new Date(now.getFullYear(), now.getMonth() - 11, 1).toISOString();
+    const defaultEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+    const start = startDate || defaultStart;
+    const end = endDate || defaultEnd;
+
+    // 1. Monthly sales and FIFO COGS
+    let salesSql = `
+      SELECT
+        TO_CHAR(o.created_at, 'YYYY-MM') as month_key,
+        TO_CHAR(o.created_at, 'Month YYYY') as month_label,
+        COUNT(o.id)::int as order_count,
+        COALESCE(SUM(o.subtotal - o.total_discount), 0)::numeric as net_sales,
+        COALESCE(SUM(o.grand_total), 0)::numeric as grand_total,
+        COALESCE(SUM(cogs_sub.total_cogs), 0)::numeric as fifo_cogs,
+        (COALESCE(SUM(o.subtotal - o.total_discount), 0) - COALESCE(SUM(cogs_sub.total_cogs), 0))::numeric as gross_profit,
+        CASE
+          WHEN SUM(o.subtotal - o.total_discount) > 0
+          THEN ROUND(((SUM(o.subtotal - o.total_discount) - COALESCE(SUM(cogs_sub.total_cogs), 0)) / SUM(o.subtotal - o.total_discount) * 100)::numeric, 1)
+          ELSE 0
+        END as gross_margin_percent
+      FROM orders o
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(cogs), 0) as total_cogs
+        FROM order_items
+        WHERE order_id = o.id
+      ) cogs_sub ON true
+      WHERE o.tenant_id = $1 AND o.status = 'COMPLETED'
+        AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
+    `;
+    const salesParams: any[] = [tenantId, start, end];
+    if (branchId) {
+      salesParams.push(branchId);
+      salesSql += ` AND o.branch_id = $${salesParams.length}`;
+    }
+    salesSql += ` GROUP BY TO_CHAR(o.created_at, 'YYYY-MM'), TO_CHAR(o.created_at, 'Month YYYY') ORDER BY month_key DESC`;
+
+    const { rows: salesRows } = await query(salesSql, salesParams, { tenantId });
+
+    // 2. Monthly operating expenses
+    let expSql = `
+      SELECT
+        TO_CHAR(e.expense_date, 'YYYY-MM') as month_key,
+        COALESCE(SUM(e.amount), 0)::numeric as total_expenses
+      FROM expenses e
+      WHERE e.tenant_id = $1
+        AND e.expense_date >= $2::date AND e.expense_date <= $3::date
+    `;
+    const expParams: any[] = [tenantId, start.slice(0, 10), end.slice(0, 10)];
+    if (branchId) {
+      expParams.push(branchId);
+      expSql += ` AND e.branch_id = $${expParams.length}`;
+    }
+    expSql += ` GROUP BY TO_CHAR(e.expense_date, 'YYYY-MM')`;
+
+    const { rows: expRows } = await query(expSql, expParams, { tenantId });
+    const expMap = new Map<string, number>();
+    for (const er of expRows) {
+      expMap.set(er.month_key, Number(er.total_expenses || 0));
+    }
+
+    const monthSet = new Set<string>();
+    salesRows.forEach((r: any) => monthSet.add(r.month_key));
+    expRows.forEach((r: any) => monthSet.add(r.month_key));
+
+    const sortedMonths = Array.from(monthSet).sort().reverse();
+    const monthlyProfit = sortedMonths.map((mKey) => {
+      const s = salesRows.find((r: any) => r.month_key === mKey);
+      const netSales = s ? Number(s.net_sales || 0) : 0;
+      const grandTotal = s ? Number(s.grand_total || 0) : 0;
+      const fifoCogs = s ? Number(s.fifo_cogs || 0) : 0;
+      const grossProfit = s ? Number(s.gross_profit || 0) : 0;
+      const grossMarginPercent = s ? Number(s.gross_margin_percent || 0) : 0;
+      const orderCount = s ? Number(s.order_count || 0) : 0;
+      const totalExpenses = expMap.get(mKey) || 0;
+      const netProfit = grossProfit - totalExpenses;
+      const netMarginPercent = netSales > 0 ? Number(((netProfit / netSales) * 100).toFixed(1)) : 0;
+
+      const [year, month] = mKey.split('-');
+      const dateObj = new Date(Number(year), Number(month) - 1, 1);
+      const monthLabel = s?.month_label?.trim() || dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+      return {
+        month_key: mKey,
+        month_label: monthLabel,
+        order_count: orderCount,
+        net_sales: netSales,
+        grand_total: grandTotal,
+        fifo_cogs: fifoCogs,
+        gross_profit: grossProfit,
+        gross_margin_percent: grossMarginPercent,
+        total_expenses: totalExpenses,
+        net_profit: netProfit,
+        net_margin_percent: netMarginPercent,
+      };
+    });
+
+    return reply.send({ monthlyProfit });
   });
 
     /**

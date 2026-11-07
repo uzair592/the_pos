@@ -682,9 +682,12 @@ export async function getDaybookData(filters: DaybookFilters): Promise<DaybookDa
     `
     SELECT
       e.id,
+      e.title,
       e.amount,
       e.payment_method,
       e.description,
+      e.paid_to,
+      e.notes,
       e.expense_date,
       e.created_at,
       ec.name as category_name,
@@ -705,8 +708,11 @@ export async function getDaybookData(filters: DaybookFilters): Promise<DaybookDa
 
   const expenses = expensesRes.rows.map((e) => ({
     id: e.id,
+    title: e.title || e.description,
     categoryName: e.category_name,
     description: e.description,
+    paidTo: e.paid_to,
+    notes: e.notes,
     amount: Number(e.amount),
     paymentMethod: e.payment_method,
     recordedByName: e.recorded_by_name,

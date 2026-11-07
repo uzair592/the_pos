@@ -50,12 +50,12 @@ export const CashAndBank: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Vyapar Navigation & Account Selection States
+  // Billz POS Navigation & Account Selection States
   const [viewMode, setViewMode] = useState<'MASTER_DETAIL' | 'BANK_GRID' | 'TRANSFERS'>('MASTER_DETAIL');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL'); // 'ALL' | 'CASH' | bankAccountId
   const [accountSearchQuery, setAccountSearchQuery] = useState<string>('');
 
-  // Vyapar Ledger Filter States
+  // Billz POS Ledger Filter States
   const [datePreset, setDatePreset] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'ALL' | 'CUSTOM'>('ALL');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
@@ -200,7 +200,7 @@ export const CashAndBank: React.FC = () => {
     };
   }, [selectedAccountId, summary, bankAccounts]);
 
-  // Compute Filtered Ledger & Running Balance (Vyapar trademark calculation)
+  // Compute Filtered Ledger & Running Balance (Billz POS trademark calculation)
   const { processedLedger, totalInflow, totalOutflow, netMovement } = useMemo(() => {
     // 1. Filter by Direction
     let rows = ledger.filter((item) => {
@@ -449,7 +449,7 @@ export const CashAndBank: React.FC = () => {
       <div className="p-8 flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center space-y-3">
           <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs font-bold text-slate-400">Loading Vyapar Cash & Bank Book...</span>
+          <span className="text-xs font-bold text-slate-400">Loading Billz POS Cash & Bank Book...</span>
         </div>
       </div>
     );
@@ -468,7 +468,7 @@ export const CashAndBank: React.FC = () => {
 
   return (
     <div className="p-6 sm:p-8 space-y-6">
-      {/* Vyapar Top Header & Action Controls Bar */}
+      {/* Billz POS Top Header & Action Controls Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2">
@@ -476,7 +476,7 @@ export const CashAndBank: React.FC = () => {
               Cash & Bank
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-              Vyapar System
+              Billz POS System
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -547,7 +547,7 @@ export const CashAndBank: React.FC = () => {
         </div>
       </div>
 
-      {/* Top Vyapar Financial Summary KPI Strip */}
+      {/* Top Billz POS Financial Summary KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard
           title="Cash in Hand (Drawer)"
@@ -582,7 +582,7 @@ export const CashAndBank: React.FC = () => {
         />
       </div>
 
-      {/* Vyapar View Selector Tabs */}
+      {/* Billz POS View Selector Tabs */}
       <div className="flex items-center space-x-2 border-b border-slate-200 dark:border-slate-800 pb-3 text-xs font-bold overflow-x-auto">
         <button
           onClick={() => setViewMode('MASTER_DETAIL')}
@@ -593,7 +593,7 @@ export const CashAndBank: React.FC = () => {
           }`}
         >
           <Layers className="w-4 h-4 text-brand-500" />
-          <span>Account Books (Vyapar Master-Detail)</span>
+          <span>Account Books (Billz POS Master-Detail)</span>
         </button>
 
         <button
@@ -622,11 +622,11 @@ export const CashAndBank: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* 1. VYAPAR ICONIC MASTER-DETAIL TWO-PANE ACCOUNT BOOK VIEW */}
+      {/* 1. Billz POS ICONIC MASTER-DETAIL TWO-PANE ACCOUNT BOOK VIEW */}
       {/* ========================================================================= */}
       {viewMode === 'MASTER_DETAIL' && (
         <div className="flex flex-col lg:flex-row gap-6 items-start">
-          {/* LEFT PANEL: VYAPAR ACCOUNT SELECTOR (30% WIDTH) */}
+          {/* LEFT PANEL: Billz POS ACCOUNT SELECTOR (30% WIDTH) */}
           <div className="w-full lg:w-80 shrink-0 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-400">
@@ -665,7 +665,7 @@ export const CashAndBank: React.FC = () => {
               />
             </div>
 
-            {/* List of Accounts in Vyapar Style */}
+            {/* List of Accounts in Billz POS Style */}
             <div className="space-y-1.5 max-h-[550px] overflow-y-auto pr-1">
               {/* Option 1: ALL ACCOUNTS (Consolidated Book) */}
               <button
@@ -870,7 +870,7 @@ export const CashAndBank: React.FC = () => {
             </div>
           </div>
 
-          {/* RIGHT PANEL: VYAPAR DETAILED ACCOUNT LEDGER & OPERATIONS (70% WIDTH) */}
+          {/* RIGHT PANEL: Billz POS DETAILED ACCOUNT LEDGER & OPERATIONS (70% WIDTH) */}
           <div className="flex-1 w-full space-y-4">
             {/* Selected Account Profile & Quick Action Card */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
@@ -955,7 +955,7 @@ export const CashAndBank: React.FC = () => {
               </div>
             </div>
 
-            {/* Vyapar Transaction Filter & Period Bar */}
+            {/* Billz POS Transaction Filter & Period Bar */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 {/* Direction Tabs (All, Inflow, Outflow, Contra) */}
@@ -1031,7 +1031,7 @@ export const CashAndBank: React.FC = () => {
                   )}
                 </div>
 
-                {/* Vyapar Inflow & Outflow Movement Tally */}
+                {/* Billz POS Inflow & Outflow Movement Tally */}
                 <div className="flex items-center space-x-4 text-xs font-bold">
                   <div>
                     <span className="text-slate-400 text-[10px] block font-semibold uppercase">Total Inflow (+)</span>
@@ -1055,7 +1055,7 @@ export const CashAndBank: React.FC = () => {
               </div>
             </div>
 
-            {/* The Vyapar Transaction Ledger Table with RUNNING BALANCE */}
+            {/* The Billz POS Transaction Ledger Table with RUNNING BALANCE */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
@@ -1471,29 +1471,39 @@ export const CashAndBank: React.FC = () => {
       <Modal
         isOpen={isTransferModalOpen}
         onClose={() => setIsTransferModalOpen(false)}
-        title="Transfer Funds (Cash ⇄ Bank Account)"
-        maxWidth="md"
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <ArrowRightLeft className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Transfer Funds (Cash ⇄ Bank Account)</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Move operating funds between cash drawer float and bank accounts</p>
+            </div>
+          </div>
+        }
+        maxWidth="xl"
       >
-        <form onSubmit={handleTransferSubmit} className="space-y-4 text-xs">
+        <form onSubmit={handleTransferSubmit} className="space-y-4">
           {/* Transfer Type Selector */}
           <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Select Transfer Mode
+            <label className="form-label">
+              Select Transfer Mode <span className="text-rose-500">*</span>
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() =>
                   setTransferForm({ ...transferForm, transferType: CashBankTransferType.CASH_TO_BANK })
                 }
-                className={`p-3 rounded-xl border flex flex-col items-center justify-center font-bold transition-all ${
+                className={`p-3.5 rounded-2xl border flex flex-col items-center justify-center font-bold transition-all ${
                   transferForm.transferType === CashBankTransferType.CASH_TO_BANK
                     ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 shadow-sm'
                     : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
                 }`}
               >
                 <ArrowUpRight className="w-5 h-5 mb-1 text-emerald-500" />
-                <span>Cash to Bank (Deposit)</span>
+                <span className="text-xs">Cash to Bank (Deposit)</span>
                 <span className="text-[10px] text-slate-400 mt-0.5">Drawer Cash → Bank Account</span>
               </button>
 
@@ -1502,14 +1512,14 @@ export const CashAndBank: React.FC = () => {
                 onClick={() =>
                   setTransferForm({ ...transferForm, transferType: CashBankTransferType.BANK_TO_CASH })
                 }
-                className={`p-3 rounded-xl border flex flex-col items-center justify-center font-bold transition-all ${
+                className={`p-3.5 rounded-2xl border flex flex-col items-center justify-center font-bold transition-all ${
                   transferForm.transferType === CashBankTransferType.BANK_TO_CASH
                     ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 shadow-sm'
                     : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
                 }`}
               >
                 <ArrowDownRight className="w-5 h-5 mb-1 text-amber-500" />
-                <span>Bank to Cash (Withdrawal)</span>
+                <span className="text-xs">Bank to Cash (Withdrawal)</span>
                 <span className="text-[10px] text-slate-400 mt-0.5">Bank Account → Drawer Cash</span>
               </button>
             </div>
@@ -1518,13 +1528,13 @@ export const CashAndBank: React.FC = () => {
           {/* Account Selection */}
           {transferForm.transferType === CashBankTransferType.CASH_TO_BANK ? (
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Destination Bank Account *
+              <label className="form-label">
+                Destination Bank Account <span className="text-rose-500">*</span>
               </label>
               <select
                 value={transferForm.toBankAccountId}
                 onChange={(e) => setTransferForm({ ...transferForm, toBankAccountId: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+                className="form-select font-bold"
                 required
               >
                 {bankAccounts.map((b) => (
@@ -1536,13 +1546,13 @@ export const CashAndBank: React.FC = () => {
             </div>
           ) : (
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Source Bank Account *
+              <label className="form-label">
+                Source Bank Account <span className="text-rose-500">*</span>
               </label>
               <select
                 value={transferForm.fromBankAccountId}
                 onChange={(e) => setTransferForm({ ...transferForm, fromBankAccountId: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+                className="form-select font-bold"
                 required
               >
                 {bankAccounts.map((b) => (
@@ -1557,11 +1567,11 @@ export const CashAndBank: React.FC = () => {
           {/* Transfer Amount */}
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="font-bold text-slate-700 dark:text-slate-300">
-                Transfer Amount ({currencySymbol}) *
+              <label className="form-label mb-0">
+                Transfer Amount ({currencySymbol}) <span className="text-rose-500">*</span>
               </label>
-              <span className="text-[11px] text-slate-400">
-                Drawer Float: {currencySymbol} {Number(summary?.totalCashInHand || 0).toLocaleString()}
+              <span className="text-xs text-slate-500">
+                Drawer Float: <strong className="font-mono text-slate-700 dark:text-slate-300">{currencySymbol} {Number(summary?.totalCashInHand || 0).toLocaleString()}</strong>
               </span>
             </div>
             <input
@@ -1572,16 +1582,16 @@ export const CashAndBank: React.FC = () => {
               placeholder="e.g. 25000"
               value={transferForm.amount}
               onChange={(e) => setTransferForm({ ...transferForm, amount: e.target.value })}
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-base font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+              className="form-input text-base font-black text-slate-900 dark:text-white font-mono"
             />
             {/* Quick Amount Pills */}
-            <div className="flex items-center space-x-1.5 mt-2">
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
               {[5000, 10000, 25000, 50000].map((quickAmt) => (
                 <button
                   key={quickAmt}
                   type="button"
                   onClick={() => setTransferForm({ ...transferForm, amount: String(quickAmt) })}
-                  className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300"
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 transition-colors"
                 >
                   +{quickAmt.toLocaleString()}
                 </button>
@@ -1590,7 +1600,7 @@ export const CashAndBank: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setTransferForm({ ...transferForm, amount: String(summary?.totalCashInHand || 0) })}
-                  className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold"
+                  className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 text-xs font-bold"
                 >
                   All Cash ({Number(summary?.totalCashInHand || 0).toLocaleString()})
                 </button>
@@ -1598,54 +1608,57 @@ export const CashAndBank: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Transfer Date *
+              <label className="form-label">
+                Transfer Date <span className="text-rose-500">*</span>
               </label>
               <input
                 type="date"
                 required
                 value={transferForm.transferDate}
                 onChange={(e) => setTransferForm({ ...transferForm, transferDate: e.target.value })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
+                className="form-input"
               />
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Slip / Cheque / Ref #
+              <label className="form-label">
+                Slip / Cheque / Ref # <span className="text-slate-400 font-normal">(Optional)</span>
               </label>
               <input
                 type="text"
                 placeholder="e.g. Slip #9821 / ATM-01"
                 value={transferForm.referenceNumber}
                 onChange={(e) => setTransferForm({ ...transferForm, referenceNumber: e.target.value })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 dark:text-white"
+                className="form-input font-medium"
               />
             </div>
           </div>
 
           <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Notes & Remarks (Optional)
+            <label className="form-label">
+              Notes & Remarks <span className="text-slate-400 font-normal">(Optional)</span>
             </label>
             <textarea
               rows={2}
               placeholder="Describe purpose of fund transfer..."
               value={transferForm.notes}
               onChange={(e) => setTransferForm({ ...transferForm, notes: e.target.value })}
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-white"
+              className="form-textarea"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full bg-brand-500 hover:bg-brand-600 text-white font-extrabold py-3 rounded-xl text-xs shadow-md transition-all disabled:opacity-50"
-          >
-            {isSubmitting ? 'Recording Transfer...' : 'Complete Transfer'}
-          </button>
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full h-11 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center space-x-2"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{isSubmitting ? 'Recording Transfer...' : 'Complete Transfer'}</span>
+            </button>
+          </div>
         </form>
       </Modal>
 
@@ -1655,25 +1668,37 @@ export const CashAndBank: React.FC = () => {
       <Modal
         isOpen={isAccountModalOpen}
         onClose={() => setIsAccountModalOpen(false)}
-        title={accountForm.id ? 'Edit Bank Account' : 'Register New Bank Account'}
-        maxWidth="md"
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {accountForm.id ? 'Edit Bank Account' : 'Register New Bank Account'}
+              </h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Manage bank accounts, digital wallets, or merchant accounts</p>
+            </div>
+          </div>
+        }
+        maxWidth="xl"
       >
-        <form onSubmit={handleAccountSubmit} className="space-y-4 text-xs">
+        <form onSubmit={handleAccountSubmit} className="space-y-4">
           <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Bank Name *</label>
+            <label className="form-label">Bank / Provider Name <span className="text-rose-500">*</span></label>
             <input
               type="text"
               required
               placeholder="e.g. Meezan Bank, HBL, MCB, EasyPaisa, JazzCash"
               value={accountForm.bankName}
               onChange={(e) => setAccountForm({ ...accountForm, bankName: e.target.value })}
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
+              className="form-input"
             />
           </div>
 
           <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Account Title / Name *
+            <label className="form-label">
+              Account Title / Holder Name <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -1681,37 +1706,37 @@ export const CashAndBank: React.FC = () => {
               placeholder="e.g. Restaurant Operating Account"
               value={accountForm.accountName}
               onChange={(e) => setAccountForm({ ...accountForm, accountName: e.target.value })}
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
+              className="form-input"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Account Number</label>
+              <label className="form-label">Account Number</label>
               <input
                 type="text"
                 placeholder="e.g. 02010108928371"
                 value={accountForm.accountNumber}
                 onChange={(e) => setAccountForm({ ...accountForm, accountNumber: e.target.value })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-medium text-slate-900 dark:text-white"
+                className="form-input font-mono"
               />
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">IBAN</label>
+              <label className="form-label">IBAN</label>
               <input
                 type="text"
                 placeholder="e.g. PK12MEZN0002010108928371"
                 value={accountForm.iban}
                 onChange={(e) => setAccountForm({ ...accountForm, iban: e.target.value })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-medium text-slate-900 dark:text-white"
+                className="form-input font-mono"
               />
             </div>
           </div>
 
           {!accountForm.id && (
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="form-label">
                 Opening Balance ({currencySymbol})
               </label>
               <input
@@ -1720,12 +1745,12 @@ export const CashAndBank: React.FC = () => {
                 min="0"
                 value={accountForm.openingBalance}
                 onChange={(e) => setAccountForm({ ...accountForm, openingBalance: e.target.value })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-black text-slate-900 dark:text-white"
+                className="form-input font-mono font-bold"
               />
             </div>
           )}
 
-          <div className="flex items-center space-x-2 pt-2">
+          <div className="flex items-center space-x-3 pt-2">
             <input
               type="checkbox"
               id="isDefault"
@@ -1738,13 +1763,16 @@ export const CashAndBank: React.FC = () => {
             </label>
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full bg-brand-500 hover:bg-brand-600 text-white font-extrabold py-3 rounded-xl text-xs shadow-md transition-all disabled:opacity-50"
-          >
-            {isSubmitting ? 'Saving Account...' : accountForm.id ? 'Save Changes' : 'Create Bank Account'}
-          </button>
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full h-11 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center space-x-2"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{isSubmitting ? 'Saving Account...' : accountForm.id ? 'Save Changes' : 'Create Bank Account'}</span>
+            </button>
+          </div>
         </form>
       </Modal>
 

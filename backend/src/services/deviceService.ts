@@ -50,10 +50,10 @@ export async function getTenantMaxConcurrentDevices(tenantId: string): Promise<n
   const sub = await getTenantSubscriptionDetails(tenantId);
   const planLimit = sub?.entitlements?.maxDevices || sub?.entitlements?.maxConcurrentDevices;
   if (planLimit !== undefined && planLimit !== null && planLimit > 0) {
-    return Number(planLimit);
+    return Math.max(1, Number(planLimit));
   }
 
-  return 4; // Standard enterprise default
+  return 4; // Default standard plan
 }
 
 /**
@@ -155,10 +155,10 @@ export async function verifyAndEnforceConcurrentLimit(
     await query(
       `
       UPDATE active_device_sessions
-      SET last_heartbeat_at = CURRENT_TIMESTAMP, status = 'ONLINE', ip_address = $1, user_id = $2, user_name = $3
-      WHERE id = $4
+      SET last_heartbeat_at = CURRENT_TIMESTAMP, status = 'ONLINE', ip_address = $1, user_id = $2, user_name = $3, device_fingerprint = $4
+      WHERE id = $5
       `,
-      [ipAddress || null, userId || null, userName || null, existing.id],
+      [ipAddress || null, userId || null, userName || null, deviceFingerprint, existing.id],
       { tenantId }
     );
     return {
@@ -169,18 +169,36 @@ export async function verifyAndEnforceConcurrentLimit(
     };
   }
 
-  // If limit reached, reject fifth device with clear messaging and active session list
+  // If limit reached, check if there are stale sessions (> 3 mins) to evict
   if (summary.connectedCount >= summary.maxConcurrentLimit) {
-    return {
-      allowed: false,
-      error: `${summary.connectedCount} devices are currently connected. Your maximum concurrent device limit has been reached (${summary.connectedCount}/${summary.maxConcurrentLimit}).`,
-      connectedCount: summary.connectedCount,
-      maxLimit: summary.maxConcurrentLimit,
-      activeSessions: summary.activeSessions,
-    };
+    const { rows: evicted } = await query(
+      `
+      UPDATE active_device_sessions
+      SET status = 'OFFLINE'
+      WHERE id IN (
+        SELECT id FROM active_device_sessions
+        WHERE tenant_id = $1 AND status = 'ONLINE' AND last_heartbeat_at < NOW() - INTERVAL '3 minutes'
+        ORDER BY last_heartbeat_at ASC
+        LIMIT 1
+      )
+      RETURNING id
+      `,
+      [tenantId],
+      { tenantId }
+    );
+
+    if (evicted.length === 0) {
+      return {
+        allowed: false,
+        error: `${summary.connectedCount} devices are currently connected. Your maximum concurrent device limit has been reached (${summary.connectedCount}/${summary.maxConcurrentLimit}).`,
+        connectedCount: summary.connectedCount,
+        maxLimit: summary.maxConcurrentLimit,
+        activeSessions: summary.activeSessions,
+      };
+    }
   }
 
-  // Create active session
+  // Create or reactivate active session
   const sessionToken = crypto.randomBytes(24).toString('hex');
   const { rows: inserted } = await query(
     `
@@ -189,6 +207,18 @@ export async function verifyAndEnforceConcurrentLimit(
       device_name, device_type, ip_address, os_info, app_version,
       status, session_token, last_heartbeat_at
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ONLINE', $11, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, device_fingerprint) DO UPDATE SET
+      branch_id = EXCLUDED.branch_id,
+      user_id = EXCLUDED.user_id,
+      user_name = EXCLUDED.user_name,
+      device_name = EXCLUDED.device_name,
+      device_type = EXCLUDED.device_type,
+      ip_address = EXCLUDED.ip_address,
+      os_info = EXCLUDED.os_info,
+      app_version = EXCLUDED.app_version,
+      status = 'ONLINE',
+      session_token = EXCLUDED.session_token,
+      last_heartbeat_at = CURRENT_TIMESTAMP
     RETURNING id
     `,
     [
@@ -197,11 +227,11 @@ export async function verifyAndEnforceConcurrentLimit(
       userId || null,
       userName || null,
       deviceFingerprint,
-      deviceName || 'Terminal',
-      deviceType || 'DESKTOP',
-      ipAddress || null,
+      (deviceName || 'Terminal').slice(0, 255),
+      (deviceType || 'DESKTOP').slice(0, 50),
+      ipAddress ? ipAddress.slice(0, 255) : null,
       osInfo || null,
-      appVersion || '1.0.0',
+      (appVersion || '1.0.0').slice(0, 50),
       sessionToken,
     ],
     { tenantId }
@@ -220,7 +250,15 @@ export async function verifyAndEnforceConcurrentLimit(
       last_user_name = COALESCE(EXCLUDED.last_user_name, registered_devices.last_user_name),
       is_active = true
     `,
-    [tenantId, branchId, deviceFingerprint, deviceName, deviceType, ipAddress || null, userName || null],
+    [
+      tenantId,
+      branchId,
+      deviceFingerprint ? deviceFingerprint.slice(0, 255) : 'unknown',
+      (deviceName || 'Terminal').slice(0, 255),
+      (deviceType || 'DESKTOP').slice(0, 50),
+      ipAddress ? ipAddress.slice(0, 255) : null,
+      userName ? userName.slice(0, 255) : null,
+    ],
     { tenantId }
   );
 
@@ -265,3 +303,58 @@ export async function revokeDeviceSession(
   }
   return false;
 }
+
+/**
+ * Mark a device session OFFLINE on logout
+ */
+export async function logoutDeviceSession(
+  tenantId: string,
+  sessionId?: string,
+  deviceFingerprint?: string
+): Promise<boolean> {
+  if (deviceFingerprint) {
+    const { rows } = await query(
+      `UPDATE active_device_sessions SET status = 'OFFLINE', last_heartbeat_at = CURRENT_TIMESTAMP WHERE device_fingerprint = $1 AND tenant_id = $2 RETURNING id`,
+      [deviceFingerprint, tenantId],
+      { tenantId }
+    );
+    if (rows.length > 0) return true;
+  }
+  if (sessionId) {
+    const { rows } = await query(
+      `UPDATE active_device_sessions SET status = 'OFFLINE', last_heartbeat_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2 RETURNING id`,
+      [sessionId, tenantId],
+      { tenantId }
+    );
+    return rows.length > 0;
+  }
+  return false;
+}
+
+/**
+ * Update heartbeat for an active device session to keep it ONLINE
+ */
+export async function heartbeatDeviceSession(
+  tenantId: string,
+  sessionId?: string,
+  deviceFingerprint?: string
+): Promise<boolean> {
+  if (deviceFingerprint) {
+    const { rows } = await query(
+      `UPDATE active_device_sessions SET status = 'ONLINE', last_heartbeat_at = CURRENT_TIMESTAMP WHERE device_fingerprint = $1 AND tenant_id = $2 AND status != 'REVOKED' RETURNING id`,
+      [deviceFingerprint, tenantId],
+      { tenantId }
+    );
+    if (rows.length > 0) return true;
+  }
+  if (sessionId) {
+    const { rows } = await query(
+      `UPDATE active_device_sessions SET status = 'ONLINE', last_heartbeat_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2 AND status != 'REVOKED' RETURNING id`,
+      [sessionId, tenantId],
+      { tenantId }
+    );
+    return rows.length > 0;
+  }
+  return false;
+}
+

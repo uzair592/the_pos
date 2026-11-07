@@ -109,6 +109,9 @@ export async function seedDemoRestaurant() {
     console.log(`Using existing Tenant: ${tenantId}`);
   }
 
+  // Clear active device sessions on re-seed so fresh tests have full concurrent quota
+  await query('DELETE FROM active_device_sessions WHERE tenant_id = $1', [tenantId], { isSuperAdmin: true });
+
   // 4. Create or Update Branch
   let branchId: string;
   const { rows: existingBranches } = await query(
@@ -827,7 +830,51 @@ export async function seedDemoRestaurant() {
   }
   console.log('Seeded sample inter-branch stock transfers.');
 
-    console.log('✅ Demo restaurant seeding completed successfully!');
+  // Seed santex cafe if not present
+  const santexEmail = 'kashif@santex.com';
+  const { rows: existingSantex } = await query('SELECT id FROM users WHERE email = $1', [santexEmail], { isSuperAdmin: true });
+  if (existingSantex.length === 0) {
+    const { rows: santexTenant } = await query(
+      `INSERT INTO tenants (name, legal_name, subdomain, owner_name, email, phone, address, city, country, currency, time_zone, business_type, is_active, is_onboarded)
+       VALUES ('santex cafe', 'Santex Cafe Ltd', 'santex-cafe', 'Kashif', $1, '+92 300 0000000', 'Gulberg', 'Lahore', 'Pakistan', 'PKR', 'Asia/Karachi', 'CAFE', true, true)
+       ON CONFLICT (email) DO UPDATE SET is_active = true
+       RETURNING id`,
+      [santexEmail],
+      { isSuperAdmin: true }
+    );
+    const sTenantId = santexTenant[0].id;
+    await query(
+      `INSERT INTO tenant_subscriptions (tenant_id, plan_id, status, current_period_start, current_period_end)
+       VALUES ($1, $2, 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 year')
+       ON CONFLICT DO NOTHING`,
+      [sTenantId, planId],
+      { isSuperAdmin: true }
+    );
+    const { rows: sBranch } = await query(
+      `INSERT INTO branches (tenant_id, name, code, phone, email, address, city, state, is_main_branch, is_active)
+       VALUES ($1, 'Main Branch', 'SANTEX-01', '+92 42 1234567', $2, 'Gulberg', 'Lahore', 'Punjab', true, true)
+       RETURNING id`,
+      [sTenantId, santexEmail],
+      { isSuperAdmin: true }
+    );
+    const sBranchId = sBranch[0].id;
+    await query(
+      `INSERT INTO users (tenant_id, branch_id, email, password_hash, full_name, role, is_active)
+       VALUES ($1, $2, $3, $4, 'Kashif (Owner)', 'RESTAURANT_OWNER', true)
+       ON CONFLICT (email) DO UPDATE SET password_hash = $4, is_active = true`,
+      [sTenantId, sBranchId, santexEmail, userPasswordHash],
+      { isSuperAdmin: true }
+    );
+    console.log('Seeded santex cafe (kashif@santex.com).');
+  } else {
+    await query(
+      'UPDATE users SET password_hash = $1, is_active = true WHERE email = $2',
+      [userPasswordHash, santexEmail],
+      { isSuperAdmin: true }
+    );
+  }
+
+  console.log('✅ Demo restaurant seeding completed successfully!');
 }
 
 if (process.argv[1] && process.argv[1].endsWith('seed_demo_restaurant.ts')) {

@@ -67,4 +67,52 @@ export async function customerRoutes(fastify: FastifyInstance) {
 
     return reply.send({ customer: custRows[0], recentOrders: orders });
   });
+
+  /**
+   * Record Customer Payment-In (Alt + I)
+   * Reduces outstanding customer balance and updates ledger
+   */
+  fastify.post('/api/customers/:id/payment', {
+    preHandler: [requirePermission(Permission.CUSTOMERS_MANAGE)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    const { amount, paymentMethod, reference, notes } = req.body as {
+      amount: number;
+      paymentMethod?: string;
+      reference?: string;
+      notes?: string;
+    };
+
+    if (!amount || Number(amount) <= 0) {
+      return reply.status(400).send({ error: 'Valid payment amount is required' });
+    }
+
+    const { rows: custRows } = await query('SELECT * FROM customers WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+    if (custRows.length === 0) return reply.status(404).send({ error: 'Customer not found' });
+
+    const currentBal = Number(custRows[0].outstanding_balance || 0);
+    const newBalance = Math.max(0, currentBal - Number(amount));
+
+    const { rows: updated } = await query(
+      `
+      UPDATE customers
+      SET outstanding_balance = $1, updated_at = NOW()
+      WHERE id = $2 AND tenant_id = $3
+      RETURNING *
+      `,
+      [newBalance, id, tenantId],
+      { tenantId }
+    );
+
+    return reply.send({
+      message: 'Payment-In recorded successfully',
+      customer: updated[0],
+      amountPaid: Number(amount),
+      paymentMethod: paymentMethod || 'CASH',
+      reference: reference || null,
+      previousBalance: currentBal,
+      newBalance,
+    });
+  });
 }

@@ -57,6 +57,11 @@ export enum Permission {
   BRANCHES_MANAGE = 'branches:manage',
   SETTINGS_MANAGE = 'settings:manage',
   CUSTOMERS_MANAGE = 'customers:manage',
+
+  // Reservations & Waitlist
+  RESERVATIONS_VIEW = 'reservations:view',
+  RESERVATIONS_MANAGE = 'reservations:manage',
+  WAITLIST_MANAGE = 'waitlist:manage',
 }
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
@@ -94,6 +99,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
     Permission.BRANCHES_MANAGE,
     Permission.SETTINGS_MANAGE,
     Permission.CUSTOMERS_MANAGE,
+    Permission.RESERVATIONS_VIEW,
+    Permission.RESERVATIONS_MANAGE,
+    Permission.WAITLIST_MANAGE,
   ],
   [SystemRole.BRANCH_MANAGER]: [
     Permission.ORDERS_CREATE,
@@ -118,6 +126,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
     Permission.EXPENSES_MANAGE,
     Permission.REPORTS_SALES,
     Permission.CUSTOMERS_MANAGE,
+    Permission.RESERVATIONS_VIEW,
+    Permission.RESERVATIONS_MANAGE,
+    Permission.WAITLIST_MANAGE,
   ],
   [SystemRole.CASHIER]: [
     Permission.ORDERS_CREATE,
@@ -131,6 +142,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
     Permission.SHIFTS_VIEW,
     Permission.CASH_ADJUST,
     Permission.CUSTOMERS_MANAGE,
+    Permission.RESERVATIONS_VIEW,
+    Permission.RESERVATIONS_MANAGE,
+    Permission.WAITLIST_MANAGE,
   ],
   [SystemRole.WAITER]: [
     Permission.ORDERS_CREATE,
@@ -138,6 +152,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
     Permission.ORDERS_EDIT,
     Permission.TABLES_VIEW,
     Permission.MENU_VIEW,
+    Permission.RESERVATIONS_VIEW,
+    Permission.WAITLIST_MANAGE,
   ],
   [SystemRole.KITCHEN_STAFF]: [
     Permission.KDS_VIEW,
@@ -171,6 +187,7 @@ export interface AuthUser {
   role: SystemRole;
   permissions: Permission[];
   isActive: boolean;
+  deviceId?: string;
 }
 
 export interface AuthTokenPayload {

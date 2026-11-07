@@ -777,7 +777,7 @@ export async function getCashBankLedger(
       outflow: Number(e.amount),
       reference: e.category_name,
       recordedBy: e.recorded_by_name || 'Staff',
-      notes: e.description,
+      notes: e.title ? `${e.title}${e.paid_to ? ` (To: ${e.paid_to})` : ''}${e.description && e.description !== e.title ? ` - ${e.description}` : ''}` : e.description,
     });
   }
 

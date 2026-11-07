@@ -54,13 +54,20 @@ export interface Expense {
   id: string;
   tenantId: string;
   branchId: string;
+  branchName?: string;
   categoryId: string;
   categoryName?: string;
+  title?: string;
   amount: number;
   paymentMethod: PaymentMethod;
+  bankAccountId?: string | null;
+  bankAccountName?: string | null;
+  paidTo?: string | null;
   description: string;
+  notes?: string | null;
   receiptUrl?: string;
   recordedByUserId: string;
+  recordedByName?: string;
   expenseDate: string;
   createdAt: string;
 }

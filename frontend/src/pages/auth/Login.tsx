@@ -56,7 +56,7 @@ export const Login: React.FC = () => {
         deviceName: navigator.userAgent.includes('Mobile') ? 'Mobile Tablet' : 'POS Terminal',
       });
 
-      login(data.token, data.user);
+      login(data.token, data.user, data.sessionId, fingerprint);
 
       if (data.user.role === 'SUPER_ADMIN') {
         navigate('/platform-admin', { replace: true });
@@ -64,7 +64,11 @@ export const Login: React.FC = () => {
         navigate('/hub', { replace: true });
       }
     } catch (err: any) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      if (err.data?.code === 'CONCURRENT_LIMIT_REACHED') {
+        setError(`Concurrent Session Limit Reached: ${err.message || 'Maximum active devices connected'}. Please log out from another device or revoke an idle session.`);
+      } else {
+        setError(err.message || 'Login failed. Please check your credentials.');
+      }
     } finally {
       setLoading(false);
     }
@@ -174,7 +178,7 @@ export const Login: React.FC = () => {
           </button>
         </form>
 
-        {/* Collapsible Demo Accounts Reference (For testing) */}
+        {/* Collapsible Demo Accounts Reference (Click to Auto-Fill) */}
         <div className="pt-2">
           <button
             type="button"
@@ -183,34 +187,58 @@ export const Login: React.FC = () => {
           >
             <span className="flex items-center space-x-1.5">
               <HelpCircle className="w-3.5 h-3.5 text-blue-400" />
-              <span>Available Demo Credentials</span>
+              <span>Available Demo Credentials (Click to Fill)</span>
             </span>
             <span className="text-[10px] text-slate-500">{showGuide ? 'Hide ▲' : 'Show ▼'}</span>
           </button>
 
           {showGuide && (
-            <div className="mt-2 p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2 text-[11px] text-slate-300 animate-in fade-in">
+            <div className="mt-2 p-3 bg-slate-900/90 border border-slate-800 rounded-xl space-y-2 text-[11px] text-slate-300 animate-in fade-in">
               <div className="flex justify-between items-center py-1 border-b border-slate-800">
                 <span className="text-slate-400 font-bold">Standard Password:</span>
                 <span className="font-mono text-emerald-400 font-bold">Password123!</span>
               </div>
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <span>🍽️ Waiter:</span>
-                  <span className="font-mono text-slate-300">waiter@lahorekarahi.com</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>👨‍🍳 Kitchen:</span>
-                  <span className="font-mono text-slate-300">kitchen@lahorekarahi.com</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>💵 Cashier:</span>
-                  <span className="font-mono text-slate-300">cashier@lahorekarahi.com</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>👑 Owner:</span>
-                  <span className="font-mono text-slate-300">owner@lahorekarahi.com</span>
-                </div>
+              <div className="space-y-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setEmail('owner@lahorekarahi.com'); setPassword('Password123!'); setError(''); }}
+                  className="w-full flex justify-between items-center px-2 py-1.5 rounded-lg bg-slate-800/50 hover:bg-blue-600/20 hover:border-blue-500/40 border border-transparent transition-all text-left"
+                >
+                  <span className="font-bold text-slate-200">👑 Owner (Lahore Karahi):</span>
+                  <span className="font-mono text-blue-400 text-[10px]">owner@lahorekarahi.com</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEmail('cashier@lahorekarahi.com'); setPassword('Password123!'); setError(''); }}
+                  className="w-full flex justify-between items-center px-2 py-1.5 rounded-lg bg-slate-800/50 hover:bg-blue-600/20 hover:border-blue-500/40 border border-transparent transition-all text-left"
+                >
+                  <span className="font-bold text-slate-200">💵 Cashier (Express POS):</span>
+                  <span className="font-mono text-blue-400 text-[10px]">cashier@lahorekarahi.com</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEmail('waiter@lahorekarahi.com'); setPassword('Password123!'); setError(''); }}
+                  className="w-full flex justify-between items-center px-2 py-1.5 rounded-lg bg-slate-800/50 hover:bg-blue-600/20 hover:border-blue-500/40 border border-transparent transition-all text-left"
+                >
+                  <span className="font-bold text-slate-200">🍽️ Waiter:</span>
+                  <span className="font-mono text-blue-400 text-[10px]">waiter@lahorekarahi.com</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEmail('kitchen@lahorekarahi.com'); setPassword('Password123!'); setError(''); }}
+                  className="w-full flex justify-between items-center px-2 py-1.5 rounded-lg bg-slate-800/50 hover:bg-blue-600/20 hover:border-blue-500/40 border border-transparent transition-all text-left"
+                >
+                  <span className="font-bold text-slate-200">👨‍🍳 Kitchen Display (KDS):</span>
+                  <span className="font-mono text-blue-400 text-[10px]">kitchen@lahorekarahi.com</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEmail('kashif@santex.com'); setPassword('Password123!'); setError(''); }}
+                  className="w-full flex justify-between items-center px-2 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 hover:border-amber-500/40 border border-amber-500/20 transition-all text-left"
+                >
+                  <span className="font-bold text-amber-300">☕ santex cafe (Newly Created):</span>
+                  <span className="font-mono text-amber-400 text-[10px]">kashif@santex.com</span>
+                </button>
               </div>
             </div>
           )}

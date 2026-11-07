@@ -80,7 +80,7 @@ export const PlatformTenants: React.FC = () => {
     country: 'Pakistan',
     currency: 'PKR',
     timeZone: 'Asia/Karachi',
-    businessType: 'RESTAURANT',
+    businessType: 'FINE_DINE',
     maxConcurrentDevices: 4,
   });
 
@@ -242,7 +242,7 @@ export const PlatformTenants: React.FC = () => {
       country: tenant.country || 'Pakistan',
       currency: tenant.currency || 'PKR',
       timeZone: tenant.time_zone || 'Asia/Karachi',
-      businessType: tenant.business_type || 'RESTAURANT',
+      businessType: tenant.business_type || 'FINE_DINE',
       maxConcurrentDevices: tenant.max_concurrent_devices || 4,
     });
     setIsEditOpen(true);
@@ -267,7 +267,12 @@ export const PlatformTenants: React.FC = () => {
   const handleCreateTenant = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/platform/tenants', createForm);
+      const recommendedPlan = plans.find((p) => p.code === 'GROWTH') || plans[0];
+      const payload = {
+        ...createForm,
+        planId: createForm.planId || recommendedPlan?.id || undefined,
+      };
+      await api.post('/platform/tenants', payload);
       success(`Restaurant "${createForm.name}" created and initialized with 14-day access`);
       setIsCreateOpen(false);
       setCreateForm({
@@ -488,7 +493,12 @@ export const PlatformTenants: React.FC = () => {
             <span>Refresh</span>
           </button>
           <button
-            onClick={() => setIsCreateOpen(true)}
+            onClick={() => {
+              if (plans.length > 0 && !createForm.planId) {
+                setCreateForm((prev) => ({ ...prev, planId: plans[0].id }));
+              }
+              setIsCreateOpen(true);
+            }}
             className="flex items-center space-x-2 bg-brand-500 hover:bg-brand-600 text-white px-4 py-2 rounded-xl font-bold text-xs shadow-md transition-all"
           >
             <Plus className="w-4 h-4" />
@@ -853,7 +863,7 @@ export const PlatformTenants: React.FC = () => {
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Subscription Plan</label>
               <select
-                value={createForm.planId}
+                value={createForm.planId || (plans.find((p) => p.code === 'GROWTH')?.id || plans[0]?.id || '')}
                 onChange={(e) => setCreateForm({ ...createForm, planId: e.target.value })}
                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
               >
@@ -963,6 +973,22 @@ export const PlatformTenants: React.FC = () => {
                 onChange={(e) => setEditForm({ ...editForm, currency: e.target.value })}
                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
               />
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Business Type</label>
+              <select
+                value={editForm.businessType}
+                onChange={(e) => setEditForm({ ...editForm, businessType: e.target.value })}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white"
+              >
+                <option value="CAFE">Café / Coffee Shop</option>
+                <option value="FAST_FOOD">Fast Food / Burger Joint</option>
+                <option value="FINE_DINE">Fine Dine Restaurant</option>
+                <option value="TAKEAWAY">Takeaway / Delivery Outlet</option>
+                <option value="BAKERY">Bakery & Pastry</option>
+                <option value="FOOD_TRUCK">Food Truck</option>
+                <option value="OTHER">Other</option>
+              </select>
             </div>
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">

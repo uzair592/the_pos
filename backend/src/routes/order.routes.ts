@@ -25,13 +25,19 @@ export async function orderRoutes(fastify: FastifyInstance) {
   fastify.post('/api/orders', {
     preHandler: [requirePermission(Permission.ORDERS_CREATE)],
   }, async (req, reply) => {
-    const payload = { ...((req.body as any) || {}), branchId: (req.body as any)?.branchId || req.user?.branchId };
+    const tenantId = req.user!.tenantId!;
+    let effectiveBranchId = (req.body as any)?.branchId || req.user?.branchId;
+    if (!effectiveBranchId) {
+      const bRes = await query('SELECT id FROM branches WHERE tenant_id = $1 ORDER BY is_main_branch DESC, created_at ASC LIMIT 1', [tenantId], { tenantId });
+      if (bRes.rows.length > 0) {
+        effectiveBranchId = bRes.rows[0].id;
+      }
+    }
+    const payload = { ...((req.body as any) || {}), branchId: effectiveBranchId };
     const parsed = CreateOrderSchema.safeParse(payload);
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.format() });
     }
-
-    const tenantId = req.user!.tenantId!;
     const {
       branchId,
       orderType,
@@ -53,47 +59,76 @@ export async function orderRoutes(fastify: FastifyInstance) {
       idempotencyKey,
     } = parsed.data;
 
-    const result = await createOrder({
-      tenantId,
-      branchId,
-      cashierId: req.user!.id,
-      cashierName: req.user!.fullName,
-      orderType,
-      tableId,
-      coverCount,
-      customerId,
-      customerName,
-      customerPhone,
-      deliveryAddress,
-      deliveryFee,
-      riderName,
-      riderPhone,
-      billDiscountPercent,
-      billDiscountAmount,
-      waiterId,
-      shiftId,
-      orderNotes,
-      idempotencyKey,
-      items,
-    });
-
-    // Multi-device sync event
-    if (result && result.order) {
-      await emitSyncEvent(query, {
+    try {
+      const result = await createOrder({
         tenantId,
         branchId,
-        eventType: 'ORDER_CREATED',
-        entityId: result.order.id,
-        payload: {
-          orderNumber: result.order.order_number,
-          orderType,
-          tableId,
-          status: result.order.status,
-        },
+        cashierId: req.user!.id,
+        cashierName: req.user!.fullName,
+        orderType,
+        tableId,
+        coverCount,
+        customerId,
+        customerName,
+        customerPhone,
+        deliveryAddress,
+        deliveryFee,
+        riderName,
+        riderPhone,
+        billDiscountPercent,
+        billDiscountAmount,
+        waiterId,
+        shiftId,
+        orderNotes,
+        idempotencyKey,
+        items,
       });
-    }
 
-    return reply.status(201).send(result);
+      // Multi-device sync event
+      if (result && result.order && !(result as any).duplicate) {
+        await emitSyncEvent(query, {
+          tenantId,
+          branchId,
+          eventType: 'ORDER_CREATED',
+          entityId: result.order.id,
+          payload: {
+            orderNumber: result.order.order_number,
+            orderType,
+            tableId,
+            status: result.order.status,
+          },
+        });
+      }
+
+      const statusCode = (result as any).duplicate ? 200 : 201;
+      return reply.status(statusCode).send(result);
+    } catch (err: any) {
+      if (err.message && (err.message.includes('not found') || err.message.includes('Invalid'))) {
+        return reply.status(400).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
+
+  /**
+   * Dedicated list of known riders used in delivery orders
+   */
+  fastify.get('/api/orders/riders', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { rows } = await query(
+      `
+      SELECT DISTINCT rider_name as name, COALESCE(rider_phone, '') as phone
+      FROM orders
+      WHERE tenant_id = $1
+        AND rider_name IS NOT NULL
+        AND TRIM(rider_name) != ''
+      ORDER BY rider_name ASC
+      LIMIT 100
+      `,
+      [tenantId],
+      { tenantId }
+    );
+    return reply.send({ riders: rows });
   });
 
   /**
@@ -113,13 +148,15 @@ export async function orderRoutes(fastify: FastifyInstance) {
              t.name as restaurant_name,
              rs.currency_symbol,
              rs.tax_registration_number,
-             rs.receipt_settings
+             rs.receipt_settings,
+             (SELECT status FROM kitchen_tickets WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) as kitchen_status,
+             (SELECT kot_number FROM kitchen_tickets WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) as latest_kot_number
       FROM orders o
       LEFT JOIN branches b ON b.id = o.branch_id
       LEFT JOIN tenants t ON t.id = o.tenant_id
       LEFT JOIN restaurant_settings rs ON rs.tenant_id = o.tenant_id
       WHERE o.tenant_id = $1
-        AND o.status IN ('PENDING', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'OUT_FOR_DELIVERY', 'ON_HOLD')
+        AND o.status IN ('NEW', 'PENDING', 'QUEUED', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'OUT_FOR_DELIVERY', 'ON_HOLD')
     `;
     const params: any[] = [tenantId];
 
@@ -191,8 +228,12 @@ export async function orderRoutes(fastify: FastifyInstance) {
       whereClause += ` AND o.branch_id = $${params.length}`;
     }
     if (status) {
-      params.push(status);
-      whereClause += ` AND o.status = $${params.length}`;
+      if (status === 'ACTIVE') {
+        whereClause += ` AND o.status IN ('NEW', 'PENDING', 'QUEUED', 'CONFIRMED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'OUT_FOR_DELIVERY', 'ON_HOLD')`;
+      } else {
+        params.push(status);
+        whereClause += ` AND o.status = $${params.length}`;
+      }
     }
     if (orderType) {
       params.push(orderType);
@@ -229,9 +270,11 @@ export async function orderRoutes(fastify: FastifyInstance) {
       SELECT o.*,
              b.name as branch_name,
              (SELECT COUNT(*)::int FROM order_items WHERE order_id = o.id) as item_count,
-             (SELECT COALESCE(SUM(cogs), 0)::numeric FROM order_items WHERE order_id = o.id) as total_cogs
+             (SELECT COALESCE(SUM(cogs), 0)::numeric FROM order_items WHERE order_id = o.id) as total_cogs,
+             (SELECT status FROM kitchen_tickets WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) as kitchen_status,
+             (SELECT kot_number FROM kitchen_tickets WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) as latest_kot_number
       FROM orders o
-      JOIN branches b ON b.id = o.branch_id
+      LEFT JOIN branches b ON b.id = o.branch_id
       ${whereClause}
       ORDER BY o.created_at DESC
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -338,6 +381,23 @@ export async function orderRoutes(fastify: FastifyInstance) {
         );
       }
 
+      if (order.table_id && order.order_type === OrderType.DINE_IN) {
+        await query(
+          `UPDATE kitchen_tickets
+           SET status = 'SERVED', completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)
+           WHERE order_id = $1 AND tenant_id = $2 AND status IN ('ACCEPTED', 'PREPARING', 'READY')`,
+          [id, tenantId],
+          { tenantId }
+        );
+        await query(
+          `UPDATE kitchen_ticket_items
+           SET status = 'SERVED'
+           WHERE kot_id IN (SELECT id FROM kitchen_tickets WHERE order_id = $1 AND tenant_id = $2) AND status IN ('ACCEPTED', 'PREPARING', 'READY')`,
+          [id, tenantId],
+          { tenantId }
+        );
+      }
+
       // Deduct FIFO inventory if not already deducted
       await withTransaction(async (client) => {
         await deductInventoryForOrder(client, tenantId, order.branch_id, id, req.user!.id);
@@ -350,9 +410,15 @@ export async function orderRoutes(fastify: FastifyInstance) {
           { tenantId }
         );
       }
+
       await query(
         'UPDATE kitchen_tickets SET status = $1 WHERE order_id = $2 AND tenant_id = $3',
-        [OrderStatus.CANCELLED, id, tenantId],
+        [PrepStatus.CANCELLED, id, tenantId],
+        { tenantId }
+      );
+      await query(
+        'UPDATE kitchen_ticket_items SET status = $1 WHERE kot_id IN (SELECT id FROM kitchen_tickets WHERE order_id = $2 AND tenant_id = $3)',
+        [PrepStatus.CANCELLED, id, tenantId],
         { tenantId }
       );
     }

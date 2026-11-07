@@ -479,11 +479,26 @@ export const StaffManagement: React.FC = () => {
       {/* ======================================================== */}
       {/* MODAL 1: ADD NEW EMPLOYEE */}
       {/* ======================================================== */}
-      <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Add Restaurant Staff Member" maxWidth="md">
-        <form onSubmit={handleCreateStaff} className="space-y-4 text-xs">
+      <Modal
+        isOpen={isAddOpen}
+        onClose={() => setIsAddOpen(false)}
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Add Restaurant Staff Member</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Register login credentials and assign roles for POS, KDS & Dashboard</p>
+            </div>
+          </div>
+        }
+        maxWidth="xl"
+      >
+        <form onSubmit={handleCreateStaff} className="space-y-4">
           <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Full Name *
+            <label className="form-label">
+              Full Name <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -491,13 +506,13 @@ export const StaffManagement: React.FC = () => {
               placeholder="e.g. Asad Ali"
               value={addForm.fullName}
               onChange={(e) => setAddForm({ ...addForm, fullName: e.target.value })}
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+              className="form-input font-medium"
             />
           </div>
 
           <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Email / Login Username *
+            <label className="form-label">
+              Email / Login Username <span className="text-rose-500">*</span>
             </label>
             <input
               type="email"
@@ -505,22 +520,22 @@ export const StaffManagement: React.FC = () => {
               placeholder="asad@lahorekarahi.com"
               value={addForm.email}
               onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+              className="form-input"
             />
-            <p className="text-[10px] text-slate-400 mt-1">This email acts as the login username for POS, KDS & Dashboard.</p>
+            <p className="text-xs text-slate-500 mt-1">This email acts as the login username for POS, KDS & Dashboard.</p>
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block font-semibold text-slate-700 dark:text-slate-300">
-                Password *
+              <label className="form-label mb-0">
+                Password <span className="text-rose-500">*</span>
               </label>
               <button
                 type="button"
                 onClick={() => setAddForm({ ...addForm, password: generateRandomPassword() })}
-                className="text-[10px] text-brand-600 dark:text-brand-400 hover:underline font-bold flex items-center space-x-1"
+                className="text-xs text-brand-600 dark:text-brand-400 hover:underline font-bold flex items-center space-x-1"
               >
-                <Sparkles className="w-2.5 h-2.5" />
+                <Sparkles className="w-3 h-3" />
                 <span>Auto-Generate</span>
               </button>
             </div>
@@ -530,19 +545,19 @@ export const StaffManagement: React.FC = () => {
               placeholder="Min 6 characters"
               value={addForm.password}
               onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+              className="form-input font-mono font-bold"
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                System Role *
+              <label className="form-label">
+                System Role <span className="text-rose-500">*</span>
               </label>
               <select
                 value={addForm.role}
                 onChange={(e) => setAddForm({ ...addForm, role: e.target.value as any })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+                className="form-select font-bold"
               >
                 <option value={SystemRole.CASHIER}>Cashier (POS Checkout)</option>
                 <option value={SystemRole.WAITER}>Waiter / Server (Orders & Tables)</option>
@@ -556,13 +571,13 @@ export const StaffManagement: React.FC = () => {
 
             {branches.length > 1 && (
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Assigned Branch *
+                <label className="form-label">
+                  Assigned Branch <span className="text-rose-500">*</span>
                 </label>
                 <select
                   value={addForm.branchId}
                   onChange={(e) => setAddForm({ ...addForm, branchId: e.target.value })}
-                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+                  className="form-select font-semibold"
                 >
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>
@@ -574,17 +589,17 @@ export const StaffManagement: React.FC = () => {
             )}
           </div>
 
-          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setIsAddOpen(false)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-white"
+              className="px-5 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md"
+              className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all"
             >
               Add Staff Member
             </button>
@@ -601,13 +616,23 @@ export const StaffManagement: React.FC = () => {
           setIsEditOpen(false);
           setEditingStaff(null);
         }}
-        title={`Edit Employee: ${editingStaff?.full_name || ''}`}
-        maxWidth="md"
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Employee: {editingStaff?.full_name || ''}</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Update staff account settings, role permissions, or password</p>
+            </div>
+          </div>
+        }
+        maxWidth="xl"
       >
-        <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+        <form onSubmit={handleSaveEdit} className="space-y-4">
           <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Full Name *
+            <label className="form-label">
+              Full Name <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -615,13 +640,13 @@ export const StaffManagement: React.FC = () => {
               placeholder="e.g. Asad Ali"
               value={editForm.fullName}
               onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+              className="form-input font-medium"
             />
           </div>
 
           <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Email / Login Username *
+            <label className="form-label">
+              Email / Login Username <span className="text-rose-500">*</span>
             </label>
             <input
               type="email"
@@ -629,25 +654,25 @@ export const StaffManagement: React.FC = () => {
               placeholder="asad@lahorekarahi.com"
               value={editForm.email}
               onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+              className="form-input"
             />
-            <p className="text-[10px] text-slate-400 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               Changing this updates the login username for this staff member.
             </p>
           </div>
 
           {/* Optional Password Update */}
-          <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+          <div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
-              <label className="block font-bold text-slate-700 dark:text-slate-200">
+              <label className="form-label mb-0">
                 Change Password (Optional)
               </label>
               <button
                 type="button"
                 onClick={() => setEditForm({ ...editForm, password: generateRandomPassword() })}
-                className="text-[10px] text-brand-600 dark:text-brand-400 hover:underline font-bold flex items-center space-x-1"
+                className="text-xs text-brand-600 dark:text-brand-400 hover:underline font-bold flex items-center space-x-1"
               >
-                <Sparkles className="w-2.5 h-2.5" />
+                <Sparkles className="w-3 h-3" />
                 <span>Auto-Generate</span>
               </button>
             </div>
@@ -657,30 +682,30 @@ export const StaffManagement: React.FC = () => {
                 placeholder="Leave blank to keep current password"
                 value={editForm.password}
                 onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-3 pr-10 py-2 text-xs font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+                className="form-input pl-3 pr-10 font-mono"
               />
               <button
                 type="button"
                 onClick={() => setShowEditPassword(!showEditPassword)}
-                className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
-                {showEditPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {showEditPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-[10px] text-slate-400">
+            <p className="text-xs text-slate-500">
               Only fill this in if you want to reset the password. Must be at least 6 characters.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                System Role *
+              <label className="form-label">
+                System Role <span className="text-rose-500">*</span>
               </label>
               <select
                 value={editForm.role}
                 onChange={(e) => setEditForm({ ...editForm, role: e.target.value as any })}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+                className="form-select font-bold"
               >
                 <option value={SystemRole.CASHIER}>Cashier (POS Checkout)</option>
                 <option value={SystemRole.WAITER}>Waiter / Server (Orders & Tables)</option>
@@ -695,13 +720,13 @@ export const StaffManagement: React.FC = () => {
 
             {branches.length > 1 && (
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Assigned Branch Location *
+                <label className="form-label">
+                  Assigned Branch Location <span className="text-rose-500">*</span>
                 </label>
                 <select
                   value={editForm.branchId}
                   onChange={(e) => setEditForm({ ...editForm, branchId: e.target.value })}
-                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+                  className="form-select font-semibold"
                 >
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>
@@ -715,33 +740,33 @@ export const StaffManagement: React.FC = () => {
 
           {/* Account Status Switch */}
           <div className="pt-2">
-            <label className="flex items-center space-x-2.5 cursor-pointer">
+            <label className="flex items-center space-x-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={editForm.isActive}
                 onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })}
                 className="rounded text-brand-500 focus:ring-brand-400 w-4 h-4"
               />
-              <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">
+              <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">
                 Account Active (Can log in and access POS / KDS)
               </span>
             </label>
           </div>
 
-          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={() => {
                 setIsEditOpen(false);
                 setEditingStaff(null);
               }}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-white"
+              className="px-5 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md"
+              className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all"
             >
               Save Changes
             </button>

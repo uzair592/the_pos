@@ -91,7 +91,12 @@ export async function getMenuItemProfitability(filter: MenuProfitabilityFilter):
           COALESCE(bs.cost_per_unit, i.cost_per_unit, 0)::numeric as base_unit_cost
         FROM recipe_ingredients ri
         JOIN ingredients i ON i.id = ri.ingredient_id
-        LEFT JOIN branch_stocks bs ON bs.ingredient_id = i.id ${branchId ? 'AND bs.branch_id = $3' : ''}
+        LEFT JOIN (
+          SELECT ingredient_id, AVG(cost_per_unit) as cost_per_unit
+          FROM branch_stocks
+          ${branchId ? 'WHERE branch_id = $3' : ''}
+          GROUP BY ingredient_id
+        ) bs ON bs.ingredient_id = i.id
         WHERE ri.recipe_id = $1 AND ri.tenant_id = $2
         ORDER BY i.name ASC
         `,
@@ -606,7 +611,12 @@ export async function getTheoreticalVsActual(
     JOIN recipes r ON r.product_id = oi.product_id AND (r.variant_id = oi.variant_id OR (r.variant_id IS NULL AND oi.variant_id IS NULL))
     JOIN recipe_ingredients ri ON ri.recipe_id = r.id
     JOIN ingredients i ON i.id = ri.ingredient_id
-    LEFT JOIN branch_stocks bs ON bs.ingredient_id = i.id ${branchId ? 'AND bs.branch_id = $4' : ''}
+    LEFT JOIN (
+      SELECT ingredient_id, AVG(cost_per_unit) as cost_per_unit
+      FROM branch_stocks
+      ${branchId ? 'WHERE branch_id = $4' : ''}
+      GROUP BY ingredient_id
+    ) bs ON bs.ingredient_id = i.id
     WHERE o.tenant_id = $1 AND o.status = 'COMPLETED'
       AND o.created_at >= $2::timestamptz AND o.created_at <= $3::timestamptz
   `;
@@ -783,7 +793,12 @@ export async function getIngredientPriceHistory(
       COALESCE(bs.cost_per_unit, i.cost_per_unit, 0)::numeric as current_base_cost,
       COALESCE(i.purchase_cost, i.cost_per_unit * i.conversion_factor, 0)::numeric as current_purchase_cost
     FROM ingredients i
-    LEFT JOIN branch_stocks bs ON bs.ingredient_id = i.id ${branchId ? 'AND bs.branch_id = $2' : ''}
+    LEFT JOIN (
+      SELECT ingredient_id, AVG(cost_per_unit) as cost_per_unit
+      FROM branch_stocks
+      ${branchId ? 'WHERE branch_id = $2' : ''}
+      GROUP BY ingredient_id
+    ) bs ON bs.ingredient_id = i.id
     WHERE i.tenant_id = $1 AND i.is_active = true
   `;
   const params: any[] = [tenantId];

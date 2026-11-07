@@ -59,7 +59,7 @@ export async function getSyncEvents(
   }
 
   params.push(limit);
-  sql += ` ORDER BY created_at ASC LIMIT $${params.length}`;
+  sql += ` ORDER BY created_at DESC LIMIT $${params.length}`;
 
   const { rows } = await query(sql, params, { tenantId });
   return rows;

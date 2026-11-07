@@ -24,8 +24,8 @@ interface AuthContextType {
   token: string | null;
   isSuperAdmin: boolean;
   isLoading: boolean;
-  login: (token: string, user: any) => void;
-  logout: () => void;
+  login: (token: string, user: any, sessionId?: string, deviceFingerprint?: string) => void;
+  logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   hasPermission: (permission: Permission) => boolean;
   hasFeature: (feature: FeatureKey) => boolean;
@@ -77,9 +77,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setCurrentBranchId(null);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load user profile:', err);
-      logout();
+      if (err?.statusCode === 401) {
+        logout();
+      }
     } finally {
       setIsLoading(false);
     }
@@ -99,8 +101,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = (newToken: string, newUser: any) => {
+  const login = (newToken: string, newUser: any, sessionId?: string, deviceFingerprint?: string) => {
     localStorage.setItem('pos_token', newToken);
+    if (sessionId) localStorage.setItem('pos_session_id', sessionId);
+    if (deviceFingerprint) localStorage.setItem('pos_device_fp', deviceFingerprint);
     if (newUser.branchId) {
       localStorage.setItem('pos_current_branch_id', newUser.branchId);
       setCurrentBranchId(newUser.branchId);
@@ -110,9 +114,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsSuperAdmin(newUser.role === SystemRole.SUPER_ADMIN);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    const sessionId = localStorage.getItem('pos_session_id');
+    const deviceFingerprint = localStorage.getItem('pos_device_fp');
+    try {
+      await api.post('/auth/logout', { sessionId, deviceFingerprint });
+    } catch { }
     localStorage.removeItem('pos_token');
     localStorage.removeItem('pos_current_branch_id');
+    localStorage.removeItem('pos_session_id');
     setToken(null);
     setUser(null);
     setTenant(null);
@@ -122,16 +132,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsSuperAdmin(false);
   };
 
+  // Online Heartbeat: keeps active device session ONLINE in centralized SaaS backend
+  useEffect(() => {
+    if (!token || !user) return;
+    const interval = setInterval(async () => {
+      try {
+        const sessionId = localStorage.getItem('pos_session_id');
+        const deviceFingerprint = localStorage.getItem('pos_device_fp');
+        await api.post('/auth/heartbeat', { sessionId, deviceFingerprint });
+      } catch {
+        // Silently catch heartbeat errors when connection is lost
+      }
+    }, 45000);
+
+    return () => clearInterval(interval);
+  }, [token, user]);
+
+  // Session expired / revoked listener
+  useEffect(() => {
+    const handleExpired = () => {
+      logout();
+    };
+    window.addEventListener('pos:session-expired', handleExpired);
+    return () => window.removeEventListener('pos:session-expired', handleExpired);
+  }, []);
+
   const hasPermission = (permission: Permission): boolean => {
     if (!user) return false;
-    if (user.role === SystemRole.SUPER_ADMIN || user.role === SystemRole.RESTAURANT_OWNER) return true;
+    const r = (user.role || '').toUpperCase();
+    if (
+      r === SystemRole.SUPER_ADMIN ||
+      r === SystemRole.RESTAURANT_OWNER ||
+      r === 'OWNER' ||
+      r === SystemRole.BRANCH_MANAGER ||
+      r === 'MANAGER' ||
+      r === SystemRole.RESTAURANT_ADMIN ||
+      r === 'ADMIN'
+    ) return true;
     return user.permissions ? user.permissions.includes(permission) : false;
   };
 
   const hasFeature = (feature: FeatureKey): boolean => {
     if (isSuperAdmin) return true;
-    if (!subscription || !subscription.entitlements) return false;
-    return !!subscription.entitlements.features?.[feature];
+    const r = (user?.role || '').toUpperCase();
+    if (r === SystemRole.RESTAURANT_OWNER || r === 'OWNER' || r === SystemRole.BRANCH_MANAGER || r === 'MANAGER') return true;
+    if (!subscription || !subscription.entitlements) return true;
+    return subscription.entitlements.features?.[feature] !== false;
   };
 
   const currentBranch = branches.find((b) => b.id === currentBranchId) || null;

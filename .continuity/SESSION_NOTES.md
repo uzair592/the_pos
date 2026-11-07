@@ -1,19 +1,151 @@
 # Session Notes
 
 ## Goals
-- Transform the restaurant POS system into a complete, modern, multi-branch Restaurant Management, Kitchen Display (KDS), and POS Ecosystem supporting multiple branches under one organization (tenant).
-- Streamline the Workspace Hub to 3 core terminals: Dashboard, POS Terminal, and Kitchen Terminal.
-- Implement Menu Sub-Categories across catalog management and POS order-taking.
-- Implement Addons functionality (extra sauces, dips, cheeses, upgrades) with item customization modal, live pricing, cart badges, and KDS tickets.
-- Implement multiple bill printing options with 5 specialized templates (Standard 80mm Thermal, Fine Dining Guest Check, Compact 58mm Mobile, Official Commercial GST Tax Invoice, and Kitchen / Dispatch Token).
-- Rigorously test multi-device synchronization (Waiter Tablet -> Kitchen Display System -> Cashier Checkout) and full CRUD operations across all modules with automated integration testing.
-- Fix real-time synchronization between KDS and Dashboard: orders showing in served and unpaid in KDS now immediately reflect on Dashboard in real-time with 5-second polling, live sync indicators, unpaid order collection shortcuts, and financial pipeline aggregation.
-- Pass all 43 integration tests and push clean code to GitHub repository `https://github.com/uzair592/the_pos.git`.
+- Restructure purchasing, inventory, recipe management, and FIFO costing to match real-world restaurant workflows.
+- Enable single-step purchase workflow with on-the-fly inventory item and supplier creation.
+- Ensure strict zero automatic unit conversions (preserve purchased and entered units exactly).
+- Create separate FIFO inventory batches per purchase preserving purchase ID, received date, unit, unit cost, and remaining quantity.
+- Implement FIFO batch inspection in Inventory Management with expandable lot sub-tables and dedicated FIFO Valuation Report tab.
+- Automate order recipe FIFO ingredient deductions and order-by-order COGS tracking.
+- Test and verify the user's exact Dough (3kg @ 150 + 5kg @ 200) and Pizza (0.25kg dough) 16 & 8 pizza sales FIFO lifecycle end-to-end.
 
 ## Blockers
-- None. All 47 integration tests across 7 test suites pass, TypeScript builds with 0 errors across all monorepo workspaces, and servers are actively running.
+- None. 113/113 backend tests pass across 14 test files, frontend production build is clean (0 errors), and dev servers are operational.
 
 ## Key Decisions
+- Decision 62: Restructured Purchasing, Inventory, Recipe & FIFO Costing System:
+  1. Simplified Purchase System & Auto-Creation:
+     - Allows entering supplier name directly (auto-created if not existing).
+     - Allows entering raw item name directly: if not in inventory, automatically creates the ingredient with proper SKU and unit, creates branch stock, and activates FIFO batch.
+     - Single-step item entry table with live totals, purchase date picker, and optional invoice number.
+  2. Zero Automatic Unit Conversions:
+     - No automatic multipliers between KG/grams, cartons/pieces, or liters/ml.
+     - Quantities purchased and used in recipes are preserved exactly as entered.
+  3. FIFO Batch Management & Valuation Report:
+     - Every purchase creates an independent `inventory_batches` record with `purchase_id`, `unit`, `supplier_name`, `received_at`, and `unit_cost`.
+     - In `InventoryManagement.tsx`, updated the Stock table with columns: Raw Ingredient, Available Stock, Unit, Total Stock Value, Latest Purchase Price, Active FIFO Lots (with click-to-expand sub-tables showing lot queue order, received date, remaining qty, unit cost, and remaining value), Stock Status, and Actions (View FIFO Batches, View Stock Ledger, Adjust Stock, Edit, Delete).
+     - Built dedicated `VALUATION` tab rendering executive KPI cards (Total FIFO Valuation, Tracked Raw Items, Active FIFO Lots, Avg Value / Item) and comprehensive item-by-item batch valuation breakdown with search and category filters.
+  4. End-to-End Dough & Pizza Acceptance Test:
+     - Created `backend/test/fifo_dough_recipe_e2e.test.ts` implementing the user's exact specification:
+       - Purchase 1: Dough 3 KG @ Rs. 150/KG (auto-created Dough and Supplier).
+       - Purchase 2: Dough 5 KG @ Rs. 200/KG (reused Dough, Batch 1 = 3 KG @ 150, Batch 2 = 5 KG @ 200, Total Stock = 8 KG, Total Value = Rs. 1450).
+       - Recipe: Chicken Pizza consuming 0.25 KG Dough per pizza.
+       - Sale 1: 16 Pizzas (deducted 4 KG: 3 KG from Batch 1 @ 150 + 1 KG from Batch 2 @ 200 -> COGS = Rs. 650; Batch 1 exhausted, Batch 2 has 4 KG remaining @ 200 -> stock value = Rs. 800).
+       - Sale 2: 8 Pizzas (deducted 2 KG from Batch 2 @ 200 -> COGS = Rs. 400; Batch 2 has 2 KG remaining @ 200 -> stock value = Rs. 400).
+       - Valuation: Total value = Rs. 400 across 1 active batch.
+     - Test passes 6/6.
+  5. Verification & Testing:
+     - Backend test suite: 113/113 tests passed across all 14 test suites.
+     - Frontend build (`tsc && vite build`): completed in 17s with 0 errors.
+
+- Decision 56: Architecture Correction — Online-Only Web-Based SaaS POS & Multi-Device Access:
+  1. Strict Online-Only Architecture:
+     - Central PostgreSQL and Express API are the single authoritative source of truth.
+     - Fully eliminated offline queue processing (`localStorage.pos_offline_orders`) and offline optimistic orders.
+     - Built global connection loss detection (`ConnectionStatusBar.tsx` and API network error interception) that warns the user and strictly blocks server-dependent mutations when disconnected.
+     - On connection restoration, fresh central state is fetched.
+  2. Concurrent Device Session Limit Enforcement:
+     - Implemented `uq_active_device_session` constraint on `active_device_sessions (tenant_id, device_fingerprint)`.
+     - In `POST /api/auth/login`, calls `verifyAndEnforceConcurrentLimit`. Rejects logins attempting to exceed tenant `max_devices` with HTTP 403 `CONCURRENT_LIMIT_REACHED` and detailed session usage payload.
+     - Supports seamless reactivation of previously logged out sessions via `ON CONFLICT (tenant_id, device_fingerprint) DO UPDATE`.
+     - Heartbeat mechanism (`POST /api/auth/heartbeat`, 45-second frontend pulse) keeps active terminals `ONLINE`. Terminals without a heartbeat in 3 minutes are automatically marked `OFFLINE`.
+     - Explicit logout (`POST /api/auth/logout`) and force-revocation immediately free active slots.
+  3. Reliability, Concurrency & Idempotency:
+     - Server-side idempotency keys (`Idempotency-Key` header) prevent duplicate orders/payments on retry or slow connections.
+     - ACID database transactions with automatic rollback guarantee data integrity.
+  4. Multi-Terminal Real-Time Sync:
+     - High-speed change polling and WebSocket event dispatching (`/api/sync/events`) ensure immediate sync across Desktop 1, Desktop 2, Laptop, Waiter Tablet, Kitchen Terminal, and Manager devices.
+  5. Verification & Testing:
+     - Automated test suite `backend/test/online_saas_multidevice.test.ts` (17 tests) covering all authentication, multi-device limits, slot liberation, real-time sync, KDS status updates, and transaction rollback.
+     - Monorepo vitest suite: 102/102 tests passed across 12 test files.
+     - QA simulation suite: 38/38 checks passed with 0 failures.
+     - Frontend production build passed with 0 errors.
+
+- Decision 55: Professional Top Header Redesign, 4 Primary Action Buttons & Comprehensive "Add More" Quick-Action System:
+  1. Elimination of Duplicate Actions:
+     - Stripped out all redundant and duplicated buttons (`Workspace Hub`, `Launch POS`, `Kitchen Display`, `Orders Hub`, `Open POS Terminal`, `Kitchen Screen`) from the top navigation bar and dashboard overview without deleting underlying pages or routes.
+  2. Four Primary Action Buttons:
+     - `POS Terminal` (`/pos`, Alt+S): Most prominent emerald gradient action button with POS terminal icon and shortcut badge.
+     - `Orders` (`/app/orders`): Hub navigation with active/in-flight order count notification badge.
+     - `Kitchen Display` (`/kds`): Dedicated kitchen station route with pending tickets badge, conditionally rendered by tenant subscription entitlements (`hasFeature(FeatureKey.KDS)`).
+     - `Add More`: Comprehensive categorized dropdown containing all restaurant operational quick actions.
+  3. Structured "Add More" Dropdown Categories & Backend Integration:
+     - A. Sales & Order Operations: New Sale / POS Terminal (Alt+S), Sale Order / Advance Order modal (Alt+F), Customer Payment-In modal (Alt+I -> `POST /api/customers/:id/payment`), Sale Return / Refund modal (Alt+R), Estimate / Quotation modal (Alt+M), Delivery Challan modal (Alt+D).
+     - B. Menu & Product Management: Create Menu Item (`/app/menu?action=new-product`), Create Menu Category (`/app/menu?action=new-category`), Create Deal / Combo Builder modal, Create Modifier / Add-on (`/app/menu?action=new-modifier`), Manage Menu Availability modal.
+     - C. Purchase & Supplier Operations: Add Purchase / Purchase Bill (`/app/purchases?action=new-purchase`, Alt+P), Purchase Order modal (Alt+G), Purchase Return modal (Alt+L -> `POST /api/inventory/purchases/return`), Supplier Payment-Out modal (Alt+O -> `POST /api/inventory/suppliers/:id/payment`), Add Supplier modal (`POST /api/inventory/suppliers`).
+     - D. Inventory Operations: Add Ingredient (`/app/inventory?action=new-ingredient`), Stock Adjustment modal (`POST /api/inventory/stock-adjustment`), Stock Transfer modal (`POST /api/inventory/transfer`), View Low Stock (`/app/inventory?tab=low_stock`).
+     - E. Finance & Expense Operations: Record Expense modal (`POST /api/financial/expenses`), Cash In / Cash Out drawer movement modal (`POST /api/cash-bank/transactions`), Daybook / Register (`/app/daybook`).
+     - F. Customers & Restaurant Operations: Add Customer modal (`POST /api/customers`), Reservation (`/app/orders?tab=reservations&action=new-reservation`), Waitlist (`/app/orders?tab=waitlist&action=new-waitlist`), Manage Tables (`/app/settings?tab=tables`).
+  4. Global Utility & Context Integration:
+     - Added `GET /api/restaurant/global-search` endpoint querying orders, menu items, ingredients, customers, and suppliers in a single query.
+     - Implemented `GlobalSearchModal` with `Ctrl + K` global shortcut listener, entity-type icons, badges, and direct navigation.
+     - Implemented `NotificationCenter` popover showing live counts and details for active orders, kitchen tickets, low stock warnings, and reservations with clear/mark-read capabilities.
+     - Implemented `KeyboardShortcutsModal` displaying all system keyboard shortcuts organized by Header, POS, and Navigation.
+     - Maintained compact Restaurant Context area showing restaurant name, active branch, active currency, user name & role, and live synchronization status indicator.
+  5. Verification & Testing:
+     - Frontend production build (`tsc && vite build`) passed with 0 errors.
+     - Backend test suite: 85/85 tests passed across 11 test files.
+     - QA simulation suite: 38/38 checks passed with 0 failures.
+
+- Decision 54: Final Left Sidebar Navigation, Vyapar Accordion Behavior & 7-Section Financial Reports Integration:
+  1. Strict Vyapar Accordion Navigation (`Sidebar.tsx`):
+     - Enforced single-dropdown accordion state (`openDropdown: string | null`), ensuring opening one menu automatically collapses any previously open menu.
+     - Structured strictly into:
+       - SALES & ORDERS: POS Billing Terminal (direct, SALE badge, Alt+S), Orders (Accordion: All Orders, Active / Queued, Completed, Reservations, Waitlist), Kitchen Display (direct, pending badge).
+       - INVENTORY & ITEMS: Menu Items & Recipes (direct), Purchases & Inward Stock (direct), Ingredients & Inventory (Accordion: Inventory Overview, Ingredients, Stock Movements, Low Stock & Reorder, Stock Adjustments).
+       - OPERATIONS: Daybook / Register (direct), Cash & Bank (direct).
+       - FINANCE & REPORTS: Financial Reports & P&L (direct), Recipe Costing & Food Cost (direct).
+       - SETTINGS & SYSTEM: Staff & Roles (direct), Restaurant Settings (Accordion: General Settings, Floor & Table Management).
+     - Added instant Global Navigation Search filtering with clear buttons and smooth keyboard navigation.
+     - Preserved collapsed 80px mode with interactive flyout submenus on hover.
+  2. Canonical 7-Section Financial Reports & P&L Architecture (`FinancialReports.tsx`):
+     - Reorganized navigation tabs to present the canonical 7 reports in exact sequence:
+       1. Financial Overview (P&L executive summary, KPIs, sales by product, sales by category)
+       2. Sales & Revenue (detailed completed transaction ledger with invoice download)
+       3. Bill-Wise Profit & Loss (order-by-order FIFO reconciliation, margins, itemized modal breakdown, and single-bill A4 PDF export)
+       4. Daily Profit & Loss (calendar-day FIFO gross profit and margin percentages)
+       5. Monthly Profit & Loss (month-over-month performance: Net Sales, FIFO COGS, Operating Expenses, Net Operating Profit, and Net Margin %)
+       6. Expense Analysis (OPEX ledger with categorization, branches, and payment methods)
+       7. Branch-wise Financial Reports (multi-outlet network comparison: Sales, COGS, Gross Profit, Expenses, Net Profit, and Inventory Valuation)
+     - Created backend route `GET /api/financial/reports/monthly-profit-loss`.
+     - Wired `GET /api/financial/reports/head-office-summary` directly to Branch-wise comparative reporting.
+     - Added `exportMonthlyProfitLossPdf` and `exportBranchFinancialReportPdf` to `pdfExport.ts`.
+  3. Complete Verification:
+     - Frontend build (`tsc && vite build`) passed with 0 errors.
+     - Backend test suite: 85/85 tests passed across all 11 test suites.
+     - QA simulation suite: 38/38 checks passed with 0 failures.
+
+- Decision 53: Comprehensive Operational Fixes, Inward Stock FIFO Lots, Table Layouts, Reservations/Waitlist Seating, and Vyapar-Inspired Sidebar Navigation:
+  1. Order & Kitchen Display Synchronization:
+     - Resolved order visibility gap where KDS tickets existed without visible dashboard orders by including all in-flight operational statuses (NEW, PENDING, QUEUED, CONFIRMED, ACCEPTED, PREPARING, READY, SERVED, OUT_FOR_DELIVERY, ON_HOLD).
+     - Added kitchen_status and latest_kot_number to /api/orders/active and /api/orders/:id, rendering live KOT badges across Dashboard, Recent Orders, and Active Orders.
+     - Synchronized order checkout/settlement to update associated kitchen tickets to SERVED.
+  2. Inward Purchases Immediate Stock & FIFO Lot Conversion:
+     - Upgraded POST /api/inventory/purchases with receiveNow: true to automatically convert purchase units to base units (e.g. 25 KG -> 25,000 G) and post directly to branch stock and active FIFO batches.
+     - Created POST /api/inventory/purchases/reconcile enabling safe 1-click reconciliation of historical purchases without duplicate stock addition.
+  3. Unified Ingredients & Inventory Workspace (InventoryManagement.tsx):
+     - Organized into 7 cohesive tabs: overview (Valuation & KPIs), STOCK (Ingredients table), movements (Complete Stock Ledger), low_stock (Stock Alerts & 1-Click Reorder), BATCHES (FIFO Lots), TRANSFERS (Inter-branch), and RECIPES (Recipe Master).
+     - Synced URL parameter ?tab=low_stock and added direct Restock link from Dashboard alerts.
+  4. Floor & Table Management (FloorTableManagement.tsx):
+     - Relocated under Restaurant Settings -> Floors & Tables (/app/settings?tab=tables).
+     - Supports visual grid layouts with drag-and-drop coordinate updates (pos_x, pos_y), geometric shapes (ROUND, RECTANGLE, SQUARE), waiter assignment, capacity, and live occupancy status.
+     - Database migrations 013_reservations_waitlist_and_tables.sql and 014_restaurant_tables_timestamps.sql.
+  5. Reservations & Waitlist System (ReservationsManagement.tsx & WaitlistManagement.tsx):
+     - Relocated directly under Orders Hub (/app/orders?tab=reservations and /app/orders?tab=waitlist).
+     - Conflict prevention using PostgreSQL OVERLAPS time window calculations preventing double-booking of dining tables.
+     - 1-Click "Seat Customer" converting reservations/waitlist entries to SEATED and marking dining tables as OCCUPIED.
+     - Live waitlist queue with automatic sequential numbering, party size, wait timers, and customer notification alerts.
+  6. Vyapar-Inspired Hierarchical Sidebar Redesign (Sidebar.tsx):
+     - Grouped into SALES & ORDERS, INVENTORY & ITEMS, OPERATIONS, FINANCE & REPORTS, and SETTINGS & SYSTEM.
+     - Expandable multi-level tree submenus with localStorage state persistence and auto-expansion based on active routes.
+     - Live notification badges polling /api/restaurant/sidebar-badges every 12 seconds for active orders, KDS tickets, low stock, and waitlist.
+     - Collapsed mode (80px width) with interactive flyout submenus on hover.
+     - Added legacy route redirects (/app/tables -> /app/settings?tab=tables, /app/reservations -> /app/orders?tab=reservations, /app/stock-alerts -> /app/inventory?tab=low_stock, /app/cash-bank -> /app/cash-and-bank).
+  7. Rigorous Verification & Tests:
+     - 100% frontend production build passed (tsc && vite build in 13.8s).
+     - 85/85 Vitest automated test cases passed across all 11 backend test suites, including dedicated operational_bugs_and_modules.test.ts.
+     - 38/38 QA simulation suite checks passed.
+
 - Decision 52: Complete Platform Super Admin Panel – Centralized Multi-Tenant Control, Dynamic Concurrency, Backups, Recovery & Operations:
   1. Complete Database Enhancements (`012_platform_super_admin_enhancements.sql`):
      - Enhanced `platform_admins`: added `role`, `permissions`, `phone`, `token_version`.

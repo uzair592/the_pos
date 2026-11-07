@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client.js';
 import { Modal } from '../../components/common/Modal.js';
 import { ActionMenu, ActionMenuItem } from '../../components/common/ActionMenu.js';
-import { Store, Plus, MapPin, Phone, Edit2, Trash2, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Store, Plus, MapPin, Phone, Edit2, Trash2, CheckCircle2, ShieldCheck, Building2 } from 'lucide-react';
 
 export const BranchManagement: React.FC = () => {
   const [branches, setBranches] = useState<any[]>([]);
@@ -206,138 +206,183 @@ export const BranchManagement: React.FC = () => {
       </div>
 
       {/* Modal: Add Branch */}
-      <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Add Restaurant Location" maxWidth="md">
-        <form onSubmit={handleCreateBranch} className="space-y-4 text-xs">
+      <Modal
+        isOpen={isAddOpen}
+        onClose={() => setIsAddOpen(false)}
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Add Restaurant Location</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Register an outlet branch for orders, kitchen, and inventory</p>
+            </div>
+          </div>
+        }
+        maxWidth="xl"
+      >
+        <form onSubmit={handleCreateBranch} className="space-y-4">
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">Branch Name</label>
+            <label className="form-label">Branch Name <span className="text-rose-500">*</span></label>
             <input
               type="text"
               required
-              placeholder="e.g. Gulshan Outlet"
+              placeholder="e.g. Gulshan Outlet, DHA Phase 6"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-xs"
+              className="form-input"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Branch Code</label>
+              <label className="form-label">Branch Code <span className="text-rose-500">*</span></label>
               <input
                 type="text"
                 required
                 placeholder="GUL-01"
                 value={form.code}
                 onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
-                className="w-full border rounded-lg px-3 py-2 text-xs font-mono"
+                className="form-input font-mono font-bold"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Phone</label>
+              <label className="form-label">Phone Number <span className="text-rose-500">*</span></label>
               <input
                 type="text"
                 required
+                placeholder="021-111-222-333"
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className="w-full border rounded-lg px-3 py-2 text-xs"
+                className="form-input"
               />
             </div>
           </div>
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">Address</label>
+            <label className="form-label">Physical Address <span className="text-rose-500">*</span></label>
             <input
               type="text"
               required
+              placeholder="e.g. Plot 42, Block 13-A, Main University Road"
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-xs"
+              className="form-input"
             />
           </div>
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">City</label>
+            <label className="form-label">City <span className="text-rose-500">*</span></label>
             <input
               type="text"
               required
+              placeholder="e.g. Karachi, Lahore, Islamabad"
               value={form.city}
               onChange={(e) => setForm({ ...form, city: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-xs"
+              className="form-input"
             />
           </div>
-          <button type="submit" className="w-full bg-brand-500 text-white font-bold py-2 rounded-lg">
-            Create Branch
-          </button>
+          <div className="pt-2">
+            <button
+              type="submit"
+              className="w-full h-11 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center space-x-2"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Create Branch Location</span>
+            </button>
+          </div>
         </form>
       </Modal>
 
       {/* Modal: Edit Branch */}
-      <Modal isOpen={isEditOpen} onClose={() => { setIsEditOpen(false); setEditingBranch(null); }} title="Edit Branch Location" maxWidth="md">
-        <form onSubmit={handleUpdateBranch} className="space-y-4 text-xs">
+      <Modal
+        isOpen={isEditOpen}
+        onClose={() => { setIsEditOpen(false); setEditingBranch(null); }}
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Branch Location</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Update outlet contact information and physical address</p>
+            </div>
+          </div>
+        }
+        maxWidth="xl"
+      >
+        <form onSubmit={handleUpdateBranch} className="space-y-4">
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">Branch Name</label>
+            <label className="form-label">Branch Name <span className="text-rose-500">*</span></label>
             <input
               type="text"
               required
               value={editForm.name}
               onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-xs"
+              className="form-input"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Branch Code</label>
+              <label className="form-label">Branch Code <span className="text-rose-500">*</span></label>
               <input
                 type="text"
                 required
                 value={editForm.code}
                 onChange={(e) => setEditForm({ ...editForm, code: e.target.value.toUpperCase() })}
-                className="w-full border rounded-lg px-3 py-2 text-xs font-mono"
+                className="form-input font-mono font-bold"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Phone</label>
+              <label className="form-label">Phone Number <span className="text-rose-500">*</span></label>
               <input
                 type="text"
                 required
                 value={editForm.phone}
                 onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                className="w-full border rounded-lg px-3 py-2 text-xs"
+                className="form-input"
               />
             </div>
           </div>
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">Address</label>
+            <label className="form-label">Physical Address <span className="text-rose-500">*</span></label>
             <input
               type="text"
               required
               value={editForm.address}
               onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-xs"
+              className="form-input"
             />
           </div>
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">City</label>
+            <label className="form-label">City <span className="text-rose-500">*</span></label>
             <input
               type="text"
               required
               value={editForm.city}
               onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-xs"
+              className="form-input"
             />
           </div>
-          <div className="flex items-center space-x-2 pt-1">
+          <div className="flex items-center space-x-3 pt-2">
             <input
               type="checkbox"
               id="editIsMainBranch"
               checked={editForm.isMainBranch}
               onChange={(e) => setEditForm({ ...editForm, isMainBranch: e.target.checked })}
-              className="rounded text-brand-600 focus:ring-brand-500"
+              className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500"
             />
-            <label htmlFor="editIsMainBranch" className="text-slate-700 font-semibold cursor-pointer">
+            <label htmlFor="editIsMainBranch" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
               Designate as Main Flagship Branch
             </label>
           </div>
-          <button type="submit" className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold py-2 rounded-lg transition-all">
-            Save Branch Changes
-          </button>
+          <div className="pt-2">
+            <button
+              type="submit"
+              className="w-full h-11 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center space-x-2"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Save Branch Changes</span>
+            </button>
+          </div>
         </form>
       </Modal>
     </div>

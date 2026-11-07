@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { PaymentMethod } from '@pos/shared';
+import { ReservationsManagement } from '../../components/orders/ReservationsManagement.js';
+import { WaitlistManagement } from '../../components/orders/WaitlistManagement.js';
 import {
   ShoppingBag,
   Clock,
   Search,
   Filter,
   CheckCircle2,
+  XCircle,
+  Users,
   AlertCircle,
   ChevronRight,
   ChevronLeft,
@@ -58,11 +63,31 @@ const formatDisplayDate = (ymd: string): string => {
 import { executeThermalPrint } from '../../utils/receiptPrinter.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
 
-export const OrdersHub: React.FC = () => {
+export type OrdersTab = 'active' | 'all' | 'completed' | 'cancelled' | 'reservations' | 'waitlist';
+
+export interface OrdersHubProps {
+  defaultTab?: OrdersTab;
+}
+
+export const OrdersHub: React.FC<OrdersHubProps> = ({ defaultTab = 'active' }) => {
   const { user, tenant, currentBranchId, branches } = useAuth();
   const { success, error: toastError } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
+  const urlTab = (searchParams.get('tab') as OrdersTab) || defaultTab;
+  const [activeTab, setActiveTab] = useState<OrdersTab>(urlTab);
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as OrdersTab;
+    if (tabParam && ['active', 'all', 'completed', 'cancelled', 'reservations', 'waitlist'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (tab: OrdersTab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
   const [activeStageFilter, setActiveStageFilter] = useState<'ALL' | 'UNPAID_SERVED' | 'KITCHEN' | 'DINING' | 'DELIVERY'>('ALL');
   const [branchFilter, setBranchFilter] = useState<string>(currentBranchId || '');
 
@@ -177,7 +202,16 @@ export const OrdersHub: React.FC = () => {
       };
       if (branchFilter) params.branchId = branchFilter;
       if (searchQuery) params.search = searchQuery;
-      if (statusFilter) params.status = statusFilter;
+
+      // Handle tab-specific status filtering
+      let effectiveStatus = statusFilter;
+      if (activeTab === 'completed') {
+        effectiveStatus = 'COMPLETED';
+      } else if (activeTab === 'cancelled') {
+        effectiveStatus = 'CANCELLED';
+      }
+      if (effectiveStatus) params.status = effectiveStatus;
+
       if (typeFilter) params.orderType = typeFilter;
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
@@ -197,7 +231,7 @@ export const OrdersHub: React.FC = () => {
     } finally {
       setLoadingHistory(false);
     }
-  }, [dateRange, specificDate, customStartDate, customEndDate, branchFilter, page, searchQuery, statusFilter, typeFilter, toastError]);
+  }, [dateRange, specificDate, customStartDate, customEndDate, branchFilter, page, searchQuery, statusFilter, typeFilter, activeTab, toastError]);
 
   // Day navigation handlers for Specific Date picker
   const handlePrevDay = () => {
@@ -223,7 +257,7 @@ export const OrdersHub: React.FC = () => {
   useEffect(() => {
     if (activeTab === 'active') {
       fetchActiveOrders();
-    } else {
+    } else if (activeTab === 'all' || activeTab === 'completed' || activeTab === 'cancelled') {
       fetchHistoryOrders();
     }
   }, [activeTab, fetchActiveOrders, fetchHistoryOrders]);
@@ -416,35 +450,38 @@ export const OrdersHub: React.FC = () => {
           )}
 
           {/* Navigation Tabs */}
-          <div className="flex items-center space-x-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
-          <button
-            onClick={() => setActiveTab('active')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === 'active'
-                ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            <span>Live Active Orders</span>
-            {activeOrders.length > 0 && (
-              <span className="px-2 py-0.5 text-[10px] font-black rounded-full bg-brand-500 text-white">
-                {activeOrders.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === 'history'
-                ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span>All Orders History</span>
-          </button>
-        </div>
+          <div className="flex items-center space-x-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 overflow-x-auto">
+            {[
+              { id: 'active', label: 'Active & Queued', icon: Clock, count: activeOrders.length },
+              { id: 'all', label: 'All Orders', icon: Layers },
+              { id: 'completed', label: 'Completed', icon: CheckCircle2 },
+              { id: 'cancelled', label: 'Cancelled', icon: XCircle },
+              { id: 'reservations', label: 'Reservations', icon: Calendar },
+              { id: 'waitlist', label: 'Waitlist', icon: Users },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabChange(tab.id as OrdersTab)}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                    isActive
+                      ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                  {tab.count !== undefined && tab.count > 0 && (
+                    <span className="px-1.5 py-0.2 text-[10px] font-black rounded-full bg-brand-500 text-white">
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -550,7 +587,7 @@ export const OrdersHub: React.FC = () => {
                       {/* Order Header */}
                       <div className="flex items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-3 mb-3">
                         <div>
-                          <div className="flex items-center space-x-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-base font-black text-slate-900 dark:text-white">
                               #{order.order_number}
                             </span>
@@ -565,6 +602,11 @@ export const OrdersHub: React.FC = () => {
                             >
                               {order.order_type.replace('_', ' ')}
                             </span>
+                            {order.kitchen_status && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                🍳 KDS: {order.kitchen_status} {order.latest_kot_number ? `(#${order.latest_kot_number})` : ''}
+                              </span>
+                            )}
                           </div>
                           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                             {order.table_number ? `Table ${order.table_number}` : order.customer_name || 'Walk-in'} • {order.branch_name}
@@ -710,8 +752,8 @@ export const OrdersHub: React.FC = () => {
         </div>
       )}
 
-      {/* VIEW 2: ALL ORDERS HISTORY */}
-      {activeTab === 'history' && (
+      {/* VIEW 2: ORDERS HISTORY (ALL, COMPLETED, CANCELLED) */}
+      {(activeTab === 'all' || activeTab === 'completed' || activeTab === 'cancelled') && (
         <div className="space-y-5">
           {/* Filter Bar */}
           <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
@@ -734,20 +776,29 @@ export const OrdersHub: React.FC = () => {
               {/* Status Filter - Proportional 25% width */}
               <div className="sm:col-span-3">
                 <select
-                  value={statusFilter}
+                  value={activeTab === 'completed' ? 'COMPLETED' : activeTab === 'cancelled' ? 'CANCELLED' : statusFilter}
+                  disabled={activeTab === 'completed' || activeTab === 'cancelled'}
                   onChange={(e) => {
                     setStatusFilter(e.target.value);
                     setPage(1);
                   }}
-                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none font-medium text-slate-700 dark:text-slate-200"
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none font-medium text-slate-700 dark:text-slate-200 disabled:opacity-60"
                 >
-                  <option value="">All Statuses</option>
-                  <option value="COMPLETED">Completed</option>
-                  <option value="CANCELLED">Cancelled</option>
-                  <option value="REFUNDED">Refunded</option>
-                  <option value="PREPARING">Preparing</option>
-                  <option value="READY">Ready</option>
-                  <option value="SERVED">Served</option>
+                  {activeTab === 'completed' ? (
+                    <option value="COMPLETED">Status: Completed Only</option>
+                  ) : activeTab === 'cancelled' ? (
+                    <option value="CANCELLED">Status: Cancelled Only</option>
+                  ) : (
+                    <>
+                      <option value="">All Statuses</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="CANCELLED">Cancelled</option>
+                      <option value="REFUNDED">Refunded</option>
+                      <option value="PREPARING">Preparing</option>
+                      <option value="READY">Ready</option>
+                      <option value="SERVED">Served</option>
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -1022,17 +1073,25 @@ export const OrdersHub: React.FC = () => {
                           {tenant?.currency || 'PKR'} {Number(ord.total_cogs || 0).toLocaleString()}
                         </td>
                         <td className="px-4 py-3.5">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                              ord.status === 'COMPLETED'
-                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                                : ord.status === 'CANCELLED'
-                                ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
-                                : 'bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800'
-                            }`}
-                          >
-                            {ord.status.replace('_', ' ')}
-                          </span>
+                          <div className="space-y-1">
+                            <span
+                              className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                ord.status === 'COMPLETED'
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                                  : ord.status === 'CANCELLED'
+                                  ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                                  : 'bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800'
+                              }`}
+                            >
+                              {ord.status.replace('_', ' ')}
+                            </span>
+                            {ord.kitchen_status && (
+                              <div className="text-[10px] text-amber-700 dark:text-amber-300 font-bold flex items-center gap-1">
+                                <span>🍳 KDS: {ord.kitchen_status}</span>
+                                {ord.latest_kot_number && <span className="font-mono text-slate-400">#{ord.latest_kot_number}</span>}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="px-5 py-3.5 text-right whitespace-nowrap">
                           <ActionMenu
@@ -1121,6 +1180,16 @@ export const OrdersHub: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* VIEW 3: TABLE RESERVATIONS HUB */}
+      {activeTab === 'reservations' && (
+        <ReservationsManagement />
+      )}
+
+      {/* VIEW 4: GUEST WAITLIST HUB */}
+      {activeTab === 'waitlist' && (
+        <WaitlistManagement />
       )}
 
       {/* FULL ORDER DETAILS MODAL (WITH EXACT FIFO BATCH & PROFIT MARGINS) */}

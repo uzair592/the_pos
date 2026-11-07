@@ -5,6 +5,7 @@ import { ThemeProvider } from './context/ThemeContext.js';
 import { ToastProvider } from './context/ToastContext.js';
 import { Navbar } from './components/common/Navbar.js';
 import { Sidebar } from './components/common/Sidebar.js';
+import { ConnectionStatusBar } from './components/common/ConnectionStatusBar.js';
 
 // Auth Pages
 import { Login } from './pages/auth/Login.js';
@@ -30,6 +31,7 @@ import { OnboardingWizard } from './pages/restaurant/OnboardingWizard.js';
 import { RestaurantDashboard } from './pages/restaurant/RestaurantDashboard.js';
 import { Daybook } from './pages/restaurant/Daybook.js';
 import { CashAndBank } from './pages/financial/CashAndBank.js';
+import { ExpenseManagement } from './pages/financial/ExpenseManagement.js';
 import { OrdersHub } from './pages/orders/OrdersHub.js';
 import { MenuCatalog } from './pages/restaurant/MenuCatalog.js';
 import { RecipeCostingDashboard } from './pages/restaurant/RecipeCostingDashboard.js';
@@ -293,6 +295,7 @@ export const App: React.FC = () => {
       <ToastProvider>
         <AuthProvider>
           <BrowserRouter>
+            <ConnectionStatusBar />
             <Routes>
               {/* Public Authentication Screens (Auto-redirect if already logged in) */}
               <Route
@@ -379,6 +382,7 @@ export const App: React.FC = () => {
                 <Route index element={<RestaurantDashboard />} />
                 <Route path="daybook" element={<Daybook />} />
                 <Route path="cash-and-bank" element={<CashAndBank />} />
+                <Route path="expenses" element={<ExpenseManagement />} />
                 <Route path="orders" element={<OrdersHub />} />
                 <Route path="menu" element={<MenuCatalog />} />
                 <Route path="recipe-costing" element={<RecipeCostingDashboard />} />
@@ -393,6 +397,17 @@ export const App: React.FC = () => {
                 <Route path="staff" element={<StaffManagement />} />
                 <Route path="branches" element={<BranchManagement />} />
                 <Route path="settings" element={<RestaurantSettings />} />
+
+                {/* Legacy Route Aliases & Redirects */}
+                <Route path="kds" element={<Navigate to="/kds" replace />} />
+                <Route path="tables" element={<Navigate to="/app/settings?tab=tables" replace />} />
+                <Route path="floor-plan" element={<Navigate to="/app/settings?tab=tables" replace />} />
+                <Route path="reservations" element={<Navigate to="/app/orders?tab=reservations" replace />} />
+                <Route path="orders/reservations" element={<OrdersHub defaultTab="reservations" />} />
+                <Route path="orders/waitlist" element={<OrdersHub defaultTab="waitlist" />} />
+                <Route path="stock-alerts" element={<Navigate to="/app/inventory?tab=low_stock" replace />} />
+                <Route path="cash-bank" element={<Navigate to="/app/cash-and-bank" replace />} />
+                <Route path="reports/expenses" element={<Navigate to="/app/expenses" replace />} />
               </Route>
 
               {/* Default Root Route: Redirects to /hub (which checks auth and sends to /login if needed) */}

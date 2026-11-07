@@ -260,75 +260,52 @@ export function convertUnitQuantity(
 
 /**
  * Converts a recipe consumption quantity into the ingredient's base unit.
+ * Automatic conversion disabled per user requirement: preserves entered quantity directly.
  */
 export function convertRecipeQtyToBase(
   enteredQty: number,
-  recipeUnit: string,
-  baseUnit: string,
-  ingredientFactor: number = 1
+  _recipeUnit?: string,
+  _baseUnit?: string,
+  _ingredientFactor: number = 1
 ): number {
-  const normRecipe = normalizeUnitCode(recipeUnit);
-  const normBase = normalizeUnitCode(baseUnit);
-
-  if (normRecipe === normBase) return Number(enteredQty) || 0;
-
-  const result = convertUnitQuantity(enteredQty, normRecipe, normBase, ingredientFactor);
-  return result.convertedQty;
+  return Number(enteredQty) || 0;
 }
 
 /**
  * Converts a purchase quantity into the ingredient's base unit.
+ * Automatic conversion disabled per user requirement: preserves entered purchase quantity directly.
  */
 export function convertPurchaseQtyToBase(
   purchaseQty: number,
-  purchaseUnit: string,
-  baseUnit: string,
-  conversionFactor: number = 1
+  _purchaseUnit?: string,
+  _baseUnit?: string,
+  _conversionFactor: number = 1
 ): number {
-  const normPurchase = normalizeUnitCode(purchaseUnit);
-  const normBase = normalizeUnitCode(baseUnit);
-
-  if (normPurchase === normBase) return Number(purchaseQty) || 0;
-
-  // Use custom factor if defined (> 0 and != 1)
-  if (conversionFactor && conversionFactor > 0 && conversionFactor !== 1) {
-    return Math.round(Number(purchaseQty) * conversionFactor * 10000) / 10000;
-  }
-
-  // Fallback to standard conversion
-  const result = convertUnitQuantity(purchaseQty, normPurchase, normBase, conversionFactor);
-  return result.convertedQty;
+  return Number(purchaseQty) || 0;
 }
 
 /**
- * Computes base unit cost from purchase price and conversion factor
+ * Computes base unit cost from purchase price.
+ * When a conversion factor is provided (e.g. 1000 G per KG, 12 PCS per PACK),
+ * calculates unit cost for recipe consumption accurately.
  */
-export function calculateBaseUnitCost(purchaseCost: number, conversionFactor: number): number {
+export function calculateBaseUnitCost(purchaseCost: number, conversionFactor?: number): number {
   const cost = Number(purchaseCost) || 0;
   const factor = Number(conversionFactor) || 1;
-  if (factor <= 0) return cost;
-  return Math.round((cost / factor) * 10000) / 10000;
+  return factor > 0 ? Math.round((cost / factor) * 10000) / 10000 : cost;
 }
 
 /**
- * Formats inventory stock into human-readable dual representation.
- * Example: 4,850 G (base) with purchase unit KG (factor 1000) -> "4.85 KG (4,850 g)"
+ * Formats inventory stock into clean, exact quantity and unit representation.
+ * Dual-unit conversion disabled per user requirement.
  */
 export function formatDisplayStock(
   baseQty: number,
   baseUnit: string,
-  purchaseUnit?: string,
-  conversionFactor?: number
+  _purchaseUnit?: string,
+  _conversionFactor?: number
 ): string {
   const num = Number(baseQty) || 0;
   const normBase = normalizeUnitCode(baseUnit);
-  const normPurchase = purchaseUnit ? normalizeUnitCode(purchaseUnit) : null;
-  const factor = Number(conversionFactor) || (normPurchase && STANDARD_UNITS[normPurchase] ? STANDARD_UNITS[normPurchase].defaultFactor : 1);
-
-  if (!normPurchase || normPurchase === normBase || factor <= 1) {
-    return `${num.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${normBase}`;
-  }
-
-  const purchaseEquivalent = num / factor;
-  return `${purchaseEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${normPurchase} (${num.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${normBase})`;
+  return `${num.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${normBase}`;
 }

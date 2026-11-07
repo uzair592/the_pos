@@ -1293,10 +1293,12 @@ export function exportExpenseVoucherPdf(
 
   // Expense Particulars Table
   const expenseRows = [
-    ['Expense Category', expense.categoryName || 'Operational Expense'],
-    ['Description / Particulars', expense.description || '—'],
-    ['Payment Channel', expense.paymentMethod || 'Cash'],
-    ['Operating Branch', expense.branchName || meta.branch || 'Main Branch'],
+    ['Expense Title / Purpose', expense.title || expense.description || 'Operational Expense'],
+    ['Expense Category', expense.categoryName || expense.category_name || 'Operational Expense'],
+    ['Paid To / Payee', expense.paidTo || expense.paid_to || '—'],
+    ['Notes / Particulars', expense.notes || expense.description || '—'],
+    ['Payment Channel', expense.paymentMethod || expense.payment_method || 'Cash'],
+    ['Operating Branch', expense.branchName || expense.branch_name || meta.branch || 'Main Branch'],
     ['Total Amount Paid', `${sym} ${Number(expense.amount || 0).toLocaleString()}`],
   ];
 
@@ -1312,7 +1314,7 @@ export function exportExpenseVoucherPdf(
       1: { fontStyle: 'normal' },
     },
     didParseCell: (data) => {
-      if (data.row.index === 4) {
+      if (data.row.index === expenseRows.length - 1) {
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.textColor = [225, 29, 72];
         data.cell.styles.fontSize = 10;
@@ -2110,6 +2112,165 @@ export function exportIngredientCostHistoryPdf(
     openPdfForPrint(doc);
   } else {
     doc.save(`Ingredient_Cost_History_${new Date().toISOString().split('T')[0]}.pdf`);
+  }
+  return doc;
+}
+
+export function exportMonthlyProfitLossPdf(
+  meta: RestaurantMeta,
+  dates: DateRangeMeta,
+  monthlyData: any[],
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF('portrait', 'mm', 'a4');
+  drawReportHeader(doc, 'Monthly Profit & Loss Report', meta, dates);
+
+  const sym = meta.currencySymbol || 'Rs.';
+  let currentY = 36;
+
+  const totalSales = monthlyData.reduce((acc, m) => acc + Number(m.net_sales || 0), 0);
+  const totalCogs = monthlyData.reduce((acc, m) => acc + Number(m.fifo_cogs || 0), 0);
+  const totalGrossProfit = monthlyData.reduce((acc, m) => acc + Number(m.gross_profit || 0), 0);
+  const totalExpenses = monthlyData.reduce((acc, m) => acc + Number(m.total_expenses || 0), 0);
+
+  // Summary Card
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(14, currentY, doc.internal.pageSize.width - 28, 20, 2, 2, 'F');
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('Total Net Sales', 18, currentY + 6);
+  doc.text('FIFO Ingredient COGS', 62, currentY + 6);
+  doc.text('Gross Profit', 110, currentY + 6);
+  doc.text('Total Expenses', 150, currentY + 6);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`${sym} ${totalSales.toLocaleString()}`, 18, currentY + 14);
+  doc.setTextColor(217, 119, 6);
+  doc.text(`${sym} ${totalCogs.toLocaleString()}`, 62, currentY + 14);
+  doc.setTextColor(22, 163, 74);
+  doc.text(`${sym} ${totalGrossProfit.toLocaleString()}`, 110, currentY + 14);
+  doc.setTextColor(220, 38, 38);
+  doc.text(`${sym} ${totalExpenses.toLocaleString()}`, 150, currentY + 14);
+
+  currentY += 26;
+
+  const rows = monthlyData.map((m) => [
+    m.month_label || m.month_key,
+    m.order_count?.toString() || '0',
+    `${sym} ${Number(m.net_sales || 0).toLocaleString()}`,
+    `${sym} ${Number(m.fifo_cogs || 0).toLocaleString()}`,
+    `${sym} ${Number(m.gross_profit || 0).toLocaleString()}`,
+    `${Number(m.gross_margin_percent || 0).toFixed(1)}%`,
+    `${sym} ${Number(m.total_expenses || 0).toLocaleString()}`,
+    `${sym} ${Number(m.net_profit || 0).toLocaleString()}`,
+    `${Number(m.net_margin_percent || 0).toFixed(1)}%`,
+  ]);
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [[
+      'Month',
+      'Orders',
+      'Net Sales',
+      'FIFO COGS',
+      'Gross Profit',
+      'Margin %',
+      'Expenses',
+      'Net Profit',
+      'Net %',
+    ]],
+    body: rows,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2.5 },
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 32, fontStyle: 'bold' },
+      1: { cellWidth: 15, halign: 'center' },
+      2: { cellWidth: 23, halign: 'right' },
+      3: { cellWidth: 22, halign: 'right' },
+      4: { cellWidth: 23, halign: 'right', fontStyle: 'bold' },
+      5: { cellWidth: 16, halign: 'center' },
+      6: { cellWidth: 22, halign: 'right' },
+      7: { cellWidth: 23, halign: 'right', fontStyle: 'bold' },
+      8: { cellWidth: 16, halign: 'center' },
+    },
+  });
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    doc.save(`Monthly_Profit_Loss_${new Date().toISOString().split('T')[0]}.pdf`);
+  }
+  return doc;
+}
+
+export function exportBranchFinancialReportPdf(
+  meta: RestaurantMeta,
+  dates: DateRangeMeta,
+  branchData: any[],
+  options?: { autoPrint?: boolean }
+) {
+  const doc = new jsPDF('portrait', 'mm', 'a4');
+  drawReportHeader(doc, 'Branch-Wise Financial Report', meta, dates);
+
+  const sym = meta.currencySymbol || 'Rs.';
+  let currentY = 36;
+
+  const rows = branchData.map((b) => [
+    (b.branch_name || 'Outlet') + (b.is_main_branch ? ' (Main)' : ''),
+    b.city || '-',
+    b.total_orders?.toString() || '0',
+    `${sym} ${Number(b.net_sales || 0).toLocaleString()}`,
+    `${sym} ${Number(b.fifo_cogs || 0).toLocaleString()}`,
+    `${sym} ${Number(b.gross_profit || 0).toLocaleString()}`,
+    `${Number(b.gross_margin_percent || 0).toFixed(1)}%`,
+    `${sym} ${Number(b.total_expenses || 0).toLocaleString()}`,
+    `${sym} ${Number(b.net_profit || 0).toLocaleString()}`,
+  ]);
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [[
+      'Branch Outlet',
+      'City',
+      'Orders',
+      'Net Sales',
+      'FIFO COGS',
+      'Gross Profit',
+      'Margin %',
+      'Expenses',
+      'Net Profit',
+    ]],
+    body: rows,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2.5 },
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 35, fontStyle: 'bold' },
+      1: { cellWidth: 18 },
+      2: { cellWidth: 15, halign: 'center' },
+      3: { cellWidth: 23, halign: 'right' },
+      4: { cellWidth: 21, halign: 'right' },
+      5: { cellWidth: 23, halign: 'right', fontStyle: 'bold' },
+      6: { cellWidth: 16, halign: 'center' },
+      7: { cellWidth: 21, halign: 'right' },
+      8: { cellWidth: 23, halign: 'right', fontStyle: 'bold' },
+    },
+  });
+
+  attachFooter(doc);
+
+  if (options?.autoPrint) {
+    openPdfForPrint(doc);
+  } else {
+    doc.save(`Branch_Financial_Report_${new Date().toISOString().split('T')[0]}.pdf`);
   }
   return doc;
 }

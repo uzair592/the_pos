@@ -263,7 +263,10 @@ export async function platformRoutes(fastify: FastifyInstance) {
   fastify.post('/api/platform/tenants', async (req, reply) => {
     const parsed = CreateTenantSchema.safeParse(req.body);
     if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.format() });
+      const issue = parsed.error.issues[0];
+      const field = issue ? (issue.path.join('.') || 'field') : 'field';
+      const msg = issue ? `${field}: ${issue.message}` : 'Invalid restaurant input';
+      return reply.status(400).send({ error: msg, details: parsed.error.format() });
     }
 
     const {
@@ -283,7 +286,7 @@ export async function platformRoutes(fastify: FastifyInstance) {
 
     const maxConcurrentDevices = (req.body as any)?.maxConcurrentDevices
       ? Number((req.body as any).maxConcurrentDevices)
-      : null;
+      : 25;
 
     // Check if email already used
     const existing = await query('SELECT id FROM tenants WHERE email = $1 AND deleted_at IS NULL', [email.toLowerCase().trim()], { isSuperAdmin: true });
@@ -291,10 +294,22 @@ export async function platformRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'A restaurant with this owner email already exists' });
     }
 
-    // Verify Plan exists
-    const planRes = await query('SELECT * FROM subscription_plans WHERE id = $1', [planId], { isSuperAdmin: true });
+    // Verify Plan exists, or fallback to first active plan
+    let effectivePlanId = planId;
+    let planRes = effectivePlanId ? await query('SELECT * FROM subscription_plans WHERE id = $1', [effectivePlanId], { isSuperAdmin: true }) : { rows: [] };
     if (planRes.rows.length === 0) {
-      return reply.status(400).send({ error: 'Subscription plan not found' });
+      const growthPlan = await query("SELECT * FROM subscription_plans WHERE is_active = true AND code = 'GROWTH' LIMIT 1", [], { isSuperAdmin: true });
+      if (growthPlan.rows.length > 0) {
+        planRes = growthPlan;
+        effectivePlanId = growthPlan.rows[0].id;
+      } else {
+        const defaultPlan = await query('SELECT * FROM subscription_plans WHERE is_active = true ORDER BY monthly_price ASC LIMIT 1', [], { isSuperAdmin: true });
+        if (defaultPlan.rows.length === 0) {
+          return reply.status(400).send({ error: 'No active subscription plans found. Please create a plan first.' });
+        }
+        planRes = defaultPlan;
+        effectivePlanId = defaultPlan.rows[0].id;
+      }
     }
     const plan = planRes.rows[0];
 
@@ -502,7 +517,7 @@ export async function platformRoutes(fastify: FastifyInstance) {
         country || 'Pakistan',
         currency || 'PKR',
         timeZone || 'Asia/Karachi',
-        businessType || 'RESTAURANT',
+        businessType || 'FINE_DINE',
         maxConcurrentDevices !== undefined && maxConcurrentDevices !== null ? Number(maxConcurrentDevices) : null,
         id,
       ],
