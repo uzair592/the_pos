@@ -141,18 +141,19 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
     const body = req.body as any;
 
     await withTransaction(async (client) => {
-      if (body.name || body.logoUrl || body.phone) {
+      if (body.name !== undefined || body.logoUrl !== undefined || body.phone !== undefined || body.address !== undefined) {
         await client.query(
           `
           UPDATE tenants
           SET name = COALESCE($1, name),
               legal_name = COALESCE($2, legal_name),
               phone = COALESCE($3, phone),
-              logo_url = COALESCE($4, logo_url),
+              address = COALESCE($4, address),
+              logo_url = COALESCE($5, logo_url),
               updated_at = CURRENT_TIMESTAMP
-          WHERE id = $5
+          WHERE id = $6
           `,
-          [body.name, body.legalName, body.phone, body.logoUrl, tenantId]
+          [body.name, body.legalName, body.phone, body.address, body.logoUrl, tenantId]
         );
       }
 

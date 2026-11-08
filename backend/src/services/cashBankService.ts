@@ -44,7 +44,6 @@ export interface CreateCashBankTransferDTO {
 
 /**
  * 1. Get All Bank Accounts for Tenant
- * Auto-seeds a default primary restaurant operating account if none exist
  */
 export async function getBankAccounts(tenantId: string): Promise<BankAccount[]> {
   const { rows } = await query(
@@ -52,21 +51,6 @@ export async function getBankAccounts(tenantId: string): Promise<BankAccount[]> 
     [tenantId],
     { tenantId }
   );
-
-  if (rows.length === 0) {
-    // Auto-seed default primary operating bank account
-    const seedRes = await query(
-      `
-      INSERT INTO bank_accounts (
-        tenant_id, account_name, bank_name, account_number, iban, opening_balance, current_balance, is_default, is_active
-      ) VALUES ($1, $2, $3, $4, $5, 0.00, 0.00, true, true)
-      RETURNING *
-      `,
-      [tenantId, 'Restaurant Operating Account', 'Meezan Bank Ltd', '02010108928371', 'PK12MEZN0002010108928371'],
-      { tenantId }
-    );
-    rows.push(seedRes.rows[0]);
-  }
 
   return rows.map(mapBankAccountRow);
 }

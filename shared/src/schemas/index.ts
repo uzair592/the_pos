@@ -222,6 +222,17 @@ export const UpdateWaitlistSchema = z.object({
   estimatedWaitMinutes: z.number().int().min(0).optional(),
 });
 
+export const CreateIngredientCategorySchema = z.object({
+  name: z.string().min(1, 'Category name is required'),
+  description: z.string().optional(),
+});
+
+export const UpdateIngredientCategorySchema = z.object({
+  name: z.string().min(1, 'Category name is required').optional(),
+  description: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
 // Categories & Products
 export const CreateCategorySchema = z.object({
   parentId: z.string().uuid().nullable().optional(),

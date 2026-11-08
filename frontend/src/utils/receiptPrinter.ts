@@ -59,8 +59,28 @@ export interface ValidatedReceiptData {
   paymentStatus: string;
   payments: ValidatedReceiptPayment[];
   receiptSettings: {
-    paperWidth?: '58mm' | '80mm';
+    paperWidth?: '58mm' | '80mm' | 'A4';
+    showBusinessName?: boolean;
+    businessNameFontSize?: number;
+    showPhone?: boolean;
+    phoneFontSize?: number;
+    showAddress?: boolean;
+    addressFontSize?: number;
+    showSlogan?: boolean;
+    sloganText?: string;
+    sloganFontSize?: number;
     showLogo?: boolean;
+    logoUrl?: string;
+    logoSize?: 'S' | 'M' | 'L' | 'XL';
+    billFontSize?: number;
+    lineSpacing?: number;
+    marginLeftMm?: number;
+    marginRightMm?: number;
+    spaceAboveMm?: number;
+    spaceBelowMm?: number;
+    autoCutReceipt?: boolean;
+    receiptCopies?: 'CUSTOMER_ONLY' | 'CUSTOMER_AND_KITCHEN' | 'TWO_CUSTOMER_COPIES';
+    desktopCutterCommand?: 'FEED_PARTIAL_CUT' | 'FEED_FULL_CUT' | 'NO_CUT';
     showTaxBreakdown?: boolean;
     showCashierName?: boolean;
     showCustomerDetails?: boolean;
@@ -84,13 +104,9 @@ export interface PrintReceiptOptions {
   };
 }
 
-/**
- * Safe number parser: guarantees a finite number, never NaN or undefined
- */
 export function safeNumber(val: any, fallback = 0): number {
   if (val === null || val === undefined) return fallback;
   if (typeof val === 'string') {
-    // Strip non-numeric currency prefixes (e.g. "Rs.", ",", etc.)
     const clean = val.replace(/[^0-9.-]/g, '');
     const num = parseFloat(clean);
     return isNaN(num) || !isFinite(num) ? fallback : num;
@@ -99,9 +115,6 @@ export function safeNumber(val: any, fallback = 0): number {
   return isNaN(num) || !isFinite(num) ? fallback : num;
 }
 
-/**
- * Safe currency formatter: guarantees formatted string, never "Rs. NaN"
- */
 export function formatCurrency(amount: any, symbol = 'Rs.'): string {
   const num = safeNumber(amount, 0);
   return `${symbol} ${num.toLocaleString('en-PK', {
@@ -110,10 +123,6 @@ export function formatCurrency(amount: any, symbol = 'Rs.'): string {
   })}`;
 }
 
-/**
- * Safe Date Formatter in Pakistan Standard Time (Asia/Karachi)
- * Guarantees a readable date, never "Invalid Date"
- */
 export function formatReceiptDate(dateStr?: any, timeZone = 'Asia/Karachi'): string {
   if (!dateStr) {
     return new Date().toLocaleString('en-PK', {
@@ -155,9 +164,6 @@ export function formatReceiptDate(dateStr?: any, timeZone = 'Asia/Karachi'): str
   }
 }
 
-/**
- * Clean Order Type display
- */
 export function formatOrderType(type?: string): string {
   if (!type) return 'Dine-In';
   const clean = String(type).toUpperCase().replace(/_/g, ' ');
@@ -167,9 +173,6 @@ export function formatOrderType(type?: string): string {
   return clean;
 }
 
-/**
- * Clean Payment Method display
- */
 export function formatPaymentMethod(method?: string): string {
   if (!method) return 'Cash';
   const clean = String(method).toUpperCase().replace(/_/g, ' ');
@@ -181,9 +184,6 @@ export function formatPaymentMethod(method?: string): string {
   return clean;
 }
 
-/**
- * Normalizes and validates raw order / receipt data with zero-leak guarantees
- */
 export function normalizeAndValidateReceiptData(
   raw: any,
   context?: { tenant?: any; branch?: any; user?: any }
@@ -191,22 +191,23 @@ export function normalizeAndValidateReceiptData(
   if (!raw) return null;
 
   const src = raw.receipt || raw.order || raw;
-
   const tenant = context?.tenant;
   const branch = context?.branch;
   const user = context?.user;
 
-  // Restaurant details
   const restaurantName =
     src.restaurantName ||
     src.restaurant_name ||
     src.tenant_name ||
     tenant?.name ||
-    'Restaurant POS';
+    'DELIGHT PIZZA';
 
   const restaurantLogo =
     src.restaurantLogo ||
     src.restaurant_logo ||
+    src.logoUrl ||
+    src.receiptSettings?.logoUrl ||
+    src.receipt_settings?.logoUrl ||
     tenant?.logo_url ||
     '';
 
@@ -219,12 +220,15 @@ export function normalizeAndValidateReceiptData(
   const rawAddress =
     src.branchAddress ||
     src.branch_address ||
+    src.address ||
+    tenant?.address ||
     branch?.address ||
     '';
 
   const rawCity =
     src.branchCity ||
     src.branch_city ||
+    tenant?.city ||
     branch?.city ||
     '';
 
@@ -235,6 +239,8 @@ export function normalizeAndValidateReceiptData(
   const branchPhone =
     src.branchPhone ||
     src.branch_phone ||
+    src.phone ||
+    tenant?.phone ||
     branch?.phone ||
     '';
 
@@ -249,77 +255,58 @@ export function normalizeAndValidateReceiptData(
   const timeZone =
     src.timeZone ||
     src.time_zone ||
+    tenant?.time_zone ||
     'Asia/Karachi';
-
-  const orderNumber =
-    src.orderNumber ||
-    src.order_number ||
-    (src.id ? `ORD-${String(src.id).slice(0, 8).toUpperCase()}` : 'ORD-001');
 
   const rawDate = src.date || src.created_at || src.createdAt || new Date().toISOString();
   const formattedDate = formatReceiptDate(rawDate, timeZone);
 
+  const currencySymbol =
+    src.currencySymbol ||
+    src.currency_symbol ||
+    tenant?.currency_symbol ||
+    'Rs.';
+
+  const orderNumber = String(
+    src.orderNumber ||
+    src.order_number ||
+    src.invoiceNumber ||
+    src.invoice_number ||
+    (src.id ? '#' + String(src.id).slice(0, 8).toUpperCase() : '#ORD-LIVE')
+  );
+
   const orderType = formatOrderType(src.orderType || src.order_type);
+  const tableNumber = src.tableNumber || src.table_number || src.tableName || (src.table?.table_number ? String(src.table.table_number) : null);
+  const floorName = String(src.floorName || src.floor_name || src.table?.floor_name || '');
+  const coverCount = safeNumber(src.coverCount || src.cover_count || src.guest_count, 1);
 
-  const tableNumber =
-    src.tableNumber !== undefined && src.tableNumber !== null
-      ? String(src.tableNumber)
-      : src.table_number !== undefined && src.table_number !== null
-      ? String(src.table_number)
-      : null;
+  const customerName = String(src.customerName || src.customer_name || src.customer?.name || '');
+  const customerPhone = String(src.customerPhone || src.customer_phone || src.customer?.phone || '');
+  const deliveryAddress = String(src.deliveryAddress || src.delivery_address || src.customer?.address || '');
+  const riderName = String(src.riderName || src.rider_name || '');
+  const riderPhone = String(src.riderPhone || src.rider_phone || '');
 
-  const floorName = src.floorName || src.floor_name || '';
-  const coverCount = Math.max(1, safeNumber(src.coverCount || src.cover_count, 1));
-
-  const cashierName =
+  const cashierName = String(
     src.cashierName ||
     src.cashier_name ||
     user?.fullName ||
-    'Staff';
+    'Cashier'
+  );
 
-  const serverName =
-    src.serverName ||
-    src.server_name ||
-    src.waiter_name ||
-    cashierName;
+  const serverName = String(src.serverName || src.server_name || '');
+  const orderNotes = String(src.orderNotes || src.order_notes || src.notes || '');
 
-  const customerName = src.customerName || src.customer_name || '';
-  const customerPhone = src.customerPhone || src.customer_phone || '';
-  const deliveryAddress = src.deliveryAddress || src.delivery_address || '';
-  const riderName = src.riderName || src.rider_name || '';
-  const riderPhone = src.riderPhone || src.rider_phone || '';
-  const orderNotes = src.orderNotes || src.order_notes || src.notes || '';
-  const currencySymbol = src.currencySymbol || src.currency_symbol || tenant?.currencySymbol || 'Rs.';
-
-  // Raw items normalization
-  const rawItems: any[] = Array.isArray(src.items)
+  const rawItems = Array.isArray(src.items)
     ? src.items
     : Array.isArray(src.order_items)
     ? src.order_items
     : Array.isArray(src.orderItems)
     ? src.orderItems
-    : Array.isArray(src.cartItems)
-    ? src.cartItems
     : [];
 
   const items: ValidatedReceiptItem[] = rawItems.map((item: any, idx: number) => {
-    const productName =
-      item.productName ||
-      item.product_name ||
-      item.name ||
-      item.title ||
-      item.product?.name ||
-      `Item #${idx + 1}`;
-
-    const variantName =
-      item.variantName ||
-      item.variant_name ||
-      item.variant?.name ||
-      item.variant ||
-      '';
-
-    const quantity = Math.max(1, safeNumber(item.quantity, 1));
-    const unitPrice = safeNumber(
+    const rawQuantity = safeNumber(item.quantity, 1);
+    const rawUnitPrice = safeNumber(
       item.unitPrice !== undefined
         ? item.unitPrice
         : item.unit_price !== undefined
@@ -328,55 +315,54 @@ export function normalizeAndValidateReceiptData(
       0
     );
 
-    const calculatedTotal = unitPrice * quantity;
-    const totalPrice = safeNumber(
+    const calculatedTotal = rawQuantity * rawUnitPrice;
+    const rawTotalPrice = safeNumber(
       item.totalPrice !== undefined
         ? item.totalPrice
         : item.total_price !== undefined
         ? item.total_price
-        : item.amount,
+        : calculatedTotal,
       calculatedTotal
     );
 
-    let rawModifiers = item.modifiers;
-    if (typeof rawModifiers === 'string') {
+    const rawDiscount = safeNumber(item.itemDiscount || item.item_discount || item.discount, 0);
+
+    let modifiers: Array<{ name: string; unitPrice: number }> = [];
+    if (Array.isArray(item.modifiers)) {
+      modifiers = item.modifiers.map((m: any) => ({
+        name: String(m.name || m.option_name || m.optionName || 'Modifier'),
+        unitPrice: safeNumber(m.unitPrice !== undefined ? m.unitPrice : m.unit_price, 0),
+      }));
+    } else if (typeof item.modifiers === 'string' && item.modifiers.trim()) {
       try {
-        rawModifiers = JSON.parse(rawModifiers);
-      } catch {
-        rawModifiers = [];
-      }
+        const parsed = JSON.parse(item.modifiers);
+        if (Array.isArray(parsed)) {
+          modifiers = parsed.map((m: any) => ({
+            name: String(m.name || m.option_name || m.optionName || 'Modifier'),
+            unitPrice: safeNumber(m.unitPrice !== undefined ? m.unitPrice : m.unit_price, 0),
+          }));
+        }
+      } catch (_) {}
     }
-    if (!Array.isArray(rawModifiers)) rawModifiers = [];
-
-    const modifiers = rawModifiers.map((m: any) => ({
-      name: String(m.name || m.modifier_name || m.optionName || 'Addon'),
-      unitPrice: safeNumber(m.unitPrice !== undefined ? m.unitPrice : m.unit_price || m.price, 0),
-    }));
-
-    const notes = item.notes || item.special_instructions || item.instruction || '';
 
     return {
-      id: String(item.id || `item-${idx}`),
-      productName: String(productName),
-      variantName: String(variantName),
-      quantity,
-      unitPrice,
-      totalPrice,
-      itemDiscount: safeNumber(item.itemDiscount || item.item_discount, 0),
+      id: String(item.id || item.productId || `item-${idx}`),
+      productName: String(item.productName || item.product_name || item.name || 'Menu Item'),
+      variantName: String(item.variantName || item.variant_name || ''),
+      quantity: rawQuantity,
+      unitPrice: rawUnitPrice,
+      totalPrice: rawTotalPrice,
+      itemDiscount: rawDiscount,
       modifiers,
-      notes: String(notes),
+      notes: String(item.notes || item.special_instructions || ''),
     };
   });
 
-  // Calculate totals robustly
-  const fallbackSubtotal = items.reduce((acc, it) => acc + it.totalPrice, 0);
   const subtotal = safeNumber(
     src.subtotal !== undefined
       ? src.subtotal
-      : src.gross_sales !== undefined
-      ? src.gross_sales
-      : src.items_subtotal,
-    fallbackSubtotal
+      : items.reduce((sum, it) => sum + it.totalPrice, 0),
+    0
   );
 
   const discount = safeNumber(
@@ -402,7 +388,6 @@ export function normalizeAndValidateReceiptData(
   );
 
   const taxAmount = safeNumber(src.taxAmount !== undefined ? src.taxAmount : src.tax_amount, 0);
-
   const serviceChargeAmount = safeNumber(
     src.serviceChargeAmount !== undefined
       ? src.serviceChargeAmount
@@ -413,8 +398,6 @@ export function normalizeAndValidateReceiptData(
   );
 
   const deliveryFee = safeNumber(src.deliveryFee !== undefined ? src.deliveryFee : src.delivery_fee, 0);
-
-  // Grand Total = Subtotal - Discount + Tax + Service Charge + Delivery
   const calculatedGrandTotal = Math.max(0, subtotal - discount + taxAmount + serviceChargeAmount + deliveryFee);
   const grandTotal = safeNumber(
     src.grandTotal !== undefined
@@ -430,7 +413,6 @@ export function normalizeAndValidateReceiptData(
   const balanceDue = safeNumber(src.balanceDue !== undefined ? src.balanceDue : src.balance_due, 0);
   const paymentStatus = String(src.paymentStatus || src.payment_status || (balanceDue <= 0 ? 'PAID' : 'PENDING'));
 
-  // Payments
   const rawPayments = Array.isArray(src.payments)
     ? src.payments
     : Array.isArray(src.order_payments)
@@ -494,16 +476,12 @@ export function normalizeAndValidateReceiptData(
   };
 }
 
-/**
- * Resolves full authoritative receipt data from server if only partial data is available
- */
 export async function resolveAuthoritativeReceipt(
   orderOrData: any,
   context?: { tenant?: any; branch?: any; user?: any }
 ): Promise<ValidatedReceiptData> {
   let raw = orderOrData;
 
-  // If a string ID is passed, fetch from server
   if (typeof orderOrData === 'string') {
     const res = await api.get(`/orders/${orderOrData}/receipt`);
     raw = res.receipt || res;
@@ -516,7 +494,6 @@ export async function resolveAuthoritativeReceipt(
       !orderOrData.restaurantName ||
       !orderOrData.branchName;
 
-    // If order has an ID and is missing line items or metadata, fetch authoritative receipt
     if (orderId && isMissingDetails) {
       try {
         const res = await api.get(`/orders/${orderId}/receipt`);
@@ -537,32 +514,94 @@ export async function resolveAuthoritativeReceipt(
 }
 
 /**
- * Generates clean, professional thermal receipt HTML for 80mm and 58mm widths
+ * Returns pixel width corresponding to user's selected Logo Size
+ */
+export function getLogoMaxPx(size?: string): number {
+  switch (size) {
+    case 'S':
+      return 60;
+    case 'M':
+      return 90;
+    case 'L':
+      return 130;
+    case 'XL':
+    default:
+      return 180;
+  }
+}
+
+/**
+ * Generates clean, professional thermal receipt HTML with full custom billing controls
  */
 export function generateThermalReceiptHtml(
   data: ValidatedReceiptData,
   options: { isReprint?: boolean; paperWidth?: '58mm' | '80mm' } = {}
 ): string {
-  const paperWidth = options.paperWidth || data.receiptSettings?.paperWidth || '80mm';
+  const rs = data.receiptSettings || {};
+  const paperWidth = options.paperWidth || rs.paperWidth || '80mm';
   const is58mm = paperWidth === '58mm';
   const sym = data.currencySymbol || 'Rs.';
 
   const widthCss = is58mm ? '52mm' : '76mm';
-  const fontCss = is58mm ? '10px' : '12px';
-  const headerFontCss = is58mm ? '13px' : '16px';
-  const totalFontCss = is58mm ? '14px' : '16px';
+  const baseFontSizePx = rs.billFontSize ? Number(rs.billFontSize) : (is58mm ? 12 : 14);
+  const lineSpacing = rs.lineSpacing !== undefined ? Number(rs.lineSpacing) : 1.25;
+  const marginLeftMm = rs.marginLeftMm !== undefined ? Number(rs.marginLeftMm) : 0;
+  const marginRightMm = rs.marginRightMm !== undefined ? Number(rs.marginRightMm) : 0;
+  const spaceAboveMm = rs.spaceAboveMm !== undefined ? Number(rs.spaceAboveMm) : 0;
+  const spaceBelowMm = rs.spaceBelowMm !== undefined ? Number(rs.spaceBelowMm) : 20;
+
+  const showBusinessName = rs.showBusinessName !== false;
+  const businessNamePx = rs.businessNameFontSize ? Number(rs.businessNameFontSize) : 21;
+  const showPhone = rs.showPhone !== false && !!data.branchPhone;
+  const phonePx = rs.phoneFontSize ? Number(rs.phoneFontSize) : 14;
+  const showAddress = rs.showAddress !== false && !!data.branchAddress;
+  const addressPx = rs.addressFontSize ? Number(rs.addressFontSize) : 14;
+  const showSlogan = rs.showSlogan !== false && (!!rs.sloganText || !!rs.headerText);
+  const sloganText = rs.sloganText || rs.headerText || '';
+  const sloganPx = rs.sloganFontSize ? Number(rs.sloganFontSize) : 13;
+
+  const showLogo = rs.showLogo !== false && (!!rs.logoUrl || !!data.restaurantLogo);
+  const logoUrl = rs.logoUrl || data.restaurantLogo || '';
+  const logoMaxPx = getLogoMaxPx(rs.logoSize || 'XL');
+
+  const selectedTemplate = rs.defaultTemplate || 'TABLE_GRID';
+  const isTableGrid = selectedTemplate === 'TABLE_GRID' || selectedTemplate === 'STANDARD_80MM';
+  const isDarkBanner = selectedTemplate === 'MODERN_DARK_BANNER';
+  const isFormal = selectedTemplate === 'FORMAL_ELEGANT';
+  const isEcoCompact = selectedTemplate === 'ECO_SAVE_COMPACT';
 
   const itemsHtml = data.items
-    .map((item) => {
-      const variantDisplay = item.variantName ? ` <span style="font-size:0.9em;font-style:italic;">(${escapeHtml(item.variantName)})</span>` : '';
-      const notesDisplay = item.notes ? `<div style="font-size:0.85em;color:#444;padding-left:8px;">* ${escapeHtml(item.notes)}</div>` : '';
+    .map((item, idx) => {
+      const variantDisplay = item.variantName ? ` <span style="font-size:0.88em;font-style:italic;color:#333;">(${escapeHtml(item.variantName)})</span>` : '';
+      const notesDisplay = item.notes ? `<div style="font-size:0.85em;color:#555;padding-left:4px;">* ${escapeHtml(item.notes)}</div>` : '';
       const modsDisplay = item.modifiers.length > 0
-        ? `<div style="font-size:0.85em;color:#444;padding-left:8px;">${item.modifiers.map(m => `+ ${escapeHtml(m.name)}${m.unitPrice > 0 ? ` (+${sym} ${m.unitPrice.toFixed(0)})` : ''}`).join('<br/>')}</div>`
+        ? `<div style="font-size:0.85em;color:#444;padding-left:4px;">${item.modifiers.map(m => `+ ${escapeHtml(m.name)}${m.unitPrice > 0 ? ` (+${sym} ${m.unitPrice.toFixed(0)})` : ''}`).join('<br/>')}</div>`
         : '';
 
-      if (is58mm) {
+      if (isTableGrid) {
         return `
-          <div style="margin-bottom: 4px;">
+          <tr style="border-bottom: 1px solid #ddd;">
+            <td style="padding: ${isEcoCompact ? '2px 4px' : '4px'}; border-right: 1px solid #ddd; vertical-align: top;">
+              <span style="font-weight: bold;">${escapeHtml(item.productName)}</span>${variantDisplay}
+              ${modsDisplay}
+              ${notesDisplay}
+            </td>
+            <td style="padding: ${isEcoCompact ? '2px 4px' : '4px'}; text-align: center; border-right: 1px solid #ddd; vertical-align: top; font-weight: bold;">
+              ${item.quantity}
+            </td>
+            <td style="padding: ${isEcoCompact ? '2px 4px' : '4px'}; text-align: right; border-right: 1px solid #ddd; vertical-align: top; white-space: nowrap;">
+              ${item.unitPrice.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+            </td>
+            <td style="padding: ${isEcoCompact ? '2px 4px' : '4px'}; text-align: right; vertical-align: top; font-weight: bold; white-space: nowrap;">
+              ${item.totalPrice.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </td>
+          </tr>
+        `;
+      }
+
+      if (is58mm || isEcoCompact) {
+        return `
+          <div style="margin-bottom: ${isEcoCompact ? '2px' : '4px'};">
             <div style="display:flex;justify-content:space-between;font-weight:bold;">
               <span style="flex:1;padding-right:4px;">${escapeHtml(item.productName)}${variantDisplay}</span>
               <span style="white-space:nowrap;">${sym} ${item.totalPrice.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
@@ -611,12 +650,15 @@ export function generateThermalReceiptHtml(
       padding: 0;
     }
     body {
-      font-family: 'Courier New', Courier, monospace, -apple-system, sans-serif;
-      font-size: ${fontCss};
-      line-height: 1.3;
+      font-family: ${isFormal ? "'Times New Roman', serif" : "'Courier New', Courier, monospace, -apple-system, sans-serif"};
+      font-size: ${baseFontSizePx}px;
+      line-height: ${lineSpacing};
       color: #000000;
       background: #ffffff;
-      padding: ${is58mm ? '2mm 1.5mm' : '4mm 2.5mm'};
+      padding-top: ${spaceAboveMm}mm;
+      padding-bottom: ${spaceBelowMm}mm;
+      padding-left: ${marginLeftMm}mm;
+      padding-right: ${marginRightMm}mm;
       width: ${widthCss};
       margin: 0 auto;
       -webkit-print-color-adjust: exact;
@@ -629,14 +671,8 @@ export function generateThermalReceiptHtml(
     .bolder { font-weight: 900; }
     .uppercase { text-transform: uppercase; }
     .divider {
-      border-top: 1px dashed #000000;
+      border-top: ${isFormal ? '2px double #000000' : '1px dashed #000000'};
       margin: 5px 0;
-    }
-    .divider-double {
-      border-top: 2px solid #000000;
-      border-bottom: 1px solid #000000;
-      height: 3px;
-      margin: 6px 0;
     }
     .row {
       display: flex;
@@ -650,44 +686,90 @@ export function generateThermalReceiptHtml(
       margin: 5px 0;
       display: flex;
       justify-content: space-between;
-      font-size: ${totalFontCss};
+      font-size: 1.15em;
       font-weight: 900;
     }
-    .reprint-banner {
-      border: 1px dashed #000;
-      padding: 3px;
-      margin: 4px 0;
+    .dark-banner {
+      background: #000000;
+      color: #ffffff;
+      padding: 6px;
+      margin-bottom: 6px;
       text-align: center;
+    }
+    .grid-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid #bbb;
+      margin: 6px 0;
+      font-size: 0.95em;
+    }
+    .grid-table th {
+      background: #f0f0f0;
+      border: 1px solid #bbb;
+      padding: 4px;
       font-weight: 900;
-      font-size: 0.9em;
-      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .grid-table td {
+      border: 1px solid #ddd;
     }
   </style>
 </head>
 <body>
   <!-- Header -->
-  <div class="text-center">
-    <div style="font-size: ${headerFontCss}; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">
-      ${escapeHtml(data.restaurantName)}
-    </div>
-    <div style="font-weight: bold; font-size: 0.95em; margin-top: 2px;">
-      ${escapeHtml(data.branchName)}
-    </div>
-    ${data.branchAddress ? `<div style="font-size: 0.85em; color: #222; margin-top: 1px;">${escapeHtml(data.branchAddress)}</div>` : ''}
-    ${data.branchPhone ? `<div style="font-size: 0.85em; font-weight: bold; margin-top: 1px;">Tel: ${escapeHtml(data.branchPhone)}</div>` : ''}
-    ${data.taxRegistrationNumber ? `<div style="font-size: 0.85em; font-weight: 900; margin-top: 2px;">STRN/NTN: ${escapeHtml(data.taxRegistrationNumber)}</div>` : ''}
-    ${data.receiptSettings.headerText ? `<div style="font-size: 0.85em; font-style: italic; margin-top: 2px;">${escapeHtml(data.receiptSettings.headerText)}</div>` : ''}
+  <div class="text-center" style="margin-bottom: 4px;">
+    ${showLogo && logoUrl ? `
+      <div style="margin-bottom: 6px;">
+        <img src="${logoUrl}" alt="Logo" style="max-width: ${logoMaxPx}px; height: auto; display: inline-block; object-fit: contain;" />
+      </div>
+    ` : ''}
+
+    ${isDarkBanner ? `
+      <div class="dark-banner">
+        ${showBusinessName ? `<div style="font-size: ${businessNamePx}px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">${escapeHtml(data.restaurantName)}</div>` : ''}
+        ${showSlogan && sloganText ? `<div style="font-size: ${sloganPx}px; font-style: italic; opacity: 0.9; margin-top: 2px;">${escapeHtml(sloganText)}</div>` : ''}
+      </div>
+    ` : `
+      ${showBusinessName ? `
+        <div style="font-size: ${businessNamePx}px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">
+          ${escapeHtml(data.restaurantName)}
+        </div>
+      ` : ''}
+      ${showSlogan && sloganText ? `
+        <div style="font-size: ${sloganPx}px; font-style: italic; color: #333; margin-top: 2px;">
+          ${escapeHtml(sloganText)}
+        </div>
+      ` : ''}
+    `}
+
+    ${showAddress ? `
+      <div style="font-size: ${addressPx}px; color: #222; margin-top: 2px; line-height: 1.2;">
+        ${escapeHtml(data.branchAddress)}
+      </div>
+    ` : ''}
+
+    ${showPhone ? `
+      <div style="font-size: ${phonePx}px; font-weight: bold; margin-top: 2px;">
+        Tel: ${escapeHtml(data.branchPhone)}
+      </div>
+    ` : ''}
+
+    ${data.taxRegistrationNumber && rs.showTaxBreakdown !== false ? `
+      <div style="font-size: 0.85em; font-weight: 900; margin-top: 2px;">
+        STRN/NTN: ${escapeHtml(data.taxRegistrationNumber)}
+      </div>
+    ` : ''}
   </div>
 
   ${options.isReprint ? `
-    <div class="reprint-banner">
+    <div style="border: 1px dashed #000; padding: 3px; margin: 4px 0; text-align: center; font-weight: 900; font-size: 0.9em;">
       *** DUPLICATE / REPRINT RECEIPT ***
     </div>
   ` : ''}
 
   <div class="divider"></div>
 
-  <!-- Order Metadata -->
+  <!-- Order Meta -->
   <div>
     <div class="row">
       <span class="bold">Order #:</span>
@@ -707,11 +789,13 @@ export function generateThermalReceiptHtml(
         <span class="bolder">Table ${escapeHtml(data.tableNumber)}${data.floorName ? ` (${escapeHtml(data.floorName)})` : ''}</span>
       </div>
     ` : ''}
-    <div class="row">
-      <span>Cashier:</span>
-      <span>${escapeHtml(data.cashierName)}</span>
-    </div>
-    ${data.customerName ? `
+    ${rs.showCashierName !== false ? `
+      <div class="row">
+        <span>Cashier:</span>
+        <span>${escapeHtml(data.cashierName)}</span>
+      </div>
+    ` : ''}
+    ${rs.showCustomerDetails !== false && data.customerName ? `
       <div class="row" style="border-top: 1px dotted #888; padding-top: 2px; margin-top: 2px;">
         <span>Customer:</span>
         <span class="bold">${escapeHtml(data.customerName)}${data.customerPhone ? ` (${escapeHtml(data.customerPhone)})` : ''}</span>
@@ -722,34 +806,42 @@ export function generateThermalReceiptHtml(
         <strong>Address:</strong> ${escapeHtml(data.deliveryAddress)}
       </div>
     ` : ''}
-    ${data.riderName ? `
-      <div class="row" style="font-size: 0.85em;">
-        <span>Rider:</span>
-        <span>${escapeHtml(data.riderName)}${data.riderPhone ? ` (${escapeHtml(data.riderPhone)})` : ''}</span>
-      </div>
-    ` : ''}
   </div>
 
   <div class="divider"></div>
 
-  <!-- Items Table Header -->
-  ${is58mm ? `
-    <div style="display:flex;justify-content:space-between;font-weight:900;text-transform:uppercase;font-size:0.9em;padding-bottom:3px;border-bottom:1px solid #000;">
-      <span>Item Description</span>
-      <span>Amount</span>
-    </div>
+  <!-- Items Content -->
+  ${isTableGrid ? `
+    <table class="grid-table">
+      <thead>
+        <tr>
+          <th style="text-align: left;">Item</th>
+          <th style="width: 32px; text-align: center;">Qty</th>
+          <th style="width: 48px; text-align: right;">Price</th>
+          <th style="width: 60px; text-align: right;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemsHtml || '<tr><td colspan="4" style="text-align:center;padding:6px;">No items</td></tr>'}
+      </tbody>
+    </table>
   ` : `
-    <div style="display:flex;justify-content:space-between;font-weight:900;text-transform:uppercase;font-size:0.9em;padding-bottom:3px;border-bottom:1px solid #000;">
-      <span style="flex:1;">Item</span>
-      <span style="width:36px;text-align:center;">Qty</span>
-      <span style="width:72px;text-align:right;">Amount</span>
+    ${is58mm ? `
+      <div style="display:flex;justify-content:space-between;font-weight:900;text-transform:uppercase;font-size:0.9em;padding-bottom:3px;border-bottom:1px solid #000;">
+        <span>Item Description</span>
+        <span>Amount</span>
+      </div>
+    ` : `
+      <div style="display:flex;justify-content:space-between;font-weight:900;text-transform:uppercase;font-size:0.9em;padding-bottom:3px;border-bottom:1px solid #000;">
+        <span style="flex:1;">Item</span>
+        <span style="width:36px;text-align:center;">Qty</span>
+        <span style="width:72px;text-align:right;">Amount</span>
+      </div>
+    `}
+    <div style="padding-top: 4px;">
+      ${itemsHtml || '<div class="text-center" style="font-style:italic;padding:6px 0;">No items on order</div>'}
     </div>
   `}
-
-  <!-- Items Body -->
-  <div style="padding-top: 4px;">
-    ${itemsHtml || '<div class="text-center" style="font-style:italic;padding:6px 0;">No items on order</div>'}
-  </div>
 
   <div class="divider"></div>
 
@@ -765,7 +857,7 @@ export function generateThermalReceiptHtml(
         <span>-${formatCurrency(data.discount, sym)}</span>
       </div>
     ` : ''}
-    ${data.taxAmount > 0 ? `
+    ${data.taxAmount > 0 && rs.showTaxBreakdown !== false ? `
       <div class="row">
         <span>Sales Tax (${data.taxPercent}%):</span>
         <span>${formatCurrency(data.taxAmount, sym)}</span>
@@ -814,7 +906,7 @@ export function generateThermalReceiptHtml(
   <!-- Footer -->
   <div class="text-center" style="margin-top: 4px;">
     <div style="font-weight:bold;">
-      ${escapeHtml(data.receiptSettings.footerText || 'Thank you for your visit!')}
+      ${escapeHtml(rs.footerText || 'Thank you for your visit!')}
     </div>
     <div style="font-size: 0.8em; color: #444; margin-top: 2px;">
       Please retain receipt for exchange or refund within 24 hours
@@ -824,10 +916,6 @@ export function generateThermalReceiptHtml(
 </html>`;
 }
 
-/**
- * Executes high-speed direct thermal printing via a hidden sandboxed iframe.
- * Dispatches directly to the system print dialog without opening ANY preview modal.
- */
 export async function executeThermalPrint(
   orderOrData: any,
   options: PrintReceiptOptions = {}
@@ -837,7 +925,6 @@ export async function executeThermalPrint(
 
   return new Promise((resolve, reject) => {
     try {
-      // Clean up any stale print frame
       const existing = document.getElementById('pos-silent-thermal-frame');
       if (existing) existing.remove();
 
@@ -863,7 +950,6 @@ export async function executeThermalPrint(
       doc.write(html);
       doc.close();
 
-      // Allow DOM and fonts to lay out
       setTimeout(() => {
         try {
           iframe.contentWindow?.focus();
@@ -885,10 +971,6 @@ export async function executeThermalPrint(
   });
 }
 
-/**
- * Formats plain text receipt for WhatsApp, SMS, or clipboard copying.
- * Guarantees zero "undefined", zero "Invalid Date", zero "NaN".
- */
 export function formatReceiptPlainText(
   raw: any,
   options: { isReprint?: boolean; context?: any } = {}

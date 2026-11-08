@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { MoreVertical } from 'lucide-react';
 
 export interface ActionMenuItem {
@@ -26,20 +27,47 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
   ariaLabel = 'Actions menu',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [openUpward, setOpenUpward] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; openUpward: boolean } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuPortalRef = useRef<HTMLDivElement>(null);
 
   const activeItems = items.filter(Boolean) as ActionMenuItem[];
 
-  // Close on outside click
+  const updatePosition = () => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const menuWidth = 208; // w-52 is 13rem = 208px
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpward = spaceBelow < 250 && rect.top > spaceBelow;
+
+    let left = align === 'right' ? rect.right - menuWidth : rect.left;
+    // Boundary check so menu doesn't overflow viewport edges
+    if (left < 10) left = 10;
+    if (left + menuWidth > window.innerWidth - 10) {
+      left = window.innerWidth - menuWidth - 10;
+    }
+
+    const top = openUpward ? rect.top - 6 : rect.bottom + 6;
+
+    setCoords({ top, left, openUpward });
+  };
+
+  // Close on outside click, window resize, or scroll
   useEffect(() => {
     if (!isOpen) return;
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
+      if (
+        buttonRef.current && buttonRef.current.contains(e.target as Node)
+      ) {
+        return;
       }
+      if (
+        menuPortalRef.current && menuPortalRef.current.contains(e.target as Node)
+      ) {
+        return;
+      }
+      setIsOpen(false);
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -48,30 +76,40 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    const handleScrollOrResize = () => {
+      // Re-position or close if target scrolled away
+      if (isOpen) {
+        updatePosition();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside, true);
     document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside, true);
       document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
     };
   }, [isOpen]);
 
-  // Check if we should open upward to avoid viewport bottom clipping
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isOpen && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      // If less than 240px below, flip upward
-      setOpenUpward(spaceBelow < 240);
+    if (!isOpen) {
+      updatePosition();
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
     }
-    setIsOpen((prev) => !prev);
   };
 
   if (activeItems.length === 0) return null;
 
   return (
-    <div ref={menuRef} className={`relative inline-block text-left ${className}`}>
+    <div className={`relative inline-block text-left ${className}`}>
       {/* 3 Dots Trigger Button */}
       <button
         ref={buttonRef}
@@ -87,17 +125,21 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
         <MoreVertical className="w-4 h-4" />
       </button>
 
-      {/* Dropdown Menu */}
-      {isOpen && (
+      {/* Render Dropdown in Portal to escape table overflow clipping and unwanted scrollbars */}
+      {isOpen && coords && createPortal(
         <div
+          ref={menuPortalRef}
           role="menu"
-          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} ${
-            openUpward ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
-          } w-48 sm:w-52 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-900/10 dark:shadow-black/50 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100`}
+          style={{
+            position: 'fixed',
+            left: `${coords.left}px`,
+            top: coords.openUpward ? undefined : `${coords.top}px`,
+            bottom: coords.openUpward ? `${window.innerHeight - coords.top}px` : undefined,
+            zIndex: 99999,
+          }}
+          className="w-48 sm:w-52 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl shadow-slate-900/20 dark:shadow-black/70 py-1.5 animate-in fade-in zoom-in-95 duration-100 ring-1 ring-black/5"
         >
           {activeItems.map((item, idx) => {
-            const Icon = item.icon;
-
             const variantClasses = {
               default: 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/70',
               danger: 'text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40',
@@ -133,7 +175,8 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
               </React.Fragment>
             );
           })}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

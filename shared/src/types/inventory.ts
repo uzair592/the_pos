@@ -15,6 +15,17 @@ export enum StockUnit {
   CAN = 'CAN',
 }
 
+export interface IngredientCategoryItem {
+  id: string;
+  tenantId: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  itemCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Ingredient {
   id: string;
   tenantId: string;

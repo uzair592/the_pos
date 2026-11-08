@@ -38,6 +38,9 @@ import {
   DollarSign,
   PieChart,
   Info,
+  Tag,
+  FolderPlus,
+  FolderTree,
 } from 'lucide-react';
 import {
   StockUnit,
@@ -122,6 +125,13 @@ export const InventoryManagement: React.FC = () => {
   const [isAddRecipeOpen, setIsAddRecipeOpen] = useState(false);
   const [isAdjustmentOpen, setIsAdjustmentOpen] = useState(false);
   const [isAddTransferOpen, setIsAddTransferOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+
+  // Dynamic Categories State
+  const [categoriesList, setCategoriesList] = useState<any[]>([]);
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
+  const [editingCategory, setEditingCategory] = useState<any | null>(null);
+  const [categoryLoading, setCategoryLoading] = useState(false);
 
   // Ingredient Where Used Mapping Modal State
   const [usageModalOpen, setUsageModalOpen] = useState(false);
@@ -188,21 +198,32 @@ export const InventoryManagement: React.FC = () => {
 
   const currencySymbol = tenant?.currency_symbol || 'Rs.';
 
+  const fetchCategories = async () => {
+    try {
+      const res = await api.get('/inventory/categories');
+      setCategoriesList(res.categories || []);
+    } catch (err: any) {
+      console.error('Failed to load categories:', err);
+    }
+  };
+
   const fetchData = async () => {
     try {
       const branchParam = currentBranchId ? `?branchId=${currentBranchId}` : '';
-      const [ingsRes, prodsRes, recipesRes, batchesRes, transfersRes] = await Promise.all([
+      const [ingsRes, prodsRes, recipesRes, batchesRes, transfersRes, catsRes] = await Promise.all([
         api.get(`/inventory/ingredients${branchParam}`),
         api.get('/menu/products'),
         api.get('/inventory/recipes'),
         api.get(`/inventory/batches${branchParam}`),
         api.get(`/inventory/transfers${branchParam}`),
+        api.get('/inventory/categories'),
       ]);
       setIngredients(ingsRes.ingredients || []);
       setProducts(prodsRes.products || []);
       setRecipes(recipesRes.recipes || []);
       setBatches(batchesRes.batches || []);
       setTransfers(transfersRes.transfers || []);
+      setCategoriesList(catsRes.categories || []);
 
       if (ingsRes.ingredients?.length > 0 && !adjForm.ingredientId) {
         setAdjForm((prev) => ({ ...prev, ingredientId: ingsRes.ingredients[0].id }));
@@ -367,6 +388,58 @@ export const InventoryManagement: React.FC = () => {
       fetchData();
     } catch (err: any) {
       error(err.message || 'Failed to create ingredient');
+    }
+  };
+
+  const handleSaveCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!categoryForm.name.trim()) return;
+
+    setCategoryLoading(true);
+    try {
+      if (editingCategory) {
+        await api.put(`/inventory/categories/${editingCategory.id}`, {
+          name: categoryForm.name.trim(),
+          description: categoryForm.description.trim() || undefined,
+        });
+        success(`Category "${categoryForm.name}" updated successfully`);
+      } else {
+        await api.post('/inventory/categories', {
+          name: categoryForm.name.trim(),
+          description: categoryForm.description.trim() || undefined,
+        });
+        success(`Category "${categoryForm.name}" created successfully`);
+      }
+      setCategoryForm({ name: '', description: '' });
+      setEditingCategory(null);
+      await fetchCategories();
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to save category');
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
+  const handleDeleteCategory = async (cat: any) => {
+    if (cat.isStandard) {
+      error('Standard categories cannot be deleted');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete category "${cat.name}"? Any items in this category will be moved to "General".`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/inventory/categories/${cat.id}`);
+      success(`Category "${cat.name}" deleted`);
+      if (selectedCategory === cat.name) {
+        setSelectedCategory('ALL');
+      }
+      await fetchCategories();
+      fetchData();
+    } catch (err: any) {
+      error(err.message || 'Failed to delete category');
     }
   };
 
@@ -614,6 +687,19 @@ export const InventoryManagement: React.FC = () => {
           >
             <Scale className="w-4 h-4 text-amber-500" />
             <span>Create Recipe</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setEditingCategory(null);
+              setCategoryForm({ name: '', description: '' });
+              setIsCategoryModalOpen(true);
+            }}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+            title="Create and organize custom inventory categories"
+          >
+            <FolderTree className="w-4 h-4 text-brand-500" />
+            <span>Categories</span>
           </button>
 
           <button
@@ -865,33 +951,58 @@ export const InventoryManagement: React.FC = () => {
               </div>
             </div>
 
-            {/* Category Pills */}
-            <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 text-xs">
-              <button
-                type="button"
-                onClick={() => setSelectedCategory('ALL')}
-                className={`px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all ${
-                  selectedCategory === 'ALL'
-                    ? 'bg-brand-500 text-white shadow-sm'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                All Categories
-              </button>
-              {INGREDIENT_CATEGORIES.map((cat) => (
+            {/* Category Pills & Category Management Action */}
+            <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 text-xs">
+              <div className="flex items-center space-x-1.5 shrink-0">
                 <button
-                  key={cat}
                   type="button"
-                  onClick={() => setSelectedCategory(cat)}
+                  onClick={() => setSelectedCategory('ALL')}
                   className={`px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all ${
-                    selectedCategory === cat
+                    selectedCategory === 'ALL'
                       ? 'bg-brand-500 text-white shadow-sm'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                   }`}
                 >
-                  {cat}
+                  All Categories ({ingredients.length})
                 </button>
-              ))}
+                {categoriesList.map((cat) => (
+                  <button
+                    key={cat.id || cat.name}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat.name)}
+                    className={`px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all flex items-center space-x-1 ${
+                      selectedCategory === cat.name
+                        ? 'bg-brand-500 text-white shadow-sm'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    <span>{cat.name}</span>
+                    {cat.itemCount !== undefined && (
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        selectedCategory === cat.name
+                          ? 'bg-brand-600 text-white'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}>
+                        {cat.itemCount}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingCategory(null);
+                  setCategoryForm({ name: '', description: '' });
+                  setIsCategoryModalOpen(true);
+                }}
+                className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-brand-50 dark:bg-brand-950/60 hover:bg-brand-100 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400 font-bold border border-brand-200 dark:border-brand-800 transition-all"
+                title="Create or manage inventory categories"
+              >
+                <FolderPlus className="w-3.5 h-3.5" />
+                <span>Manage Categories</span>
+              </button>
             </div>
           </div>
 
@@ -2517,15 +2628,28 @@ export const InventoryManagement: React.FC = () => {
               />
             </div>
             <div>
-              <label className="form-label">Category <span className="text-rose-500">*</span></label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="form-label mb-0">Category <span className="text-rose-500">*</span></label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingCategory(null);
+                    setCategoryForm({ name: '', description: '' });
+                    setIsCategoryModalOpen(true);
+                  }}
+                  className="text-[11px] font-bold text-brand-600 dark:text-brand-400 hover:underline"
+                >
+                  + New Category
+                </button>
+              </div>
               <select
                 value={ingForm.category}
                 onChange={(e) => setIngForm({ ...ingForm, category: e.target.value })}
                 className="form-select"
               >
-                {INGREDIENT_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                {categoriesList.map((c) => (
+                  <option key={c.id || c.name} value={c.name}>
+                    {c.name}
                   </option>
                 ))}
               </select>
@@ -2658,15 +2782,28 @@ export const InventoryManagement: React.FC = () => {
               />
             </div>
             <div>
-              <label className="form-label">Category <span className="text-rose-500">*</span></label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="form-label mb-0">Category <span className="text-rose-500">*</span></label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingCategory(null);
+                    setCategoryForm({ name: '', description: '' });
+                    setIsCategoryModalOpen(true);
+                  }}
+                  className="text-[11px] font-bold text-brand-600 dark:text-brand-400 hover:underline"
+                >
+                  + New Category
+                </button>
+              </div>
               <select
                 value={editIngForm.category}
                 onChange={(e) => setEditIngForm({ ...editIngForm, category: e.target.value })}
                 className="form-select"
               >
-                {INGREDIENT_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                {categoriesList.map((c) => (
+                  <option key={c.id || c.name} value={c.name}>
+                    {c.name}
                   </option>
                 ))}
               </select>
@@ -3190,6 +3327,164 @@ export const InventoryManagement: React.FC = () => {
             );
           })()}
         </form>
+      </Modal>
+
+      {/* Modal: Manage Inventory Categories */}
+      <Modal
+        isOpen={isCategoryModalOpen}
+        onClose={() => {
+          setIsCategoryModalOpen(false);
+          setEditingCategory(null);
+          setCategoryForm({ name: '', description: '' });
+        }}
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <FolderTree className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Inventory Categories</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">
+                Create and organize custom categories for your ingredients, pantry items, and packaging
+              </p>
+            </div>
+          </div>
+        }
+        maxWidth="2xl"
+      >
+        <div className="space-y-5">
+          {/* Create or Edit Category Form */}
+          <form onSubmit={handleSaveCategory} className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                {editingCategory ? `Edit Category: "${editingCategory.name}"` : 'Create New Inventory Category'}
+              </span>
+              {editingCategory && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingCategory(null);
+                    setCategoryForm({ name: '', description: '' });
+                  }}
+                  className="text-[11px] font-bold text-rose-500 hover:underline"
+                >
+                  Cancel Edit
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="form-label">Category Name <span className="text-rose-500">*</span></label>
+                <input
+                  type="text"
+                  required
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  placeholder="e.g. Frozen Foods, Bakery Supplies, Cleaning Chemicals"
+                  className="form-input"
+                />
+              </div>
+
+              <div>
+                <label className="form-label">Description (Optional)</label>
+                <input
+                  type="text"
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+                  placeholder="Brief note about items in this category"
+                  className="form-input"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="submit"
+                disabled={categoryLoading || !categoryForm.name.trim()}
+                className="h-10 px-5 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl text-xs shadow-sm transition-all flex items-center space-x-1.5 disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{categoryLoading ? 'Saving...' : editingCategory ? 'Update Category' : 'Add Category'}</span>
+              </button>
+            </div>
+          </form>
+
+          {/* List of Existing Categories */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Active Categories ({categoriesList.length})
+              </h4>
+              <span className="text-[11px] text-slate-400">
+                Custom categories can be renamed or deleted
+              </span>
+            </div>
+
+            <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+              {categoriesList.map((cat) => (
+                <div
+                  key={cat.id || cat.name}
+                  className="p-3 flex items-center justify-between hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500">
+                      <Tag className="w-3.5 h-3.5 text-brand-500" />
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white">
+                          {cat.name}
+                        </span>
+                        {cat.isStandard ? (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500">
+                            System
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400">
+                            Custom
+                          </span>
+                        )}
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          ({cat.itemCount || 0} items)
+                        </span>
+                      </div>
+                      {cat.description && (
+                        <p className="text-[11px] text-slate-400 mt-0.5">{cat.description}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-1">
+                    {!cat.isStandard && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCategory(cat);
+                            setCategoryForm({ name: cat.name, description: cat.description || '' });
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                          title="Edit Category"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCategory(cat)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                          title="Delete Category"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </Modal>
 
       {/* Ingredient Where-Used & Recipe Mapping Modal */}

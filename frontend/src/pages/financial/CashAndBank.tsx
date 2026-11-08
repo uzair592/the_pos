@@ -89,7 +89,7 @@ export const CashAndBank: React.FC = () => {
   const [accountForm, setAccountForm] = useState({
     id: '',
     accountName: '',
-    bankName: 'Meezan Bank Ltd',
+    bankName: '',
     accountNumber: '',
     iban: '',
     branchCode: '',
@@ -500,18 +500,18 @@ export const CashAndBank: React.FC = () => {
               setAccountForm({
                 id: '',
                 accountName: '',
-                bankName: 'Meezan Bank Ltd',
+                bankName: '',
                 accountNumber: '',
                 iban: '',
                 branchCode: '',
                 openingBalance: '0',
-                isDefault: false,
+                isDefault: bankAccounts.length === 0,
               });
               setIsAccountModalOpen(true);
             }}
-            className="flex items-center space-x-2 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all shadow-sm"
+            className="flex items-center space-x-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-[0.98]"
           >
-            <Plus className="w-4 h-4 text-emerald-500" />
+            <Plus className="w-4 h-4" />
             <span>Add Bank Account</span>
           </button>
 
@@ -637,19 +637,19 @@ export const CashAndBank: React.FC = () => {
                   setAccountForm({
                     id: '',
                     accountName: '',
-                    bankName: 'Meezan Bank Ltd',
+                    bankName: '',
                     accountNumber: '',
                     iban: '',
                     branchCode: '',
                     openingBalance: '0',
-                    isDefault: false,
+                    isDefault: bankAccounts.length === 0,
                   });
                   setIsAccountModalOpen(true);
                 }}
-                className="text-[11px] font-bold text-brand-600 hover:text-brand-700 flex items-center space-x-1"
+                className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 flex items-center space-x-1"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add Bank</span>
+                <span>+ Add Bank</span>
               </button>
             </div>
 
@@ -736,11 +736,57 @@ export const CashAndBank: React.FC = () => {
 
               {/* SECTION: BANK ACCOUNTS */}
               <div className="pt-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block px-2 pb-1">
-                  Bank Accounts ({filteredBankAccounts.length})
-                </span>
+                <div className="flex items-center justify-between px-2 pb-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Bank Accounts ({filteredBankAccounts.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountForm({
+                        id: '',
+                        accountName: '',
+                        bankName: '',
+                        accountNumber: '',
+                        iban: '',
+                        branchCode: '',
+                        openingBalance: '0',
+                        isDefault: bankAccounts.length === 0,
+                      });
+                      setIsAccountModalOpen(true);
+                    }}
+                    className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center space-x-0.5"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Add</span>
+                  </button>
+                </div>
                 <div className="space-y-1">
-                  {filteredBankAccounts.map((b) => (
+                  {filteredBankAccounts.length === 0 ? (
+                    <div className="p-3 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/50">
+                      <p className="text-[11px] text-slate-400">No bank accounts added yet.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAccountForm({
+                            id: '',
+                            accountName: '',
+                            bankName: '',
+                            accountNumber: '',
+                            iban: '',
+                            branchCode: '',
+                            openingBalance: '0',
+                            isDefault: true,
+                          });
+                          setIsAccountModalOpen(true);
+                        }}
+                        className="mt-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center space-x-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Your First Bank</span>
+                      </button>
+                    </div>
+                  ) : filteredBankAccounts.map((b) => (
                     <div
                       key={b.id}
                       className={`w-full p-2.5 rounded-xl transition-all border flex items-center justify-between group ${
@@ -1176,8 +1222,64 @@ export const CashAndBank: React.FC = () => {
       {/* ========================================================================= */}
       {viewMode === 'BANK_GRID' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {bankAccounts.map((b) => (
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Active Bank Accounts ({bankAccounts.length})</h3>
+              <p className="text-xs text-slate-500">Manage bank accounts, digital payment providers, and merchant cards</p>
+            </div>
+            <button
+              onClick={() => {
+                setAccountForm({
+                  id: '',
+                  accountName: '',
+                  bankName: '',
+                  accountNumber: '',
+                  iban: '',
+                  branchCode: '',
+                  openingBalance: '0',
+                  isDefault: bankAccounts.length === 0,
+                });
+                setIsAccountModalOpen(true);
+              }}
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-[0.98]"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Bank Account</span>
+            </button>
+          </div>
+
+          {bankAccounts.length === 0 ? (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto font-black">
+                <Landmark className="w-6 h-6" />
+              </div>
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">No Bank Accounts Configured</h4>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                No bank accounts are required by default. You can add your business bank accounts or mobile wallets anytime.
+              </p>
+              <button
+                onClick={() => {
+                  setAccountForm({
+                    id: '',
+                    accountName: '',
+                    bankName: '',
+                    accountNumber: '',
+                    iban: '',
+                    branchCode: '',
+                    openingBalance: '0',
+                    isDefault: true,
+                  });
+                  setIsAccountModalOpen(true);
+                }}
+                className="inline-flex items-center space-x-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Bank Account</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {bankAccounts.map((b) => (
               <div
                 key={b.id}
                 className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4 hover:border-brand-500/50 transition-colors"
@@ -1308,8 +1410,9 @@ export const CashAndBank: React.FC = () => {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+    )}
 
       {/* ========================================================================= */}
       {/* 3. CASH ⇄ BANK TRANSFERS CONTRA REGISTER VIEW */}

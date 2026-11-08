@@ -35,14 +35,45 @@ export interface Branch {
   updatedAt: string;
 }
 
-export type ReceiptTemplateType = 'STANDARD_80MM' | 'FINE_DINING' | 'COMPACT_58MM' | 'TAX_INVOICE_A4' | 'KITCHEN_TOKEN';
+export type ReceiptTemplateType = 
+  | 'TABLE_GRID'
+  | 'STANDARD_80MM' 
+  | 'MODERN_DARK_BANNER'
+  | 'FORMAL_ELEGANT'
+  | 'ECO_SAVE_COMPACT'
+  | 'FINE_DINING' 
+  | 'COMPACT_58MM' 
+  | 'TAX_INVOICE_A4' 
+  | 'KITCHEN_TOKEN';
+
+export type BillLogoSize = 'S' | 'M' | 'L' | 'XL';
 
 export interface ReceiptSettings {
   defaultTemplate?: ReceiptTemplateType;
   headerText?: string;
   footerText?: string;
+  sloganText?: string;
+  showBusinessName?: boolean;
+  businessNameFontSize?: number; // e.g. 21
+  showPhone?: boolean;
+  phoneFontSize?: number; // e.g. 14
+  showAddress?: boolean;
+  addressFontSize?: number; // e.g. 14
+  showSlogan?: boolean;
+  sloganFontSize?: number; // e.g. 12
   showLogo: boolean;
+  logoUrl?: string;
+  logoSize?: BillLogoSize; // 'S' | 'M' | 'L' | 'XL'
   paperWidth: '58mm' | '80mm' | 'A4';
+  billFontSize?: number; // e.g. 15
+  lineSpacing?: number; // e.g. 1.25
+  marginLeftMm?: number; // e.g. 0
+  marginRightMm?: number; // e.g. 0
+  spaceAboveMm?: number; // e.g. 0
+  spaceBelowMm?: number; // e.g. 20
+  autoCutReceipt?: boolean;
+  receiptCopies?: 'CUSTOMER_ONLY' | 'CUSTOMER_AND_KITCHEN' | 'TWO_CUSTOMER_COPIES';
+  desktopCutterCommand?: 'FEED_PARTIAL_CUT' | 'FEED_FULL_CUT' | 'NO_CUT';
   showTaxBreakdown: boolean;
   showCashierName: boolean;
   showCustomerDetails: boolean;

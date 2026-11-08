@@ -28,31 +28,49 @@ export interface ReceiptThemeConfig {
 
 export const RECEIPT_THEMES: ReceiptThemeConfig[] = [
   {
-    id: 'STANDARD_80MM',
-    name: 'Standard 80mm POS Thermal',
-    subtitle: 'POS Thermal Roll',
-    hardware: '80mm (3-inch) Roll',
-    icon: '🧾',
-    badge: 'Recommended',
-    description: 'Crisp, high-contrast thermal receipt for standard 80mm POS printers (Epson, Star, Xprinter). Clean itemized list, bold grand total, and QR code.',
-  },
-  {
-    id: 'FINE_DINING',
-    name: 'Fine Dining Guest Check',
-    subtitle: 'Dine-In Check Slip',
+    id: 'TABLE_GRID',
+    name: 'Table-Grid Invoice',
+    subtitle: 'Full Bordered Grid',
     hardware: '80mm Roll / Slip',
-    icon: '🍽️',
-    badge: 'Dine-In',
-    description: 'Elegant sit-down dining slip featuring server name, table & covers, gratuity suggestion guide (10%, 15%, 20%), and guest signature line.',
+    icon: '📊',
+    badge: 'Popular',
+    description: 'Neat structured receipt featuring clean table grid borders around items, header box, and financial breakdown.',
   },
   {
-    id: 'COMPACT_58MM',
-    name: 'Compact 58mm Mobile Roll',
-    subtitle: 'Mobile & Kiosk Slip',
-    hardware: '58mm (2-inch) Roll',
+    id: 'STANDARD_80MM',
+    name: 'Classic Minimalist',
+    subtitle: 'Standard Thermal Roll',
+    hardware: '80mm (3-inch) Roll',
+    icon: '📄',
+    badge: 'Standard',
+    description: 'Crisp thermal receipt with dashed divider lines, itemized lines, and high readability for standard POS thermal printers.',
+  },
+  {
+    id: 'MODERN_DARK_BANNER',
+    name: 'Modern Dark Banner',
+    subtitle: 'Bold Header Banner',
+    hardware: '80mm / 58mm Roll',
+    icon: '🏷️',
+    badge: 'Modern',
+    description: 'High-contrast styling with solid black inverted title banner, dark total summaries, and modern typography.',
+  },
+  {
+    id: 'FORMAL_ELEGANT',
+    name: 'Formal Elegant',
+    subtitle: 'Classic Serif Presentation',
+    hardware: '80mm Slip / Roll',
+    icon: '✒️',
+    badge: 'Fine Dining',
+    description: 'Double-line borders, classic serif fonts, delicate spacing, and sophisticated presentation for formal dining.',
+  },
+  {
+    id: 'ECO_SAVE_COMPACT',
+    name: 'Eco-Save Compact',
+    subtitle: 'Paper Saving Mode',
+    hardware: '58mm / 80mm Roll',
     icon: '⚡',
-    badge: 'Mobile / Handheld',
-    description: 'Condensed layout tailored for 58mm portable Bluetooth printers, handheld terminals, food trucks, and space-constrained kiosk slips.',
+    badge: 'Eco-Friendly',
+    description: 'Ultra-condensed row heights, micro-margins, and optimized line spacing designed to save up to 40% paper.',
   },
   {
     id: 'TAX_INVOICE_A4',
@@ -61,7 +79,7 @@ export const RECEIPT_THEMES: ReceiptThemeConfig[] = [
     hardware: 'Laser / Inkjet A4',
     icon: '📑',
     badge: 'Corporate / GST',
-    description: 'Formal commercial full-page tax invoice compliant with revenue authority standards. Full tax breakdown, customer address, and authorized signature area.',
+    description: 'Formal commercial full-page tax invoice compliant with revenue authority standards. Full tax breakdown and signature lines.',
   },
   {
     id: 'KITCHEN_TOKEN',
@@ -70,7 +88,7 @@ export const RECEIPT_THEMES: ReceiptThemeConfig[] = [
     hardware: '80mm Thermal KOT',
     icon: '🎟️',
     badge: 'Kitchen / KOT',
-    description: 'High-visibility kitchen order ticket and customer pickup token with oversized order numbers, modifier alerts, and prep item checklists.',
+    description: 'High-visibility kitchen order ticket and customer pickup token with oversized order numbers and prep checklists.',
   },
 ];
 
@@ -175,12 +193,372 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
   if (!receiptData) return null;
   const currency = receiptData.currencySymbol || 'Rs.';
 
+  const rs = receiptData.receiptSettings || {};
+  const showBusinessName = rs.showBusinessName !== false;
+  const businessNamePx = rs.businessNameFontSize ? Number(rs.businessNameFontSize) : 20;
+  const showPhone = rs.showPhone !== false && !!receiptData.branchPhone;
+  const phonePx = rs.phoneFontSize ? Number(rs.phoneFontSize) : 13;
+  const showAddress = rs.showAddress !== false && !!receiptData.branchAddress;
+  const addressPx = rs.addressFontSize ? Number(rs.addressFontSize) : 12;
+  const showSlogan = rs.showSlogan !== false && (!!rs.sloganText || !!rs.headerText);
+  const sloganText = rs.sloganText || rs.headerText || '';
+  const sloganPx = rs.sloganFontSize ? Number(rs.sloganFontSize) : 13;
+
+  const showLogo = rs.showLogo !== false && (!!rs.logoUrl || !!receiptData.restaurantLogo);
+  const logoUrl = rs.logoUrl || receiptData.restaurantLogo || '';
+  const getLogoWidth = (size?: string) => {
+    switch (size) {
+      case 'S': return '60px';
+      case 'M': return '90px';
+      case 'L': return '130px';
+      case 'XL': default: return '180px';
+    }
+  };
+  const logoWidth = getLogoWidth(rs.logoSize || 'XL');
+
+  const renderHeaderBrand = (center = true) => (
+    <div className={`space-y-1 ${center ? 'text-center' : ''}`}>
+      {showLogo && logoUrl && (
+        <div className={`mb-2 ${center ? 'flex justify-center' : ''}`}>
+          <img
+            src={logoUrl}
+            alt="Logo"
+            style={{ maxWidth: logoWidth, maxHeight: '80px', objectFit: 'contain' }}
+            className="filter grayscale contrast-125"
+          />
+        </div>
+      )}
+      {showBusinessName && (
+        <h2
+          style={{ fontSize: `${businessNamePx}px`, lineHeight: 1.15 }}
+          className="font-black uppercase tracking-wider text-slate-950"
+        >
+          {receiptData.restaurantName}
+        </h2>
+      )}
+      {showSlogan && sloganText && (
+        <p style={{ fontSize: `${sloganPx}px` }} className="font-semibold italic text-slate-700">
+          "{sloganText}"
+        </p>
+      )}
+      <p className="text-[11px] font-bold text-slate-800">{receiptData.branchName}</p>
+      {showAddress && (
+        <p style={{ fontSize: `${addressPx}px` }} className="text-slate-600 leading-tight">
+          {receiptData.branchAddress}
+        </p>
+      )}
+      {showPhone && (
+        <p style={{ fontSize: `${phonePx}px` }} className="text-slate-700 font-bold">
+          Tel: {receiptData.branchPhone}
+        </p>
+      )}
+      {showTaxDetails && receiptData.taxRegistrationNumber && (
+        <p className="text-[10px] text-slate-900 font-extrabold mt-0.5">
+          STRN/NTN: {receiptData.taxRegistrationNumber}
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <div className="w-full flex justify-center">
       {/* =========================================================================
-          THEME 1: STANDARD 80MM POS THERMAL RECEIPT
+          THEME: TABLE-GRID INVOICE (Table borders around items, header & totals)
          ========================================================================= */}
-      {template === 'STANDARD_80MM' && (
+      {template === 'TABLE_GRID' && (
+        <div
+          id={isPrintable ? 'printable-area' : undefined}
+          className={`${
+            isPrintable ? 'printable-receipt ' : ''
+          }bg-white text-slate-900 p-4 rounded-xl shadow-lg font-mono text-xs w-full border border-slate-300 select-text`}
+          style={{ maxWidth: '330px' }}
+        >
+          {/* Header */}
+          <div className="border border-slate-900 p-2.5 mb-2.5 rounded">
+            {renderHeaderBrand(true)}
+            <div className="mt-2 pt-1.5 border-t border-slate-300 text-center text-[10px] font-black uppercase tracking-wider bg-slate-100 py-0.5 rounded">
+              Table-Grid Tax Invoice
+            </div>
+          </div>
+
+          {/* Order Meta Box */}
+          <div className="border border-slate-900 p-2 mb-2.5 text-[11px] space-y-1 rounded bg-slate-50/50">
+            <div className="flex justify-between items-center">
+              <span className="font-bold text-slate-700">Invoice / Ord #:</span>
+              <span className="font-black text-sm text-slate-950">{receiptData.orderNumber}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>Date:</span>
+              <span>{new Date(receiptData.date).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-700">Type / Table:</span>
+              <span className="font-extrabold uppercase">
+                {receiptData.orderType} {receiptData.tableNumber ? `• Table ${receiptData.tableNumber}` : ''}
+              </span>
+            </div>
+            {receiptData.serverName && (
+              <div className="flex justify-between text-slate-600">
+                <span>Server / Cashier:</span>
+                <span>{receiptData.serverName || receiptData.cashierName}</span>
+              </div>
+            )}
+            {showCustomer && receiptData.customerName && (
+              <div className="flex justify-between pt-1 border-t border-slate-200 text-slate-700">
+                <span>Customer:</span>
+                <span className="font-bold text-slate-900">
+                  {receiptData.customerName} {receiptData.customerPhone ? `(${receiptData.customerPhone})` : ''}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Table Grid Items */}
+          <div className="border border-slate-900 rounded overflow-hidden mb-2.5">
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="bg-slate-900 text-white font-black text-[10px] uppercase">
+                  <th className="p-1.5 text-left border-r border-slate-700">Description</th>
+                  <th className="p-1.5 text-center w-10 border-r border-slate-700">Qty</th>
+                  <th className="p-1.5 text-right w-16">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-300">
+                {receiptData.items?.map((item: any, idx: number) => (
+                  <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                    <td className="p-1.5 border-r border-slate-300">
+                      <div className="font-bold text-slate-950">{item.productName}</div>
+                      {item.variantName && (
+                        <div className="text-[10px] text-slate-500 italic">({item.variantName})</div>
+                      )}
+                    </td>
+                    <td className="p-1.5 text-center font-bold border-r border-slate-300">{item.quantity}</td>
+                    <td className="p-1.5 text-right font-black">
+                      {currency} {Number(item.totalPrice).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Totals Box in Grid */}
+          <div className="border border-slate-900 rounded p-2 text-[11px] space-y-1 mb-2 bg-slate-50/50">
+            <div className="flex justify-between text-slate-700">
+              <span>Subtotal:</span>
+              <span className="font-bold">{currency} {Number(receiptData.subtotal).toLocaleString()}</span>
+            </div>
+            {receiptData.discount > 0 && (
+              <div className="flex justify-between text-rose-600 font-bold">
+                <span>Discount:</span>
+                <span>-{currency} {Number(receiptData.discount).toLocaleString()}</span>
+              </div>
+            )}
+            {receiptData.taxAmount > 0 && (
+              <div className="flex justify-between text-slate-700">
+                <span>Tax ({receiptData.taxPercent}%):</span>
+                <span>{currency} {Number(receiptData.taxAmount).toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm font-black text-slate-950 border-t-2 border-slate-900 pt-1 mt-1">
+              <span>NET TOTAL:</span>
+              <span className="text-base">{currency} {Number(receiptData.grandTotal).toLocaleString()}</span>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="text-center pt-2 text-[10px] text-slate-600">
+            <p className="font-bold">{receiptData.receiptSettings?.footerText || 'Thank you for your visit!'}</p>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          THEME 2: MODERN DARK BANNER
+         ========================================================================= */}
+      {template === 'MODERN_DARK_BANNER' && (
+        <div
+          id={isPrintable ? 'printable-area' : undefined}
+          className={`${
+            isPrintable ? 'printable-receipt ' : ''
+          }bg-white text-slate-900 p-4 rounded-xl shadow-lg font-mono text-xs w-full border border-slate-200 select-text`}
+          style={{ maxWidth: '330px' }}
+        >
+          {/* Solid Dark Header Banner */}
+          <div className="bg-slate-950 text-white p-3 rounded-lg text-center mb-2.5">
+            {showLogo && logoUrl && (
+              <div className="flex justify-center mb-1.5">
+                <img
+                  src={logoUrl}
+                  alt="Logo"
+                  style={{ maxWidth: logoWidth, maxHeight: '70px', objectFit: 'contain' }}
+                  className="filter invert contrast-200"
+                />
+              </div>
+            )}
+            {showBusinessName && (
+              <h2 style={{ fontSize: `${businessNamePx}px` }} className="font-black uppercase tracking-wider text-white">
+                {receiptData.restaurantName}
+              </h2>
+            )}
+            {showSlogan && sloganText && (
+              <p style={{ fontSize: `${sloganPx}px` }} className="font-semibold italic text-slate-300">
+                "{sloganText}"
+              </p>
+            )}
+            <p className="text-[10px] text-slate-400 mt-0.5">{receiptData.branchName}</p>
+          </div>
+
+          <div className="text-center text-[10px] text-slate-600 border-b border-dashed border-slate-300 pb-2 mb-2">
+            {showAddress && <p>{receiptData.branchAddress}</p>}
+            {showPhone && <p className="font-bold">Tel: {receiptData.branchPhone}</p>}
+          </div>
+
+          {/* Order Details */}
+          <div className="text-[11px] space-y-1 border-b border-dashed border-slate-300 pb-2 mb-2">
+            <div className="flex justify-between">
+              <span className="font-bold">Order:</span>
+              <span className="font-black text-slate-950">{receiptData.orderNumber}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>Date:</span>
+              <span>{new Date(receiptData.date).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Type:</span>
+              <span className="font-bold">{receiptData.orderType}</span>
+            </div>
+          </div>
+
+          {/* Items */}
+          <div className="divide-y divide-slate-200 border-b border-slate-300 pb-2 mb-2">
+            {receiptData.items?.map((item: any, idx: number) => (
+              <div key={idx} className="py-1 flex justify-between">
+                <span>{item.quantity}x {item.productName}</span>
+                <span className="font-black">{currency} {Number(item.totalPrice).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Dark Totals Banner */}
+          <div className="bg-slate-900 text-white p-2.5 rounded-lg space-y-1 text-[11px]">
+            <div className="flex justify-between text-slate-300">
+              <span>Subtotal:</span>
+              <span>{currency} {Number(receiptData.subtotal).toLocaleString()}</span>
+            </div>
+            {receiptData.discount > 0 && (
+              <div className="flex justify-between text-rose-300">
+                <span>Discount:</span>
+                <span>-{currency} {Number(receiptData.discount).toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-base font-black text-amber-300 border-t border-slate-700 pt-1 mt-1">
+              <span>TOTAL DUE:</span>
+              <span>{currency} {Number(receiptData.grandTotal).toLocaleString()}</span>
+            </div>
+          </div>
+
+          <div className="text-center pt-2 text-[10px] text-slate-500">
+            {receiptData.receiptSettings?.footerText || 'Thank you for your business!'}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          THEME 3: FORMAL ELEGANT
+         ========================================================================= */}
+      {template === 'FORMAL_ELEGANT' && (
+        <div
+          id={isPrintable ? 'printable-area' : undefined}
+          className={`${
+            isPrintable ? 'printable-receipt ' : ''
+          }bg-[#fffefc] text-slate-900 p-5 rounded-xl shadow-lg border-2 border-slate-800 font-serif text-xs w-full select-text`}
+          style={{ maxWidth: '335px' }}
+        >
+          <div className="text-center border-b-2 border-double border-slate-800 pb-2.5 mb-2.5">
+            {renderHeaderBrand(true)}
+            <div className="mt-1 text-[9px] uppercase tracking-widest text-slate-500 font-sans">
+              ✦ Guest Receipt ✦
+            </div>
+          </div>
+
+          <div className="flex justify-between text-[10px] font-sans text-slate-600 border-b border-slate-300 pb-1.5 mb-2">
+            <span>Check #{receiptData.orderNumber}</span>
+            <span>{new Date(receiptData.date).toLocaleDateString()}</span>
+          </div>
+
+          <div className="divide-y divide-slate-200 border-b-2 border-double border-slate-800 pb-2 mb-2">
+            {receiptData.items?.map((item: any, idx: number) => (
+              <div key={idx} className="py-1 flex justify-between font-sans">
+                <span>{item.quantity} × {item.productName}</span>
+                <span className="font-bold">{currency} {Number(item.totalPrice).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-1 font-sans text-[11px] border-b border-slate-300 pb-2 mb-2">
+            <div className="flex justify-between text-slate-600">
+              <span>Subtotal:</span>
+              <span>{currency} {Number(receiptData.subtotal).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between font-black text-sm text-slate-950 border-t border-slate-800 pt-1 mt-1">
+              <span>TOTAL:</span>
+              <span>{currency} {Number(receiptData.grandTotal).toLocaleString()}</span>
+            </div>
+          </div>
+
+          <div className="text-center font-serif text-[10px] text-slate-600 italic">
+            "{receiptData.receiptSettings?.footerText || 'It was a genuine honor to serve you today.'}"
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          THEME 4: ECO-SAVE COMPACT
+         ========================================================================= */}
+      {template === 'ECO_SAVE_COMPACT' && (
+        <div
+          id={isPrintable ? 'printable-area' : undefined}
+          className={`${
+            isPrintable ? 'printable-receipt ' : ''
+          }bg-white text-slate-900 p-2.5 rounded-lg shadow font-mono text-[10px] leading-tight w-full border border-slate-200 select-text`}
+          style={{ maxWidth: '240px' }}
+        >
+          <div className="text-center border-b border-dashed border-slate-400 pb-1 mb-1">
+            {showLogo && logoUrl && (
+              <div className="flex justify-center mb-1">
+                <img src={logoUrl} alt="Logo" style={{ maxWidth: '60px', maxHeight: '40px' }} />
+              </div>
+            )}
+            {showBusinessName && <h4 className="font-black text-xs uppercase">{receiptData.restaurantName}</h4>}
+            {showPhone && <p className="text-[9px]">Tel: {receiptData.branchPhone}</p>}
+          </div>
+
+          <div className="text-[9px] flex justify-between border-b border-dashed border-slate-400 pb-1 mb-1">
+            <span>ORD: {receiptData.orderNumber}</span>
+            <span>{new Date(receiptData.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+
+          <div className="border-b border-dashed border-slate-400 pb-1 mb-1 space-y-0.5">
+            {receiptData.items?.map((item: any, idx: number) => (
+              <div key={idx} className="flex justify-between">
+                <span className="truncate pr-1">{item.quantity}x {item.productName}</span>
+                <span className="font-bold">{currency} {Number(item.totalPrice).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
+            <span>TOTAL:</span>
+            <span>{currency} {Number(receiptData.grandTotal).toLocaleString()}</span>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          THEME 5: CLASSIC MINIMALIST (STANDARD_80MM)
+         ========================================================================= */}
+      {(template === 'STANDARD_80MM' || !template) && (
         <div
           id={isPrintable ? 'printable-area' : undefined}
           className={`${
@@ -189,23 +567,8 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
           style={{ maxWidth: '330px' }}
         >
           {/* Header */}
-          <div className="text-center border-b-2 border-dashed border-slate-900 pb-3 mb-2.5">
-            <h2 className="text-base font-black uppercase tracking-wider text-slate-950">
-              {receiptData.restaurantName}
-            </h2>
-            <p className="text-[11px] font-bold text-slate-800 mt-0.5">{receiptData.branchName}</p>
-            <p className="text-[10px] text-slate-600 leading-tight">{receiptData.branchAddress}</p>
-            <p className="text-[10px] text-slate-600 font-medium">Tel: {receiptData.branchPhone}</p>
-            {showTaxDetails && receiptData.taxRegistrationNumber && (
-              <p className="text-[10px] text-slate-900 font-extrabold mt-1">
-                STRN/NTN: {receiptData.taxRegistrationNumber}
-              </p>
-            )}
-            {receiptData.receiptSettings?.headerText && (
-              <p className="text-[10px] text-slate-700 italic mt-1 font-sans">
-                {receiptData.receiptSettings.headerText}
-              </p>
-            )}
+          <div className="border-b-2 border-dashed border-slate-900 pb-3 mb-2.5">
+            {renderHeaderBrand(true)}
           </div>
 
           {/* Order Meta */}

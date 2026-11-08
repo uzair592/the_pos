@@ -7,9 +7,12 @@ import {
   StockAdjustmentSchema,
   CreateSupplierSchema,
   CreatePurchaseInvoiceSchema,
+  CreateIngredientCategorySchema,
+  UpdateIngredientCategorySchema,
   Permission,
   FeatureKey,
   StockMovementType,
+  INGREDIENT_CATEGORIES,
   convertRecipeQtyToBase,
   convertPurchaseQtyToBase,
   calculateBaseUnitCost,
@@ -22,6 +25,211 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticate);
   fastify.addHook('preHandler', requireTenant);
   fastify.addHook('preHandler', requireEntitlement(FeatureKey.INVENTORY));
+
+  // =========================================================================
+  // INVENTORY CATEGORIES CRUD
+  // =========================================================================
+
+  /**
+   * List Inventory Categories
+   * Returns default standard categories + any tenant-created custom categories with item counts
+   */
+  fastify.get('/api/inventory/categories', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+
+    // Fetch tenant-specific categories
+    const { rows: customCats } = await query(
+      `SELECT c.id, c.name, c.description, c.is_active, c.created_at, c.updated_at,
+              COUNT(i.id)::int as item_count
+       FROM inventory_categories c
+       LEFT JOIN ingredients i ON i.tenant_id = c.tenant_id AND i.category = c.name
+       WHERE c.tenant_id = $1
+       GROUP BY c.id, c.name, c.description, c.is_active, c.created_at, c.updated_at
+       ORDER BY c.name ASC`,
+      [tenantId],
+      { tenantId }
+    );
+
+    // Get item counts for standard default categories
+    const { rows: standardCounts } = await query(
+      `SELECT category, COUNT(id)::int as count
+       FROM ingredients
+       WHERE tenant_id = $1
+       GROUP BY category`,
+      [tenantId],
+      { tenantId }
+    );
+
+    const countMap: Record<string, number> = {};
+    standardCounts.forEach((r: any) => {
+      countMap[r.category] = Number(r.count || 0);
+    });
+
+    const customNameSet = new Set(customCats.map((c: any) => c.name.toLowerCase()));
+
+    // Construct full category list combining standards and custom
+    const standardList = INGREDIENT_CATEGORIES
+      .filter((name) => !customNameSet.has(name.toLowerCase()))
+      .map((name) => ({
+        id: `standard-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+        name,
+        description: 'Standard inventory category',
+        isActive: true,
+        isStandard: true,
+        itemCount: countMap[name] || 0,
+      }));
+
+    const customList = customCats.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      isActive: c.is_active,
+      isStandard: false,
+      itemCount: Number(c.item_count || countMap[c.name] || 0),
+      createdAt: c.created_at,
+      updatedAt: c.updated_at,
+    }));
+
+    return reply.send({
+      categories: [...customList, ...standardList],
+    });
+  });
+
+  /**
+   * Create Custom Inventory Category
+   */
+  fastify.post('/api/inventory/categories', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const parsed = CreateIngredientCategorySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.format() });
+    }
+
+    const { name, description } = parsed.data;
+    const trimmedName = name.trim();
+
+    // Check if duplicate standard category
+    const isStandard = INGREDIENT_CATEGORIES.some(
+      (sc) => sc.toLowerCase() === trimmedName.toLowerCase()
+    );
+
+    // Check if exists in db
+    const { rows: existing } = await query(
+      `SELECT id FROM inventory_categories WHERE tenant_id = $1 AND LOWER(name) = LOWER($2)`,
+      [tenantId, trimmedName],
+      { tenantId }
+    );
+
+    if (existing.length > 0 || isStandard) {
+      return reply.status(409).send({ error: `Category "${trimmedName}" already exists` });
+    }
+
+    const { rows } = await query(
+      `INSERT INTO inventory_categories (tenant_id, name, description, is_active)
+       VALUES ($1, $2, $3, true)
+       RETURNING *`,
+      [tenantId, trimmedName, description || null],
+      { tenantId }
+    );
+
+    await logAuditEvent({
+      tenantId,
+      actorId: req.user!.id,
+      actorRole: req.user!.role,
+      action: 'CREATE_INVENTORY_CATEGORY',
+      resourceType: 'INVENTORY_CATEGORY',
+      resourceId: rows[0].id,
+      details: { name: trimmedName },
+      ipAddress: req.ip,
+    });
+
+    return reply.status(201).send({ category: rows[0] });
+  });
+
+  /**
+   * Update Custom Inventory Category
+   */
+  fastify.put('/api/inventory/categories/:id', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { id } = req.params as { id: string };
+
+    const parsed = UpdateIngredientCategorySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.format() });
+    }
+
+    const { rows: existing } = await query(
+      `SELECT * FROM inventory_categories WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+      { tenantId }
+    );
+
+    if (existing.length === 0) {
+      return reply.status(404).send({ error: 'Category not found' });
+    }
+
+    const currentCat = existing[0];
+    const newName = parsed.data.name?.trim() || currentCat.name;
+    const newDesc = parsed.data.description !== undefined ? parsed.data.description : currentCat.description;
+    const newActive = parsed.data.isActive !== undefined ? parsed.data.isActive : currentCat.is_active;
+
+    // If name changed, rename in ingredients table as well to maintain association
+    const { rows } = await withTransaction(async (client) => {
+      const updateRes = await client.query(
+        `UPDATE inventory_categories
+         SET name = $1, description = $2, is_active = $3, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $4 AND tenant_id = $5
+         RETURNING *`,
+        [newName, newDesc, newActive, id, tenantId]
+      );
+
+      if (newName !== currentCat.name) {
+        await client.query(
+          `UPDATE ingredients SET category = $1 WHERE tenant_id = $2 AND category = $3`,
+          [newName, tenantId, currentCat.name]
+        );
+      }
+
+      return updateRes;
+    }, { tenantId });
+
+    return reply.send({ category: rows[0] });
+  });
+
+  /**
+   * Delete Custom Inventory Category
+   */
+  fastify.delete('/api/inventory/categories/:id', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { id } = req.params as { id: string };
+
+    const { rows: existing } = await query(
+      `SELECT * FROM inventory_categories WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+      { tenantId }
+    );
+
+    if (existing.length === 0) {
+      return reply.status(404).send({ error: 'Category not found or is a standard system category' });
+    }
+
+    const catName = existing[0].name;
+
+    // Fall back any ingredients in this category to 'General'
+    await withTransaction(async (client) => {
+      await client.query(
+        `UPDATE ingredients SET category = 'General' WHERE tenant_id = $1 AND category = $2`,
+        [tenantId, catName]
+      );
+
+      await client.query(
+        `DELETE FROM inventory_categories WHERE id = $1 AND tenant_id = $2`,
+        [id, tenantId]
+      );
+    }, { tenantId });
+
+    return reply.send({ message: `Category "${catName}" deleted successfully. Associated ingredients moved to General.` });
+  });
 
   /**
    * List Ingredients & Branch Stock
