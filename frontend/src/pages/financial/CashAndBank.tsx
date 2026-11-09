@@ -548,7 +548,7 @@ export const CashAndBank: React.FC = () => {
       </div>
 
       {/* Top Billz POS Financial Summary KPI Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           title="Cash in Hand (Drawer)"
           value={`${currencySymbol} ${Number(summary?.totalCashInHand || 0).toLocaleString()}`}
@@ -566,7 +566,7 @@ export const CashAndBank: React.FC = () => {
         />
 
         <StatCard
-          title="Total Liquid Working Funds"
+          title="Total Liquid Funds"
           value={`${currencySymbol} ${Number(summary?.totalLiquidFunds || 0).toLocaleString()}`}
           subtitle="Combined Cash + Bank Balances"
           icon={DollarSign}
@@ -574,7 +574,7 @@ export const CashAndBank: React.FC = () => {
         />
 
         <StatCard
-          title="Today's Cash Deposited to Bank"
+          title="Today's Deposited to Bank"
           value={`${currencySymbol} ${Number(summary?.todayCashDepositedToBank || 0).toLocaleString()}`}
           subtitle={`Bank Withdrawn: ${currencySymbol} ${Number(summary?.todayBankWithdrawnToCash || 0).toLocaleString()}`}
           icon={ArrowUpRight}
@@ -593,7 +593,7 @@ export const CashAndBank: React.FC = () => {
           }`}
         >
           <Layers className="w-4 h-4 text-brand-500" />
-          <span>Account Books (Billz POS Master-Detail)</span>
+          <span>Account Books & Ledger</span>
         </button>
 
         <button
@@ -605,7 +605,7 @@ export const CashAndBank: React.FC = () => {
           }`}
         >
           <Landmark className="w-4 h-4 text-blue-500" />
-          <span>Bank Accounts Cards ({bankAccounts.length})</span>
+          <span>Bank Accounts Table ({bankAccounts.length})</span>
         </button>
 
         <button
@@ -1278,139 +1278,159 @@ export const CashAndBank: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {bankAccounts.map((b) => (
-              <div
-                key={b.id}
-                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4 hover:border-brand-500/50 transition-colors"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black">
-                      <Landmark className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-slate-900 dark:text-white text-sm">
-                        {b.bankName}
-                      </h3>
-                      <p className="text-[11px] text-slate-400 font-semibold">{b.accountName}</p>
-                    </div>
-                  </div>
-                  {b.isDefault && (
-                    <span className="px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-600 dark:text-brand-400 font-extrabold text-[10px] uppercase border border-brand-500/30">
-                      Default POS
-                    </span>
-                  )}
-                </div>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase tracking-wider">
+                      <th className="py-3.5 px-4">Bank & Institution</th>
+                      <th className="py-3.5 px-4">Account Title</th>
+                      <th className="py-3.5 px-4">Account Number</th>
+                      <th className="py-3.5 px-4">IBAN</th>
+                      <th className="py-3.5 px-4 text-center">Status</th>
+                      <th className="py-3.5 px-4 text-right">Current Balance</th>
+                      <th className="py-3.5 px-4 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {bankAccounts.map((b) => (
+                      <tr
+                        key={b.id}
+                        className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                      >
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0">
+                              <Landmark className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <span className="font-extrabold text-slate-900 dark:text-white block text-sm">
+                                {b.bankName}
+                              </span>
+                              {b.branchCode && (
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  Branch: {b.branchCode}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
 
-                <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 space-y-1.5 text-xs">
-                  <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                    <span>Account Number:</span>
-                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                      {b.accountNumber || '—'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                    <span>IBAN:</span>
-                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                      {b.iban || '—'}
-                    </span>
-                  </div>
-                </div>
+                        <td className="py-3.5 px-4 font-semibold text-slate-700 dark:text-slate-300">
+                          {b.accountName}
+                        </td>
 
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Current Balance</span>
-                    <span className="text-xl font-black text-slate-900 dark:text-white">
-                      {currencySymbol} {Number(b.currentBalance).toLocaleString()}
-                    </span>
-                  </div>
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-800 dark:text-slate-200">
+                          {b.accountNumber || '—'}
+                        </td>
 
-                  <ActionMenu
-                    items={[
-                      {
-                        label: 'View Account Book',
-                        icon: Eye,
-                        onClick: () => {
-                          setSelectedAccountId(b.id);
-                          setViewMode('MASTER_DETAIL');
-                        },
-                      },
-                      {
-                        label: 'Edit Bank Account',
-                        icon: Edit2,
-                        onClick: () => {
-                          setAccountForm({
-                            id: b.id,
-                            accountName: b.accountName,
-                            bankName: b.bankName,
-                            accountNumber: b.accountNumber || '',
-                            iban: b.iban || '',
-                            branchCode: b.branchCode || '',
-                            openingBalance: String(b.openingBalance),
-                            isDefault: b.isDefault,
-                          });
-                          setIsAccountModalOpen(true);
-                        },
-                      },
-                      {
-                        label: 'Deposit Cash (+ Drawer to Bank)',
-                        icon: ArrowDownRight,
-                        variant: 'success',
-                        onClick: () => {
-                          setTransferForm({
-                            transferType: CashBankTransferType.CASH_TO_BANK,
-                            fromBankAccountId: '',
-                            toBankAccountId: b.id,
-                            amount: '',
-                            transferDate: new Date().toISOString().split('T')[0],
-                            referenceNumber: '',
-                            notes: `Deposit into ${b.bankName}`,
-                          });
-                          setIsTransferModalOpen(true);
-                        },
-                      },
-                      {
-                        label: 'Withdraw Float (- Bank to Drawer)',
-                        icon: ArrowUpRight,
-                        variant: 'warning',
-                        onClick: () => {
-                          setTransferForm({
-                            transferType: CashBankTransferType.BANK_TO_CASH,
-                            fromBankAccountId: b.id,
-                            toBankAccountId: '',
-                            amount: '',
-                            transferDate: new Date().toISOString().split('T')[0],
-                            referenceNumber: '',
-                            notes: `Withdrawal from ${b.bankName}`,
-                          });
-                          setIsTransferModalOpen(true);
-                        },
-                      },
-                      !b.isDefault && {
-                        label: 'Set as Default POS Bank',
-                        icon: CheckCircle2,
-                        onClick: () => handleSetDefaultBankAccount(b.id, b.bankName),
-                      },
-                      {
-                        label: 'Print Account Statement',
-                        icon: Printer,
-                        divider: true,
-                        onClick: () => setIsPrintModalOpen(true),
-                      },
-                      {
-                        label: 'Delete Bank Account',
-                        icon: Trash2,
-                        variant: 'danger',
-                        onClick: () => handleDeleteBankAccount(b.id, b.bankName),
-                      },
-                    ]}
-                  />
-                </div>
+                        <td className="py-3.5 px-4 font-mono text-slate-500 dark:text-slate-400">
+                          {b.iban || '—'}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-center">
+                          {b.isDefault ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-600 dark:text-brand-400 font-extrabold text-[10px] uppercase border border-brand-500/20">
+                              Default POS
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">Active</span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-right font-mono font-black text-sm text-slate-900 dark:text-white">
+                          {currencySymbol} {Number(b.currentBalance).toLocaleString()}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                          <ActionMenu
+                            items={[
+                              {
+                                label: 'View Account Book',
+                                icon: Eye,
+                                onClick: () => {
+                                  setSelectedAccountId(b.id);
+                                  setViewMode('MASTER_DETAIL');
+                                },
+                              },
+                              {
+                                label: 'Edit Bank Account',
+                                icon: Edit2,
+                                onClick: () => {
+                                  setAccountForm({
+                                    id: b.id,
+                                    accountName: b.accountName,
+                                    bankName: b.bankName,
+                                    accountNumber: b.accountNumber || '',
+                                    iban: b.iban || '',
+                                    branchCode: b.branchCode || '',
+                                    openingBalance: String(b.openingBalance),
+                                    isDefault: b.isDefault,
+                                  });
+                                  setIsAccountModalOpen(true);
+                                },
+                              },
+                              {
+                                label: 'Deposit Cash (+ Drawer to Bank)',
+                                icon: ArrowDownRight,
+                                variant: 'success',
+                                onClick: () => {
+                                  setTransferForm({
+                                    transferType: CashBankTransferType.CASH_TO_BANK,
+                                    fromBankAccountId: '',
+                                    toBankAccountId: b.id,
+                                    amount: '',
+                                    transferDate: new Date().toISOString().split('T')[0],
+                                    referenceNumber: '',
+                                    notes: `Deposit into ${b.bankName}`,
+                                  });
+                                  setIsTransferModalOpen(true);
+                                },
+                              },
+                              {
+                                label: 'Withdraw Float (- Bank to Drawer)',
+                                icon: ArrowUpRight,
+                                variant: 'warning',
+                                onClick: () => {
+                                  setTransferForm({
+                                    transferType: CashBankTransferType.BANK_TO_CASH,
+                                    fromBankAccountId: b.id,
+                                    toBankAccountId: '',
+                                    amount: '',
+                                    transferDate: new Date().toISOString().split('T')[0],
+                                    referenceNumber: '',
+                                    notes: `Withdrawal from ${b.bankName}`,
+                                  });
+                                  setIsTransferModalOpen(true);
+                                },
+                              },
+                              !b.isDefault && {
+                                label: 'Set as Default POS Bank',
+                                icon: CheckCircle2,
+                                onClick: () => handleSetDefaultBankAccount(b.id, b.bankName),
+                              },
+                              {
+                                label: 'Print Account Statement',
+                                icon: Printer,
+                                divider: true,
+                                onClick: () => setIsPrintModalOpen(true),
+                              },
+                              {
+                                label: 'Delete Bank Account',
+                                icon: Trash2,
+                                variant: 'danger',
+                                onClick: () => handleDeleteBankAccount(b.id, b.bankName),
+                              },
+                            ]}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          )}
       </div>
     )}
 

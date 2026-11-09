@@ -761,48 +761,48 @@ export const InventoryManagement: React.FC = () => {
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* Top KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3.5">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                <Boxes className="w-5 h-5" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Boxes className="w-4 h-4" />
               </div>
-              <div>
-                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Raw Materials</p>
-                <p className="text-xl font-extrabold text-slate-900 dark:text-white">{ingredients.length}</p>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">Raw Materials</p>
+                <p className="text-lg font-black text-slate-900 dark:text-white truncate">{ingredients.length}</p>
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3.5">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                <CheckCircle2 className="w-5 h-5" />
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4" />
               </div>
-              <div>
-                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Stock Valuation</p>
-                <p className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">Stock Valuation</p>
+                <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 truncate">
                   {currencySymbol} {Math.round(totalValuation).toLocaleString()}
                 </p>
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3.5">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-5 h-5" />
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4" />
               </div>
-              <div>
-                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Low Stock Alerts</p>
-                <p className={`text-xl font-extrabold ${lowStockItems.length > 0 ? 'text-amber-600' : 'text-slate-900 dark:text-white'}`}>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">Low Stock Alerts</p>
+                <p className={`text-lg font-black truncate ${lowStockItems.length > 0 ? 'text-amber-600' : 'text-slate-900 dark:text-white'}`}>
                   {lowStockItems.length}
                 </p>
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3.5">
-              <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-                <Layers className="w-5 h-5" />
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                <Layers className="w-4 h-4" />
               </div>
-              <div>
-                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Active FIFO Lots</p>
-                <p className="text-xl font-extrabold text-slate-900 dark:text-white">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">Active FIFO Lots</p>
+                <p className="text-lg font-black text-slate-900 dark:text-white truncate">
                   {batches.filter((b) => b.status === 'ACTIVE').length}
                 </p>
               </div>

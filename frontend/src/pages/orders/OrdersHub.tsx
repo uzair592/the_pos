@@ -37,6 +37,8 @@ import {
   CreditCard,
   Wallet,
   Receipt,
+  List,
+  LayoutGrid,
 } from 'lucide-react';
 
 // Format date to local YYYY-MM-DD
@@ -101,6 +103,7 @@ export const OrdersHub: React.FC<OrdersHubProps> = ({ defaultTab = 'active' }) =
   // Active Orders state
   const [activeOrders, setActiveOrders] = useState<any[]>([]);
   const [loadingActive, setLoadingActive] = useState<boolean>(true);
+  const [activeViewMode, setActiveViewMode] = useState<'TABLE' | 'CARDS'>('TABLE');
 
   // History Orders state
   const [historyOrders, setHistoryOrders] = useState<any[]>([]);
@@ -545,21 +548,48 @@ export const OrdersHub: React.FC<OrdersHubProps> = ({ defaultTab = 'active' }) =
               })}
             </div>
 
-            <button
-              onClick={() => fetchActiveOrders()}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-colors"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loadingActive ? 'animate-spin' : ''}`} />
-              <span>Refresh Queue</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setActiveViewMode('TABLE')}
+                  className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
+                    activeViewMode === 'TABLE'
+                      ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="Table View (Compact)"
+                >
+                  <List className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveViewMode('CARDS')}
+                  className={`p-1.5 rounded-lg text-xs font-bold transition-all ${
+                    activeViewMode === 'CARDS'
+                      ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="Cards View"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <button
+                onClick={() => fetchActiveOrders()}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-colors"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingActive ? 'animate-spin' : ''}`} />
+                <span>Refresh Queue</span>
+              </button>
+            </div>
           </div>
 
-          {/* Active Orders Grid */}
+          {/* Active Orders View */}
           {loadingActive ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="h-64 bg-slate-100 dark:bg-slate-800/40 rounded-3xl animate-pulse" />
-              ))}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center text-slate-400 animate-pulse text-xs">
+              Loading active orders queue...
             </div>
           ) : filteredActiveOrders.length === 0 ? (
             <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
@@ -571,7 +601,167 @@ export const OrdersHub: React.FC<OrdersHubProps> = ({ defaultTab = 'active' }) =
                 No active orders currently awaiting preparation or delivery in this filter.
               </p>
             </div>
+          ) : activeViewMode === 'TABLE' ? (
+            /* DENSE TABLE VIEW FOR ACTIVE ORDERS */
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-850 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 text-[10px]">
+                    <tr>
+                      <th className="px-4 py-3">Order #</th>
+                      <th className="px-3 py-3">Wait Time</th>
+                      <th className="px-3 py-3">Type & Table</th>
+                      <th className="px-4 py-3 min-w-[200px]">Ordered Items</th>
+                      <th className="px-3 py-3">Staff / Server</th>
+                      <th className="px-3 py-3">KDS Kitchen</th>
+                      <th className="px-3 py-3 text-right">Grand Total</th>
+                      <th className="px-3 py-3 text-center">Status</th>
+                      <th className="px-4 py-3 text-right min-w-[160px]">Quick Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {filteredActiveOrders.map((order) => {
+                      const elapsedMin = Math.round(Number(order.elapsed_minutes || 0));
+                      const isUrgent = elapsedMin > 25;
+                      const isWarning = elapsedMin > 15;
+
+                      return (
+                        <tr key={order.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition-colors">
+                          <td className="px-4 py-2.5 font-mono font-black text-slate-900 dark:text-white">
+                            #{order.order_number}
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md font-mono font-bold text-[10px] ${
+                                isUrgent
+                                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 animate-pulse'
+                                  : isWarning
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                              }`}
+                            >
+                              <Clock className="w-3 h-3" />
+                              <span>{elapsedMin}m</span>
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                              {order.table_name ? `Table ${order.table_name}` : order.order_type.replace('_', ' ')}
+                            </span>
+                            {order.customer_name && (
+                              <span className="text-[10px] text-slate-400 block truncate max-w-[120px]">
+                                {order.customer_name}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <div className="text-[11px] text-slate-700 dark:text-slate-300 line-clamp-1">
+                              {order.items?.map((it: any) => `${it.quantity}x ${it.product_name}`).join(', ') || 'No item details'}
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              {order.items?.length || 0} item line(s)
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-600 dark:text-slate-400 text-[11px]">
+                            {order.waiter_name || order.cashier_name || 'Staff'}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {order.kitchen_status ? (
+                              <span className="px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-bold text-[10px] whitespace-nowrap">
+                                🍳 {order.kitchen_status}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                            {tenant?.currency || 'PKR'} {Number(order.grand_total).toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <span className="px-2 py-0.5 rounded-full font-black text-[10px] uppercase tracking-wider bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800">
+                              {order.status.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end space-x-1.5">
+                              {/* Quick Pipeline Action */}
+                              {['PENDING', 'CONFIRMED', 'ACCEPTED'].includes(order.status) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdvanceStatus(order, 'PREPARING')}
+                                  className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-bold"
+                                >
+                                  Prep
+                                </button>
+                              )}
+                              {order.status === 'PREPARING' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdvanceStatus(order, 'READY')}
+                                  className="px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold"
+                                >
+                                  Ready
+                                </button>
+                              )}
+                              {order.status === 'READY' && order.order_type === 'DINE_IN' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdvanceStatus(order, 'SERVED')}
+                                  className="px-2 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[10px] font-bold"
+                                >
+                                  Served
+                                </button>
+                              )}
+                              {order.status === 'READY' && order.order_type === 'DELIVERY' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdvanceStatus(order, 'OUT_FOR_DELIVERY')}
+                                  className="px-2 py-1 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-[10px] font-bold"
+                                >
+                                  Dispatch
+                                </button>
+                              )}
+                              {order.status === 'SERVED' && order.payment_status !== 'PAID' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSettleOrder(order);
+                                    setSettleCashTendered(Number(order.grand_total));
+                                    setSettlePaymentMethod(PaymentMethod.CASH);
+                                  }}
+                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black"
+                                >
+                                  Collect
+                                </button>
+                              )}
+                              {((order.status === 'SERVED' && order.payment_status === 'PAID') || order.status === 'OUT_FOR_DELIVERY' || (order.status === 'READY' && order.order_type === 'TAKEAWAY')) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdvanceStatus(order, 'COMPLETED')}
+                                  className="px-2 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-[10px] font-bold"
+                                >
+                                  Finish
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => openOrderDetails(order.id)}
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[10px] font-bold"
+                              >
+                                View
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : (
+            /* CARDS VIEW FOR ACTIVE ORDERS */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredActiveOrders.map((order) => {
                 const elapsedMin = Math.round(Number(order.elapsed_minutes || 0));

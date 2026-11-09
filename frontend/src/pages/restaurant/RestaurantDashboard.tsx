@@ -325,65 +325,71 @@ export const RestaurantDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Grid of Active Orders (Served Unpaid + Kitchen In-Flight) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {activeOrders.map((o) => {
-              const isServed = o.status === 'SERVED' || o.prep_status === 'SERVED';
-              const isReady = o.status === 'READY' || o.prep_status === 'READY';
-              return (
-                <div
-                  key={o.id}
-                  className={`bg-white dark:bg-slate-900 border ${
-                    isServed
-                      ? 'border-amber-300 dark:border-amber-800/80 shadow-amber-100 dark:shadow-none'
-                      : isReady
-                      ? 'border-teal-300 dark:border-teal-800/80'
-                      : 'border-blue-200 dark:border-blue-900/50'
-                  } rounded-xl p-3.5 flex items-center justify-between shadow-sm`}
-                >
-                  <div>
-                    <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                      <span className="font-extrabold text-slate-900 dark:text-white font-mono text-xs">
-                        #{o.order_number}
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[10px]">
-                        {o.table_name ? `Table ${o.table_name}` : (o.order_type || 'Takeaway')}
-                      </span>
-                      {renderStatusBadge(o.status)}
-                      {o.kitchen_status && (
-                        <span className="px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-bold text-[10px] inline-flex items-center space-x-1">
-                          <ChefHat className="w-3 h-3 inline mr-1" />
-                          <span>KOT: {o.kitchen_status}</span>
-                        </span>
-                      )}
-                      {o.latest_kot_number && (
-                        <span className="text-[10px] font-mono text-slate-400">
-                          #{o.latest_kot_number}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                      Staff: <span className="font-semibold text-slate-700 dark:text-slate-300">{o.waiter_name || o.cashier_name || 'Staff'}</span> • {new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-black text-slate-900 dark:text-white text-xs">
-                      {currencySymbol} {Number(o.grand_total).toLocaleString()}
-                    </p>
-                    <Link
-                      to="/pos"
-                      className={`inline-block mt-1 text-[11px] font-bold ${
-                        isServed
-                          ? 'text-amber-600 hover:text-amber-700 dark:text-amber-400 hover:underline'
-                          : 'text-brand-600 hover:text-brand-700 hover:underline'
-                      }`}
-                    >
-                      {isServed ? 'Collect Pay →' : 'View in POS →'}
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
+          {/* Dense Table of Active Orders */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-500">
+                  <tr>
+                    <th className="px-3.5 py-2.5">Order #</th>
+                    <th className="px-3 py-2.5">Type & Table</th>
+                    <th className="px-3 py-2.5">Time</th>
+                    <th className="px-3 py-2.5">Staff</th>
+                    <th className="px-3 py-2.5">Kitchen / KDS</th>
+                    <th className="px-3 py-2.5 text-center">Status</th>
+                    <th className="px-3.5 py-2.5 text-right">Amount</th>
+                    <th className="px-3.5 py-2.5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {activeOrders.map((o) => {
+                    const isServed = o.status === 'SERVED' || o.prep_status === 'SERVED';
+                    return (
+                      <tr key={o.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition-colors">
+                        <td className="px-3.5 py-2 font-mono font-bold text-slate-900 dark:text-white">
+                          #{o.order_number}
+                        </td>
+                        <td className="px-3 py-2 font-medium">
+                          {o.table_name ? `Table ${o.table_name}` : (o.order_type || 'Takeaway')}
+                        </td>
+                        <td className="px-3 py-2 text-slate-400 text-[11px]">
+                          {new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="px-3 py-2 text-slate-600 dark:text-slate-400">
+                          {o.waiter_name || o.cashier_name || '—'}
+                        </td>
+                        <td className="px-3 py-2">
+                          {o.kitchen_status ? (
+                            <span className="px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-bold text-[10px]">
+                              {o.kitchen_status} {o.latest_kot_number ? `#${o.latest_kot_number}` : ''}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          {renderStatusBadge(o.status)}
+                        </td>
+                        <td className="px-3.5 py-2 text-right font-mono font-bold text-slate-900 dark:text-white">
+                          {currencySymbol} {Number(o.grand_total).toLocaleString()}
+                        </td>
+                        <td className="px-3.5 py-2 text-right">
+                          <Link
+                            to="/pos"
+                            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                              isServed
+                                ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                                : 'bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 hover:text-brand-600 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            <span>{isServed ? 'Collect' : 'POS'}</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -482,150 +488,187 @@ export const RestaurantDashboard: React.FC = () => {
       </div>
 
       {/* Payment Methods, Top Selling Products, and Recent Orders Stream */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Payment Breakdown Card */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center justify-between">
-            <span>Payment Methods Today</span>
-            <span className="text-[11px] text-slate-400">Total Collected</span>
-          </h3>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Payment Breakdown Table */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-white">
+              Payment Methods Today
+            </h3>
+            <span className="text-[10px] text-slate-400 font-bold">Total Collections</span>
+          </div>
 
-          <div className="space-y-3 text-xs">
-            {summary?.paymentBreakdown &&
-              Object.entries(summary.paymentBreakdown).map(([method, amount]: [string, any]) => (
-                <div
-                  key={method}
-                  className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800"
-                >
-                  <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize">
-                    {method.replace('_', ' ').toLowerCase()}
-                  </span>
-                  <span className="font-bold text-slate-900 dark:text-white">
-                    {currencySymbol} {Number(amount || 0).toLocaleString()}
-                  </span>
-                </div>
-              ))}
-
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between font-bold text-slate-900 dark:text-white text-xs">
-              <span>Total Collections</span>
-              <span>{currencySymbol} {Number(summary?.totalCollected || 0).toLocaleString()}</span>
-            </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Method</th>
+                  <th className="px-4 py-2 text-right">Amount Collected</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {summary?.paymentBreakdown && Object.keys(summary.paymentBreakdown).length > 0 ? (
+                  Object.entries(summary.paymentBreakdown).map(([method, amount]: [string, any]) => (
+                    <tr key={method} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50">
+                      <td className="px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300 capitalize">
+                        {method.replace('_', ' ').toLowerCase()}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                        {currencySymbol} {Number(amount || 0).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={2} className="px-4 py-6 text-center text-slate-400 text-xs italic">
+                      No payments collected yet today
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot className="bg-slate-50/80 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 font-bold text-xs text-slate-900 dark:text-white">
+                <tr>
+                  <td className="px-4 py-2.5">Total Collections</td>
+                  <td className="px-4 py-2.5 text-right font-mono font-black text-brand-600 dark:text-brand-400">
+                    {currencySymbol} {Number(summary?.totalCollected || 0).toLocaleString()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
 
-        {/* Top Selling Products */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center justify-between">
-            <span>Top Selling Products</span>
-            <span className="text-[11px] text-slate-400">Quantity Sold</span>
-          </h3>
+        {/* Top Selling Products Table */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-white">
+              Top Selling Products
+            </h3>
+            <span className="text-[10px] text-slate-400 font-bold">Qty & Revenue</span>
+          </div>
 
-          <div className="space-y-3 text-xs">
-            {topProducts.length === 0 ? (
-              <p className="text-slate-400 italic text-center py-6">No sales recorded yet today</p>
-            ) : (
-              topProducts.map((p, idx) => (
-                <div
-                  key={p.product_id || p.id || idx}
-                  className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800"
-                >
-                  <div className="flex items-center space-x-2.5">
-                    <span className="w-5 h-5 rounded-full bg-brand-500/10 text-brand-500 font-bold flex items-center justify-center text-[10px]">
-                      {idx + 1}
-                    </span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {p.product_name || p.name || 'Product'}
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-bold text-slate-900 dark:text-white">
-                      {p.total_quantity || p.total_quantity_sold || 0} sold
-                    </span>
-                    {p.total_sales && (
-                      <span className="text-[11px] text-slate-400">
-                        ({currencySymbol} {Number(p.total_sales).toLocaleString()})
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 w-8">#</th>
+                  <th className="px-3 py-2">Product</th>
+                  <th className="px-3 py-2 text-center">Qty</th>
+                  <th className="px-3 py-2 text-right">Sales</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {topProducts.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-6 text-center text-slate-400 text-xs italic">
+                      No sales recorded yet today
+                    </td>
+                  </tr>
+                ) : (
+                  topProducts.map((p, idx) => (
+                    <tr key={p.product_id || p.id || idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50">
+                      <td className="px-3 py-2 text-slate-400 font-mono font-bold text-[11px]">
+                        {idx + 1}
+                      </td>
+                      <td className="px-3 py-2 font-medium text-slate-800 dark:text-slate-200 truncate max-w-[140px]" title={p.product_name || p.name}>
+                        {p.product_name || p.name || 'Product'}
+                      </td>
+                      <td className="px-3 py-2 text-center font-bold text-slate-900 dark:text-white">
+                        {p.total_quantity || p.total_quantity_sold || 0}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-slate-700 dark:text-slate-300 text-[11px]">
+                        {p.total_sales ? `${currencySymbol} ${Number(p.total_sales).toLocaleString()}` : '—'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {/* Recent Orders Stream */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center justify-between">
-            <span>Recent Orders</span>
-            <Link to="/app/orders" className="text-xs text-brand-600 hover:underline">
-              View All
+        {/* Recent Orders Table */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-white">
+              Recent Orders
+            </h3>
+            <Link to="/app/orders" className="text-xs text-brand-600 dark:text-brand-400 hover:underline font-bold">
+              View All →
             </Link>
-          </h3>
+          </div>
 
-          <div className="space-y-3 text-xs">
-            {recentOrders.length === 0 ? (
-              <p className="text-slate-400 italic text-center py-6">No orders today</p>
-            ) : (
-              recentOrders.map((o) => (
-                <div
-                  key={o.id}
-                  className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800"
-                >
-                  <div>
-                    <div className="flex items-center space-x-1.5 flex-wrap gap-y-0.5">
-                      <span className="font-bold text-slate-900 dark:text-white font-mono text-xs">
-                        #{o.order_number}
-                      </span>
-                      <span className="text-slate-400 text-[10px]">
-                        {new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                      {o.kitchen_status && (
-                        <span className="px-1.5 py-0.2 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-semibold text-[9px]">
-                          KOT: {o.kitchen_status}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Order</th>
+                  <th className="px-3 py-2">Type</th>
+                  <th className="px-3 py-2 text-right">Total</th>
+                  <th className="px-3 py-2 text-center">Status</th>
+                  <th className="px-2 py-2 text-center w-8"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {recentOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-xs italic">
+                      No orders placed today
+                    </td>
+                  </tr>
+                ) : (
+                  recentOrders.map((o) => (
+                    <tr key={o.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50">
+                      <td className="px-3 py-2">
+                        <span className="font-mono font-bold text-slate-900 dark:text-white">#{o.order_number}</span>
+                        <span className="block text-[10px] text-slate-400">
+                          {new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      {o.table_name ? `Table ${o.table_name}` : (o.order_type || 'Order')} • {o.items?.length || 0} item(s)
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-bold text-slate-900 dark:text-white text-xs">
-                      {currencySymbol} {Number(o.grand_total).toLocaleString()}
-                    </span>
-                    {renderStatusBadge(o.status)}
-                    <ActionMenu
-                      items={[
-                        {
-                          label: 'View Order Breakdown',
-                          icon: Eye,
-                          onClick: () => handleViewOrderDetail(o.id),
-                        },
-                        {
-                          label: 'Print Bill / Receipt',
-                          icon: Printer,
-                          onClick: async () => {
-                            const branchObj = currentBranch || branches?.find((b: any) => b.id === (currentBranchId || user?.branchId));
-                            try {
-                              const receiptRes = await api.get(`/orders/${o.id}/receipt`);
-                              executeThermalPrint(receiptRes.receipt || o, {
-                                isReprint: true,
-                                context: { tenant, branch: branchObj, user },
-                              });
-                            } catch {
-                              executeThermalPrint(o, {
-                                isReprint: true,
-                                context: { tenant, branch: branchObj, user },
-                              });
-                            }
-                          },
-                        },
-                      ]}
-                    />
-                  </div>
-                </div>
-              ))
-            )}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-400 text-[11px]">
+                        {o.table_name ? `T-${o.table_name}` : (o.order_type || 'Takeaway')}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-slate-900 dark:text-white">
+                        {currencySymbol} {Number(o.grand_total).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {renderStatusBadge(o.status)}
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <ActionMenu
+                          items={[
+                            {
+                              label: 'View Order Breakdown',
+                              icon: Eye,
+                              onClick: () => handleViewOrderDetail(o.id),
+                            },
+                            {
+                              label: 'Print Bill / Receipt',
+                              icon: Printer,
+                              onClick: async () => {
+                                const branchObj = currentBranch || branches?.find((b: any) => b.id === (currentBranchId || user?.branchId));
+                                try {
+                                  const receiptRes = await api.get(`/orders/${o.id}/receipt`);
+                                  executeThermalPrint(receiptRes.receipt || o, {
+                                    isReprint: true,
+                                    context: { tenant, branch: branchObj, user },
+                                  });
+                                } catch {
+                                  executeThermalPrint(o, {
+                                    isReprint: true,
+                                    context: { tenant, branch: branchObj, user },
+                                  });
+                                }
+                              },
+                            },
+                          ]}
+                        />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

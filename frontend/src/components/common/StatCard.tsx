@@ -29,28 +29,28 @@ export const StatCard: React.FC<StatCardProps> = ({
   color = 'orange',
 }) => {
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm hover:shadow-md transition-all">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
-          <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{value}</h3>
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">{title}</p>
+          <h3 className="text-lg font-black text-slate-900 dark:text-white mt-0.5 truncate">{value}</h3>
         </div>
-        <div className={`p-3 rounded-xl border ${colorMap[color]}`}>
-          <Icon className="w-6 h-6" />
+        <div className={`p-2 rounded-lg border shrink-0 ${colorMap[color]}`}>
+          <Icon className="w-4 h-4" />
         </div>
       </div>
       {(subtitle || trend) && (
-        <div className="mt-3 flex items-center text-xs">
+        <div className="mt-1.5 flex items-center text-[10px] truncate text-slate-400">
           {trend && (
             <span
-              className={`font-semibold mr-1.5 ${
+              className={`font-semibold mr-1 shrink-0 ${
                 isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
               }`}
             >
               {trend}
             </span>
           )}
-          {subtitle && <span className="text-slate-500 dark:text-slate-400">{subtitle}</span>}
+          {subtitle && <span className="truncate">{subtitle}</span>}
         </div>
       )}
     </div>

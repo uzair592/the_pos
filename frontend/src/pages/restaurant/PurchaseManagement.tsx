@@ -363,6 +363,80 @@ export const PurchaseManagement: React.FC = () => {
     );
   };
 
+  // Direct Add New Item Modal in Purchase State
+  const [isQuickAddItemOpen, setIsQuickAddItemOpen] = useState(false);
+  const [targetItemIndex, setTargetItemIndex] = useState<number | null>(null);
+  const [quickItemForm, setQuickItemForm] = useState({
+    name: '',
+    category: 'General',
+    unit: 'KG',
+    costPerUnit: 0,
+    minStockAlert: 5,
+  });
+
+  const handleOpenQuickAddItem = (rowIndex: number) => {
+    setTargetItemIndex(rowIndex);
+    setQuickItemForm({
+      name: invoiceForm.items[rowIndex]?.name || '',
+      category: 'General',
+      unit: invoiceForm.items[rowIndex]?.unit || 'KG',
+      costPerUnit: invoiceForm.items[rowIndex]?.unitPrice || 0,
+      minStockAlert: 5,
+    });
+    setIsQuickAddItemOpen(true);
+  };
+
+  const handleSaveQuickItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickItemForm.name.trim()) {
+      error('Item name is required');
+      return;
+    }
+
+    try {
+      const selectedUnit = quickItemForm.unit || 'KG';
+      const cost = Number(quickItemForm.costPerUnit) || 0;
+      const res = await api.post('/inventory/ingredients', {
+        name: quickItemForm.name.trim(),
+        category: quickItemForm.category || 'General',
+        unit: selectedUnit,
+        baseUnit: selectedUnit,
+        purchaseUnit: selectedUnit,
+        conversionFactor: 1,
+        costPerUnit: cost,
+        purchaseCost: cost,
+        minStockAlert: Number(quickItemForm.minStockAlert) || 5,
+        initialStock: 0,
+        branchId: invoiceForm.branchId,
+      });
+
+      const createdIngredient = res.ingredient;
+      success(`New item "${createdIngredient.name}" created and added to line items!`);
+
+      // Refresh ingredients in background
+      api.get('/inventory/ingredients').then((r) => setIngredients(r.ingredients || []));
+
+      // Put into target row
+      if (targetItemIndex !== null && invoiceForm.items[targetItemIndex]) {
+        updateItemRow(targetItemIndex, 'ingredientId', createdIngredient.id);
+        updateItemRow(targetItemIndex, 'name', createdIngredient.name);
+        updateItemRow(targetItemIndex, 'unit', createdIngredient.unit || selectedUnit);
+        updateItemRow(targetItemIndex, 'unitPrice', cost);
+      }
+
+      setIsQuickAddItemOpen(false);
+      setQuickItemForm({
+        name: '',
+        category: 'General',
+        unit: 'KG',
+        costPerUnit: 0,
+        minStockAlert: 5,
+      });
+    } catch (err: any) {
+      error(err.message || 'Failed to create item');
+    }
+  };
+
   const handleCreateSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supplierForm.name || !supplierForm.phone) {
@@ -528,57 +602,57 @@ export const PurchaseManagement: React.FC = () => {
       </div>
 
       {/* KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Total Purchases</span>
-            <div className="w-7 h-7 rounded-lg bg-brand-50 dark:bg-brand-950/50 text-brand-600 dark:text-brand-400 flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Total Purchases</span>
+            <div className="w-6 h-6 rounded-lg bg-brand-50 dark:bg-brand-950/50 text-brand-600 dark:text-brand-400 flex items-center justify-center">
+              <DollarSign className="w-3.5 h-3.5" />
             </div>
           </div>
-          <p className="text-xl font-extrabold text-slate-900 dark:text-white font-mono">
+          <p className="text-lg font-black text-slate-900 dark:text-white font-mono">
             {currencySymbol} {totalPurchasesAmount.toLocaleString()}
           </p>
-          <p className="text-[11px] text-slate-400 mt-1">{purchases.length} total purchase shipments recorded</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 truncate">{purchases.length} total purchase shipments</p>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Received Into Stock</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Received Into Stock</span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <CheckCircle2 className="w-3.5 h-3.5" />
             </div>
           </div>
-          <p className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
+          <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
             {receivedInvoicesCount}
           </p>
-          <p className="text-[11px] text-slate-400 mt-1">Active FIFO lots created & stock increased</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 truncate">Active FIFO lots created</p>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Draft / In Transit</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <Clock className="w-4 h-4" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Draft / In Transit</span>
+            <div className="w-6 h-6 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <Clock className="w-3.5 h-3.5" />
             </div>
           </div>
-          <p className="text-xl font-extrabold text-amber-600 dark:text-amber-400 font-mono">
+          <p className="text-lg font-black text-amber-600 dark:text-amber-400 font-mono">
             {draftInvoicesCount}
           </p>
-          <p className="text-[11px] text-slate-400 mt-1">Awaiting physical receiving at branch</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 truncate">Awaiting physical receiving</p>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Vendor Debt Payable</span>
-            <div className="w-7 h-7 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
-              <AlertCircle className="w-4 h-4" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Vendor Debt Payable</span>
+            <div className="w-6 h-6 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+              <AlertCircle className="w-3.5 h-3.5" />
             </div>
           </div>
-          <p className="text-xl font-extrabold text-rose-600 dark:text-rose-400 font-mono">
+          <p className="text-lg font-black text-rose-600 dark:text-rose-400 font-mono">
             {currencySymbol} {totalBalancePayable.toLocaleString()}
           </p>
-          <p className="text-[11px] text-slate-400 mt-1">Outstanding balance across all suppliers</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 truncate">Outstanding vendor balance</p>
         </div>
       </div>
 
@@ -1049,11 +1123,11 @@ export const PurchaseManagement: React.FC = () => {
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50/80 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 uppercase font-bold text-xs">
                   <tr>
-                    <th className="px-4 py-3 min-w-[280px]">Item / Raw Ingredient Name</th>
-                    <th className="px-3 py-3 w-36">Quantity</th>
-                    <th className="px-3 py-3 w-36">Unit</th>
-                    <th className="px-3 py-3 w-44">Unit Purchase Price</th>
-                    <th className="px-4 py-3 w-40 text-right">Line Total</th>
+                    <th className="px-4 py-3 min-w-[320px]">Item / Raw Ingredient Name</th>
+                    <th className="px-3 py-3 w-32">Quantity</th>
+                    <th className="px-3 py-3 w-32">Unit</th>
+                    <th className="px-3 py-3 w-40">Unit Purchase Price</th>
+                    <th className="px-4 py-3 w-36 text-right">Line Total</th>
                     <th className="px-3 py-3 w-14 text-center"></th>
                   </tr>
                 </thead>
@@ -1066,32 +1140,45 @@ export const PurchaseManagement: React.FC = () => {
                       <tr key={idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/40 transition-colors">
                         <td className="px-4 py-3 align-top">
                           <div className="space-y-1.5">
-                            <input
-                              type="text"
-                              list={`ing-list-${idx}`}
-                              value={row.name}
-                              onChange={(e) => handleItemNameChange(idx, e.target.value)}
-                              placeholder="Search ingredient or type new (e.g. Chicken Boneless, Dough, Cheese)..."
-                              className="form-input text-sm font-semibold"
-                              required
-                            />
-                            <datalist id={`ing-list-${idx}`}>
-                              {ingredients.map((ing) => (
-                                <option key={ing.id} value={ing.name}>
-                                  Existing: {ing.name} ({ing.unit || ing.base_unit || 'UNIT'})
-                                </option>
-                              ))}
-                            </datalist>
+                            <div className="flex items-center space-x-1.5">
+                              <div className="relative flex-1">
+                                <input
+                                  type="text"
+                                  list={`ing-list-${idx}`}
+                                  value={row.name}
+                                  onChange={(e) => handleItemNameChange(idx, e.target.value)}
+                                  placeholder="Search item or type new..."
+                                  className="form-input text-sm font-semibold pr-8"
+                                  required
+                                />
+                                <datalist id={`ing-list-${idx}`}>
+                                  {ingredients.map((ing) => (
+                                    <option key={ing.id} value={ing.name}>
+                                      Existing: {ing.name} ({ing.unit || ing.base_unit || 'UNIT'})
+                                    </option>
+                                  ))}
+                                </datalist>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenQuickAddItem(idx)}
+                                className="px-2.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-xs font-bold whitespace-nowrap flex items-center space-x-1 transition-all shrink-0"
+                                title="Add as new item with custom category and min stock alert"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>+ New Item</span>
+                              </button>
+                            </div>
 
-                            <div>
+                            <div className="flex items-center space-x-2">
                               {isNewItem && (
                                 <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                                  <span>✨ New item will be created in Inventory</span>
+                                  <span>✨ Auto-creates in inventory</span>
                                 </span>
                               )}
                               {isExistingItem && (
                                 <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                  <span>✓ Existing inventory item</span>
+                                  <span>✓ Existing item</span>
                                 </span>
                               )}
                             </div>
@@ -1162,6 +1249,35 @@ export const PurchaseManagement: React.FC = () => {
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Table Footer Quick Item Row Actions */}
+            <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={addItemRow}
+                  className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition-all shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5 text-brand-600" />
+                  <span>+ Add Line Row</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newIdx = invoiceForm.items.length;
+                    addItemRow();
+                    setTimeout(() => handleOpenQuickAddItem(newIdx), 30);
+                  }}
+                  className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition-all shadow-xs"
+                >
+                  <Boxes className="w-3.5 h-3.5" />
+                  <span>+ Register New Item to Inventory</span>
+                </button>
+              </div>
+              <span className="text-xs text-slate-500 font-medium">
+                {invoiceForm.items.length} line item{invoiceForm.items.length > 1 ? 's' : ''} in purchase
+              </span>
             </div>
           </div>
 
@@ -1572,6 +1688,118 @@ export const PurchaseManagement: React.FC = () => {
               className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-sm font-bold shadow-md transition-all"
             >
               Save Supplier
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal 4: Quick Add Item within Purchase */}
+      <Modal
+        isOpen={isQuickAddItemOpen}
+        onClose={() => setIsQuickAddItemOpen(false)}
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-purple-50 dark:bg-purple-950/50 rounded-xl text-purple-600 dark:text-purple-400">
+              <Boxes className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Add New Item to Inventory</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Define new raw ingredient details directly while recording purchase</p>
+            </div>
+          </div>
+        }
+        maxWidth="lg"
+      >
+        <form onSubmit={handleSaveQuickItem} className="space-y-4">
+          <div>
+            <label className="form-label">
+              Item / Ingredient Name <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={quickItemForm.name}
+              onChange={(e) => setQuickItemForm({ ...quickItemForm, name: e.target.value })}
+              placeholder="e.g. Dough, Mozzarella Cheese, Oregano..."
+              className="form-input font-bold"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="form-label">Category</label>
+              <input
+                type="text"
+                list="quick-item-cats"
+                value={quickItemForm.category}
+                onChange={(e) => setQuickItemForm({ ...quickItemForm, category: e.target.value })}
+                placeholder="e.g. Dairy, Meat, Spices, Bakery..."
+                className="form-input"
+              />
+              <datalist id="quick-item-cats">
+                {['Meat & Poultry', 'Dairy & Cheese', 'Vegetables & Fresh Produce', 'Bakery & Grains', 'Spices & Condiments', 'Beverages & Syrups', 'Packaging & Disposables', 'General'].map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </div>
+
+            <div>
+              <label className="form-label">Unit of Measurement</label>
+              <select
+                value={quickItemForm.unit}
+                onChange={(e) => setQuickItemForm({ ...quickItemForm, unit: e.target.value })}
+                className="form-select font-mono font-bold"
+              >
+                {['KG', 'G', 'L', 'ML', 'PCS', 'PACKET', 'BOX', 'CAN', 'BOTTLE', 'DOZEN', 'TRAY', 'PORTION'].map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="form-label">Default Purchase Price ({currencySymbol})</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={quickItemForm.costPerUnit || ''}
+                onChange={(e) => setQuickItemForm({ ...quickItemForm, costPerUnit: parseFloat(e.target.value) || 0 })}
+                placeholder="0.00"
+                className="form-input font-mono font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="form-label">Low Stock Alert Threshold</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={quickItemForm.minStockAlert || ''}
+                onChange={(e) => setQuickItemForm({ ...quickItemForm, minStockAlert: parseFloat(e.target.value) || 0 })}
+                placeholder="5"
+                className="form-input font-mono"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setIsQuickAddItemOpen(false)}
+              className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center space-x-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create & Add to Purchase</span>
             </button>
           </div>
         </form>

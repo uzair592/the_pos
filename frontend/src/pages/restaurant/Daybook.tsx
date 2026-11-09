@@ -490,130 +490,106 @@ export const Daybook: React.FC = () => {
       {/* ======================================================== */}
       {/* 2. THE AT-A-GLANCE METRIC CARDS STRIP */}
       {/* ======================================================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5">
         {/* Card 1: Net Sales */}
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Net Sales</span>
-            <div className="w-7 h-7 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-              <DollarSign className="w-4 h-4" />
+        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Net Sales</span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+              <DollarSign className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-xl font-black text-slate-900 dark:text-white">
+          <div className="text-base font-black text-slate-900 dark:text-white font-mono">
             {currencySymbol} {Number(summary.totalNetSales || 0).toLocaleString()}
           </div>
-          <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 space-y-0.5">
-            <p className="font-medium">
-              Gross: <span className="font-bold">{currencySymbol} {Number(summary.totalGrossSales || 0).toLocaleString()}</span>
-            </p>
-            <p className="text-emerald-600 dark:text-emerald-400 font-bold">
-              {summary.completedOrdersCount || 0} completed orders
-            </p>
+          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+            <span>Gross: {currencySymbol} {Number(summary.totalGrossSales || 0).toLocaleString()}</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-bold">{summary.completedOrdersCount || 0} orders</span>
           </div>
         </div>
 
         {/* Card 2: Inward Purchases */}
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Purchases</span>
-            <div className="w-7 h-7 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-              <Truck className="w-4 h-4" />
+        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Purchases</span>
+            <div className="w-6 h-6 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+              <Truck className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-xl font-black text-slate-900 dark:text-white">
+          <div className="text-base font-black text-blue-600 dark:text-blue-400 font-mono">
             {currencySymbol} {Number(summary.totalPurchasesAmount || 0).toLocaleString()}
           </div>
-          <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 space-y-0.5">
-            <p className="font-medium">
-              Paid: <span className="font-bold text-emerald-600 dark:text-emerald-400">{currencySymbol} {Number(summary.totalPurchasesPaid || 0).toLocaleString()}</span>
-            </p>
-            <p className="font-medium text-amber-600 dark:text-amber-400 font-bold">
-              Credit: {currencySymbol} {Number(summary.totalPurchasesUnpaid || 0).toLocaleString()}
-            </p>
+          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+            <span>Paid: {currencySymbol} {Number(summary.totalPurchasesPaid || 0).toLocaleString()}</span>
+            <span className="text-blue-600 font-bold">{summary.purchasesCount || 0} bills</span>
           </div>
         </div>
 
-        {/* Card 3: Ingredients Consumed (FIFO COGS) */}
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Ingredients COGS</span>
-            <div className="w-7 h-7 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-              <ChefHat className="w-4 h-4" />
+        {/* Card 3: Food Cost / Ingredients Used */}
+        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Raw Ingredients</span>
+            <div className="w-6 h-6 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
+              <ChefHat className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-xl font-black text-purple-700 dark:text-purple-300">
+          <div className="text-base font-black text-purple-600 dark:text-purple-400 font-mono">
             {currencySymbol} {Number(summary.totalIngredientsCost || 0).toLocaleString()}
           </div>
-          <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 space-y-0.5">
-            <p className="font-medium">
-              Gross Margin: <span className="font-black text-brand-600 dark:text-brand-400">{summary.grossMarginPercent || 0}%</span>
-            </p>
-            <p className="font-medium text-emerald-600 dark:text-emerald-400 font-bold">
-              Gross Profit: {currencySymbol} {Number(summary.grossProfit || 0).toLocaleString()}
-            </p>
+          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+            <span>Food Cost: {summary.foodCostPercent || 0}%</span>
+            <span className="text-purple-600 font-bold">{summary.ingredientsCount || 0} items</span>
           </div>
         </div>
 
-        {/* Card 4: Wastage & Spoilage */}
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Wastage Loss</span>
-            <div className="w-7 h-7 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-              <Trash2 className="w-4 h-4" />
+        {/* Card 4: Wastage Loss */}
+        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Wastage Loss</span>
+            <div className="w-6 h-6 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+              <Trash2 className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-xl font-black text-amber-600 dark:text-amber-400">
+          <div className="text-base font-black text-amber-600 dark:text-amber-400 font-mono">
             {currencySymbol} {Number(summary.totalWastageCost || 0).toLocaleString()}
           </div>
-          <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 space-y-0.5">
-            <p className="font-medium">
-              Qty Lost: <span className="font-bold">{Number(summary.totalWastageQuantity || 0).toFixed(2)} units</span>
-            </p>
-            <p className="text-amber-600 dark:text-amber-400 font-bold">
-              {summary.wastageCount || 0} wastage records
-            </p>
+          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+            <span>Lost: {Number(summary.totalWastageQuantity || 0).toFixed(1)} units</span>
+            <span className="text-amber-600 font-bold">{summary.wastageCount || 0} records</span>
           </div>
         </div>
 
         {/* Card 5: Daily Expenses */}
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Daily Expenses</span>
-            <div className="w-7 h-7 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold">
-              <Receipt className="w-4 h-4" />
+        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Daily Expenses</span>
+            <div className="w-6 h-6 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold">
+              <Receipt className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-xl font-black text-rose-600 dark:text-rose-400">
+          <div className="text-base font-black text-rose-600 dark:text-rose-400 font-mono">
             {currencySymbol} {Number(summary.totalExpensesAmount || 0).toLocaleString()}
           </div>
-          <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 space-y-0.5">
-            <p className="font-medium">
-              Cash: <span className="font-bold">{currencySymbol} {Number(summary.totalCashExpenses || 0).toLocaleString()}</span>
-            </p>
-            <p className="text-rose-600 dark:text-rose-400 font-bold">
-              {summary.expensesCount || 0} expense vouchers
-            </p>
+          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+            <span>Cash: {currencySymbol} {Number(summary.totalCashExpenses || 0).toLocaleString()}</span>
+            <span className="text-rose-600 font-bold">{summary.expensesCount || 0} entries</span>
           </div>
         </div>
 
         {/* Card 6: Net Operating Profit */}
-        <div className="p-4 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-sm relative overflow-hidden border border-slate-800">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Net Operating Profit</span>
-            <div className="w-7 h-7 rounded-xl bg-white/10 text-emerald-400 flex items-center justify-center font-bold">
-              <TrendingUp className="w-4 h-4" />
+        <div className="p-3 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-xl shadow-xs border border-slate-800">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Net Day Profit</span>
+            <div className="w-6 h-6 rounded-lg bg-white/10 text-emerald-400 flex items-center justify-center font-bold">
+              <TrendingUp className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className={`text-xl font-black ${Number(summary.netDailyProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+          <div className={`text-base font-black font-mono ${Number(summary.netDailyProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
             {currencySymbol} {Number(summary.netDailyProfit || 0).toLocaleString()}
           </div>
-          <div className="mt-2 text-[10px] text-slate-300 space-y-0.5">
-            <p>
-              Drawer Cash: <span className="font-bold text-white">{currencySymbol} {Number(summary.netOperatingCashPosition || 0).toLocaleString()}</span>
-            </p>
-            <p className="text-slate-400 font-medium">
-              Sales - COGS - Expenses - Wastage
-            </p>
+          <div className="mt-1 text-[10px] text-slate-300 flex items-center justify-between">
+            <span>Cash: {currencySymbol} {Number(summary.netOperatingCashPosition || 0).toLocaleString()}</span>
+            <span className="text-emerald-400 font-bold">{summary.grossMarginPercent || 0}% gross</span>
           </div>
         </div>
       </div>
@@ -621,80 +597,85 @@ export const Daybook: React.FC = () => {
       {/* ======================================================== */}
       {/* 3. BALANCED DAILY FINANCIAL LEDGER FLOW (P&L & CASH) */}
       {/* ======================================================== */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
-        <h3 className="font-black text-sm text-slate-900 dark:text-white mb-3 flex items-center space-x-2">
-          <Scale className="w-4 h-4 text-brand-500" />
-          <span>Balanced Daily Cash Flow & Operating Statement</span>
-        </h3>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+        <div className="px-4 py-3 bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900 dark:text-white flex items-center space-x-2">
+            <Scale className="w-4 h-4 text-brand-500" />
+            <span>Balanced Daily Cash Flow & Operating Statement</span>
+          </h3>
+          <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+            Reconciled Statement
+          </span>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-800">
           {/* Column A: Inflows */}
-          <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/20 rounded-2xl border border-emerald-200/80 dark:border-emerald-900/50 space-y-2 text-xs">
-            <div className="flex items-center justify-between font-extrabold text-emerald-800 dark:text-emerald-300 pb-2 border-b border-emerald-200 dark:border-emerald-900/60">
+          <div className="p-4 space-y-2 text-xs">
+            <div className="flex items-center justify-between font-extrabold text-emerald-700 dark:text-emerald-400 pb-2 border-b border-slate-100 dark:border-slate-800">
               <span className="flex items-center gap-1.5">
-                <TrendingUp className="w-4 h-4 text-emerald-600" />
+                <TrendingUp className="w-3.5 h-3.5" />
                 <span>1. Cash & Revenue Inflows</span>
               </span>
-              <span>{currencySymbol} {(Number(summary.totalGrandTotal || 0) + Number(summary.openingRegisterCash || 0)).toLocaleString()}</span>
+              <span className="font-mono">{currencySymbol} {(Number(summary.totalGrandTotal || 0) + Number(summary.openingRegisterCash || 0)).toLocaleString()}</span>
             </div>
             <div className="space-y-1.5 pt-1 text-slate-700 dark:text-slate-300 text-[11px]">
               <div className="flex justify-between">
-                <span>Opening Register Cash:</span>
+                <span className="text-slate-500">Opening Register Cash:</span>
                 <span className="font-bold font-mono">{currencySymbol} {Number(summary.openingRegisterCash || 0).toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
-                <span>Cash Sales Collected:</span>
+                <span className="text-slate-500">Cash Sales Collected:</span>
                 <span className="font-bold font-mono text-emerald-600">{currencySymbol} {Number(summary.cashSalesCollected || 0).toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
-                <span>Digital / Card Collections:</span>
+                <span className="text-slate-500">Digital / Card Collections:</span>
                 <span className="font-bold font-mono">{currencySymbol} {Number(summary.nonCashSalesCollected || 0).toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
-                <span>Taxes & Delivery Fees:</span>
+                <span className="text-slate-500">Taxes & Delivery Fees:</span>
                 <span className="font-bold font-mono">{currencySymbol} {(Number(summary.totalTax || 0) + Number(summary.totalDeliveryFees || 0)).toLocaleString()}</span>
               </div>
             </div>
           </div>
 
           {/* Column B: Outflows */}
-          <div className="p-4 bg-rose-50/60 dark:bg-rose-950/20 rounded-2xl border border-rose-200/80 dark:border-rose-900/50 space-y-2 text-xs">
-            <div className="flex items-center justify-between font-extrabold text-rose-800 dark:text-rose-300 pb-2 border-b border-rose-200 dark:border-rose-900/60">
+          <div className="p-4 space-y-2 text-xs">
+            <div className="flex items-center justify-between font-extrabold text-rose-700 dark:text-rose-400 pb-2 border-b border-slate-100 dark:border-slate-800">
               <span className="flex items-center gap-1.5">
-                <TrendingDown className="w-4 h-4 text-rose-600" />
+                <TrendingDown className="w-3.5 h-3.5" />
                 <span>2. Operating Costs & Outflows</span>
               </span>
-              <span>{currencySymbol} {(Number(summary.totalIngredientsCost || 0) + Number(summary.totalExpensesAmount || 0) + Number(summary.totalWastageCost || 0)).toLocaleString()}</span>
+              <span className="font-mono">{currencySymbol} {(Number(summary.totalIngredientsCost || 0) + Number(summary.totalExpensesAmount || 0) + Number(summary.totalWastageCost || 0)).toLocaleString()}</span>
             </div>
             <div className="space-y-1.5 pt-1 text-slate-700 dark:text-slate-300 text-[11px]">
               <div className="flex justify-between">
-                <span>Raw Ingredients Consumed (COGS):</span>
+                <span className="text-slate-500">Raw Ingredients Consumed (COGS):</span>
                 <span className="font-bold font-mono text-purple-600">{currencySymbol} {Number(summary.totalIngredientsCost || 0).toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
-                <span>Daily Operational Expenses:</span>
+                <span className="text-slate-500">Daily Operational Expenses:</span>
                 <span className="font-bold font-mono text-rose-600">{currencySymbol} {Number(summary.totalExpensesAmount || 0).toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
-                <span>Wastage & Spoilage Loss:</span>
+                <span className="text-slate-500">Wastage & Spoilage Loss:</span>
                 <span className="font-bold font-mono text-amber-600">{currencySymbol} {Number(summary.totalWastageCost || 0).toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
-                <span>Purchases Paid to Suppliers:</span>
+                <span className="text-slate-500">Purchases Paid to Suppliers:</span>
                 <span className="font-bold font-mono">{currencySymbol} {Number(summary.totalPurchasesPaid || 0).toLocaleString()}</span>
               </div>
             </div>
           </div>
 
           {/* Column C: Net Position */}
-          <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs flex flex-col justify-between">
+          <div className="p-4 space-y-2 text-xs bg-slate-50/50 dark:bg-slate-850/50 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between font-extrabold text-slate-900 dark:text-white pb-2 border-b border-slate-200 dark:border-slate-700">
                 <span className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-brand-500" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-brand-500" />
                   <span>3. Net Reconciliation</span>
                 </span>
-                <span className="font-black text-brand-600 dark:text-brand-400">
+                <span className="font-black text-brand-600 dark:text-brand-400 font-mono">
                   {summary.grossMarginPercent || 0}% Gross
                 </span>
               </div>
@@ -719,7 +700,7 @@ export const Daybook: React.FC = () => {
             </div>
 
             <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
-              <span className="text-[10px] text-slate-400">Status: Reconciled</span>
+              <span className="text-[10px] text-slate-400 font-semibold">Status: Balanced</span>
               <button
                 onClick={() => setIsPrintModalOpen(true)}
                 className="text-[11px] font-bold text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1"
