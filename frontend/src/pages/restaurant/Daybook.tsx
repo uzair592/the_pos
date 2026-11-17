@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
@@ -12,8 +12,6 @@ import {
 } from '../../utils/pdfExport.js';
 import { executeThermalPrint } from '../../utils/receiptPrinter.js';
 import { formatPKR } from '../../utils/formatPKR.js';
-import { ErpPageHeader } from '../../components/common/ErpPageHeader.js';
-import { ErpMetricRibbon } from '../../components/common/ErpMetricRibbon.js';
 import {
   Calendar,
   CalendarDays,
@@ -37,6 +35,7 @@ import {
   ArrowRight,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   X,
   Layers,
   Eye,
@@ -66,14 +65,25 @@ const formatLocalYMD = (d: Date): string => {
 
 export const Daybook: React.FC = () => {
   const { tenant, branches, currentBranchId, user } = useAuth();
-  const { success, error, info } = useToast();
+  const { success, error } = useToast();
 
   // Filters State
   const [selectedDate, setSelectedDate] = useState<string>(() => formatLocalYMD(new Date()));
   const [selectedBranchId, setSelectedBranchId] = useState<string>(() => currentBranchId || '');
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'sales' | 'purchases' | 'ingredients' | 'expenses' | 'wastage' | 'shifts'
-  >('overview');
+    'all' | 'sales' | 'purchases' | 'ingredients' | 'expenses' | 'wastage' | 'shifts'
+  >('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  // Reset horizontal scroll when switching tabs
+  useEffect(() => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollLeft = 0;
+    }
+  }, [activeTab]);
 
   // Daybook Data State
   const [daybook, setDaybook] = useState<any | null>(null);
@@ -88,6 +98,18 @@ export const Daybook: React.FC = () => {
   const [selectedDaybookPurchase, setSelectedDaybookPurchase] = useState<any | null>(null);
   const [selectedDaybookExpense, setSelectedDaybookExpense] = useState<any | null>(null);
   const [selectedDaybookShift, setSelectedDaybookShift] = useState<any | null>(null);
+  const [selectedDaybookWastage, setSelectedDaybookWastage] = useState<any | null>(null);
+
+  // Close export menu on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleDownloadDaybookPurchase = (p: any) => {
     exportPurchaseVoucherPdf(
@@ -335,7 +357,7 @@ export const Daybook: React.FC = () => {
     }
   };
 
-  // Open Full Order Details
+  // Download PDF
   const handleDownloadPdf = () => {
     if (!daybook) return;
     const branchName = branches.find((b) => b.id === selectedBranchId)?.name || 'Main Branch';
@@ -351,6 +373,51 @@ export const Daybook: React.FC = () => {
     success('Daybook PDF downloaded successfully');
   };
 
+  // Thermal Summary Print (80mm)
+  const handleThermalSummaryPrint = () => {
+    if (!daybook) return;
+    const branchName = branches.find((b) => b.id === selectedBranchId)?.name || 'Main Branch';
+    const thermalWindow = window.open('', '_blank', 'width=380,height=600');
+    if (thermalWindow) {
+      thermalWindow.document.write(`
+        <html>
+          <head>
+            <title>Daybook Summary 80mm</title>
+            <style>
+              body { font-family: monospace; font-size: 12px; width: 280px; padding: 10px; margin: 0; }
+              .center { text-align: center; }
+              .bold { font-weight: bold; }
+              .line { border-top: 1px dashed #000; margin: 6px 0; }
+              .row { display: flex; justify-content: space-between; margin: 3px 0; }
+            </style>
+          </head>
+          <body>
+            <div class="center bold">${tenant?.name || 'Restaurant POS'}</div>
+            <div class="center">${branchName}</div>
+            <div class="center">DAILY DAYBOOK & Z-REPORT</div>
+            <div class="center">${selectedDate}</div>
+            <div class="line"></div>
+            <div class="row"><span>Net Sales:</span><span class="bold">${formatPKR(summary.totalNetSales || 0)}</span></div>
+            <div class="row"><span>Purchases:</span><span>${formatPKR(summary.totalPurchasesAmount || 0)}</span></div>
+            <div class="row"><span>Raw Ingredients:</span><span>${formatPKR(summary.totalIngredientsCost || 0)}</span></div>
+            <div class="row"><span>Wastage Loss:</span><span>${formatPKR(summary.totalWastageCost || 0)}</span></div>
+            <div class="row"><span>Daily Expenses:</span><span>${formatPKR(summary.totalExpensesAmount || 0)}</span></div>
+            <div class="line"></div>
+            <div class="row bold"><span>Expected Drawer:</span><span>${formatPKR(summary.netOperatingCashPosition || 0)}</span></div>
+            <div class="row bold"><span>Net Day Profit:</span><span>${formatPKR(summary.netDailyProfit || 0)}</span></div>
+            <div class="line"></div>
+            <div class="center">Generated: ${new Date().toLocaleTimeString()}</div>
+          </body>
+        </html>
+      `);
+      thermalWindow.document.close();
+      thermalWindow.focus();
+      thermalWindow.print();
+      thermalWindow.close();
+    }
+  };
+
+  // Open Full Order Details
   const handleViewOrderDetail = async (orderId: string) => {
     try {
       const data = await api.get(`/orders/${orderId}`);
@@ -362,766 +429,884 @@ export const Daybook: React.FC = () => {
 
   const currencySymbol = daybook?.currencySymbol || tenant?.currency_symbol || 'Rs.';
   const summary = daybook?.summary || {};
-
   const isToday = selectedDate === formatLocalYMD(new Date());
 
+  const displayDateLabel = useMemo(() => {
+    try {
+      const [y, m, d] = selectedDate.split('-').map(Number);
+      const dateObj = new Date(y, m - 1, d);
+      return dateObj.toLocaleDateString('en-US', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch (_) {
+      return selectedDate;
+    }
+  }, [selectedDate]);
+
+  // Synthesis of Unified All Transactions Ledger
+  const allTransactions = useMemo(() => {
+    if (!daybook) return [];
+    const list: any[] = [];
+
+    // 1. Sales
+    (daybook.salesOrders || []).forEach((s: any) => {
+      const isCash = !s.paymentMethods || s.paymentMethods.toUpperCase().includes('CASH');
+      list.push({
+        id: `sale-${s.id}`,
+        time: s.createdAt,
+        ref: `#${s.orderNumber}`,
+        type: 'SALE',
+        particulars: `${s.orderType}${s.tableNumber ? ` • Table ${s.tableNumber}` : ''} • ${s.itemsCount || 1} items (${s.cashierName || 'Cashier'})`,
+        modeOrLot: s.paymentMethods || 'CASH',
+        cashIn: isCash ? Number(s.grandTotal || 0) : 0,
+        cashOut: 0,
+        inventoryImpact: 0,
+        raw: s,
+      });
+    });
+
+    // 2. Purchases
+    (daybook.purchases || []).forEach((p: any) => {
+      list.push({
+        id: `purchase-${p.id}`,
+        time: p.createdAt,
+        ref: p.invoiceNumber || `BILL-${p.id.substring(0, 6).toUpperCase()}`,
+        type: 'PURCHASE',
+        particulars: `${p.supplierName} (${p.itemsCount || 0} items)`,
+        modeOrLot: p.status || 'RECEIVED',
+        cashIn: 0,
+        cashOut: Number(p.paidAmount || 0),
+        inventoryImpact: Number(p.totalAmount || 0),
+        raw: p,
+      });
+    });
+
+    // 3. Expenses
+    (daybook.expenses || []).forEach((e: any) => {
+      list.push({
+        id: `expense-${e.id}`,
+        time: e.createdAt,
+        ref: `EXP-${e.id.substring(0, 6).toUpperCase()}`,
+        type: 'EXPENSE',
+        particulars: `${e.categoryName} - ${e.description}`,
+        modeOrLot: e.paymentMethod || 'CASH',
+        cashIn: 0,
+        cashOut: Number(e.amount || 0),
+        inventoryImpact: 0,
+        raw: e,
+      });
+    });
+
+    // 4. Wastage
+    (daybook.wastageRecords || []).forEach((w: any) => {
+      list.push({
+        id: `wastage-${w.id}`,
+        time: w.createdAt,
+        ref: `WST-${w.id.substring(0, 6).toUpperCase()}`,
+        type: 'WASTAGE',
+        particulars: `${w.ingredientName} (${w.quantity} ${w.unit}) - ${w.reason}`,
+        modeOrLot: `@ ${formatPKR(w.unitCost)}/${w.unit}`,
+        cashIn: 0,
+        cashOut: 0,
+        inventoryImpact: Number(w.totalCost || 0),
+        raw: w,
+      });
+    });
+
+    // 5. Shifts
+    (daybook.shifts || []).forEach((sh: any) => {
+      list.push({
+        id: `shift-${sh.id}`,
+        time: sh.openedAt,
+        ref: `SH-${sh.id.substring(0, 6).toUpperCase()}`,
+        type: 'SHIFT',
+        particulars: `Register Shift: ${sh.cashierName} (${sh.status})`,
+        modeOrLot: `Opening: ${formatPKR(sh.openingCash || 0)}`,
+        cashIn: Number(sh.openingCash || 0),
+        cashOut: 0,
+        inventoryImpact: 0,
+        raw: sh,
+      });
+    });
+
+    // Sort descending by timestamp
+    list.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    return list;
+  }, [daybook]);
+
+  // Filter Transactions by Search Query
+  const filteredTransactions = useMemo(() => {
+    if (!searchQuery.trim()) return allTransactions;
+    const q = searchQuery.toLowerCase();
+    return allTransactions.filter(
+      (tx) =>
+        tx.ref.toLowerCase().includes(q) ||
+        tx.type.toLowerCase().includes(q) ||
+        tx.particulars.toLowerCase().includes(q) ||
+        tx.modeOrLot.toLowerCase().includes(q)
+    );
+  }, [allTransactions, searchQuery]);
+
+  // Totals for All Transactions Table Footer
+  const totalCashIn = useMemo(() => {
+    return filteredTransactions.reduce((acc, tx) => acc + (tx.cashIn || 0), 0);
+  }, [filteredTransactions]);
+
+  const totalCashOut = useMemo(() => {
+    return filteredTransactions.reduce((acc, tx) => acc + (tx.cashOut || 0), 0);
+  }, [filteredTransactions]);
+
+  const totalNonCashLoss = useMemo(() => {
+    return (daybook?.summary?.totalIngredientsCost || 0) + (daybook?.summary?.totalWastageCost || 0);
+  }, [daybook]);
+
+  const cogsPercent = summary.totalNetSales
+    ? Math.round((Number(summary.totalIngredientsCost || 0) / Number(summary.totalNetSales)) * 100)
+    : 0;
+
   return (
-    <div className="space-y-6 font-sans pb-12">
+    <div className="h-[calc(100vh-48px)] flex flex-col overflow-hidden bg-slate-100/70 select-none font-sans">
       {/* ======================================================== */}
-      {/* 1. TOP HEADER & DATE / BRANCH NAVIGATION */}
+      {/* ZONE 1: COMPACT SINGLE-ROW HEADER & DATE BAR (h-12)      */}
       {/* ======================================================== */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div>
-          <div className="flex items-center space-x-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-brand-500/10 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 flex items-center justify-center font-bold">
-              <BookOpen className="w-5 h-5" />
+      <header className="h-12 bg-white border-b border-slate-200 px-4 flex items-center justify-between shrink-0 z-20">
+        {/* Left: Title + Badge + Stepper */}
+        <div className="flex items-center space-x-3 min-w-0">
+          <div className="flex items-center space-x-2 shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-brand-500/10 text-brand-600 flex items-center justify-center font-bold">
+              <BookOpen className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h1 className="text-xl font-black text-slate-900 dark:text-white">
-                  Daily Daybook & Operations Ledger
-                </h1>
-                                {isToday && (
-                  <span className="flex items-center space-x-1 text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Live Today</span>
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Consolidated operations: Sales, Purchases, Ingredient Consumption, Wastage & Daily Expenses
-              </p>
-            </div>
+            <h1 className="text-sm font-black text-slate-900 whitespace-nowrap">
+              Daily Daybook
+            </h1>
           </div>
-        </div>
 
-        {/* Date Selector & Branch Controls */}
-        <div className="flex flex-wrap items-center gap-2.5">
-
+          {isToday && (
+            <span className="shrink-0 flex items-center space-x-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Live Today</span>
+            </span>
+          )}
 
           {/* Date Picker & Navigators */}
-          <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
+          <div className="flex items-center space-x-1 bg-slate-100 rounded-md p-0.5 border border-slate-200 shrink-0">
             <button
+              type="button"
               onClick={() => handleJumpDay(-1)}
-              className="p-1.5 hover:bg-white dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors"
+              className="p-1 hover:bg-white rounded text-slate-600 transition-colors"
               title="Previous Day"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <div className="flex items-center space-x-1.5 px-2">
-              <Calendar className="w-3.5 h-3.5 text-brand-500" />
+            <div className="relative flex items-center px-1.5 cursor-pointer">
+              <Calendar className="w-3.5 h-3.5 text-brand-500 mr-1.5 shrink-0" />
+              <span className="text-xs font-bold text-slate-800 whitespace-nowrap">
+                {displayDateLabel}
+              </span>
               <input
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-transparent text-xs font-black text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer"
+                className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                title="Select Date"
               />
             </div>
             <button
+              type="button"
               onClick={() => handleJumpDay(1)}
-              className="p-1.5 hover:bg-white dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors"
+              className="p-1 hover:bg-white rounded text-slate-600 transition-colors"
               title="Next Day"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
             {!isToday && (
               <button
+                type="button"
                 onClick={handleJumpToday}
-                className="px-2 py-1 text-[11px] font-bold bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 rounded-lg shadow-sm hover:bg-slate-50 transition-colors"
+                className="px-2 py-0.5 text-[11px] font-bold bg-white text-brand-600 rounded shadow-xs hover:bg-slate-50 transition-colors ml-1"
               >
                 Today
               </button>
             )}
           </div>
 
-          {/* Action Buttons */}
+          {/* Branch indicator */}
+          {daybook?.branchName && (
+            <span className="hidden 2xl:inline-block text-[11px] text-slate-500 font-medium truncate max-w-[120px]">
+              • {daybook.branchName}
+            </span>
+          )}
+        </div>
+
+        {/* Right: Actions Cluster in Single Non-Wrapping Row */}
+        <div className="flex items-center space-x-1.5 shrink-0">
           <button
+            type="button"
             onClick={() => setIsExpenseModalOpen(true)}
-            className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/80 rounded-xl font-bold text-xs flex items-center space-x-1.5 transition-colors shadow-sm"
+            className="bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 px-3 py-1.5 rounded-md text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-xs shrink-0"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Record Expense</span>
+            <span>+ Record Expense</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setIsWastageModalOpen(true)}
-            className="px-3 py-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80 rounded-xl font-bold text-xs flex items-center space-x-1.5 transition-colors shadow-sm"
+            className="bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 px-3 py-1.5 rounded-md text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-xs shrink-0"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            <span>Log Wastage</span>
+            <span>+ Log Wastage</span>
           </button>
 
           <button
-            onClick={handleDownloadPdf}
-            className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold text-xs flex items-center space-x-1.5 transition-colors shadow-sm"
-            title="Download complete Daybook Statement as A4 PDF"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Download A4 PDF</span>
-          </button>
-
-          <button
+            type="button"
             onClick={() => setIsPrintModalOpen(true)}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 rounded-xl font-bold text-xs flex items-center space-x-1.5 transition-colors shadow-sm"
-            title="Preview and print A4 Daybook Statement"
+            className="bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-3 py-1.5 rounded-md text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-xs shrink-0"
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Print A4 Statement</span>
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>View Z-Report</span>
           </button>
 
+          {/* Export / Print Dropdown */}
+          <div className="relative shrink-0" ref={exportMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsExportMenuOpen((prev) => !prev)}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center space-x-1.5 transition-colors shrink-0"
+            >
+              <Printer className="w-3.5 h-3.5 text-slate-600" />
+              <span>Export / Print</span>
+              <ChevronDown className="w-3 h-3 text-slate-500" />
+            </button>
+
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-1 w-52 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsExportMenuOpen(false);
+                    handleDownloadPdf();
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 flex items-center space-x-2 text-slate-700"
+                >
+                  <Download className="w-3.5 h-3.5 text-brand-600" />
+                  <span>Download A4 PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsExportMenuOpen(false);
+                    setIsPrintModalOpen(true);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 flex items-center space-x-2 text-slate-700"
+                >
+                  <Printer className="w-3.5 h-3.5 text-slate-700" />
+                  <span>Print A4 Statement</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsExportMenuOpen(false);
+                    handleThermalSummaryPrint();
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 flex items-center space-x-2 text-slate-700"
+                >
+                  <Receipt className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Thermal 80mm Summary</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           <button
+            type="button"
             onClick={() => fetchDaybook(true)}
             disabled={isRefreshing}
-            className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl transition-colors border border-slate-200 dark:border-slate-700"
-            title="Refresh Data"
+            className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md transition-colors border border-slate-300 shrink-0"
+            title="Refresh Daybook"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
         </div>
-      </div>
-
-      {/* Date Banner */}
-      <div className="flex items-center justify-between px-2 text-xs">
-        <span className="font-extrabold text-slate-700 dark:text-slate-300 flex items-center space-x-1.5">
-          <CalendarDays className="w-4 h-4 text-brand-500" />
-          <span>Statement for {daybook?.displayDate || selectedDate}</span>
-          <span className="text-slate-400">•</span>
-          <span className="text-slate-500 font-medium">{daybook?.branchName}</span>
-        </span>
-      </div>
+      </header>
 
       {/* ======================================================== */}
-      {/* 2. THE AT-A-GLANCE METRIC CARDS STRIP */}
+      {/* ZONE 2: HIGH-DENSITY 6-COLUMN FINANCIAL RIBBON           */}
       {/* ======================================================== */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5">
-        {/* Card 1: Net Sales */}
-        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Net Sales</span>
-            <div className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-              <DollarSign className="w-3.5 h-3.5" />
-            </div>
+      <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 grid grid-cols-6 gap-2.5 shrink-0 z-10">
+        {/* 1. Net Sales */}
+        <div className="p-2 rounded-lg border border-slate-200 bg-white border-l-4 border-l-emerald-500 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
+            <span>Net Sales</span>
+            <Banknote className="w-3.5 h-3.5 text-emerald-600" />
           </div>
-          <div className="text-base font-black text-slate-900 dark:text-white font-mono">
-            {currencySymbol} {Number(summary.totalNetSales || 0).toLocaleString()}
+          <div className="text-sm font-black font-mono tabular-nums text-slate-900 whitespace-nowrap">
+            {formatPKR(summary.totalNetSales || 0)}
           </div>
-          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-            <span>Gross: {currencySymbol} {Number(summary.totalGrossSales || 0).toLocaleString()}</span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold">{summary.completedOrdersCount || 0} orders</span>
+          <div className="text-[10px] text-slate-500 truncate mt-0.5">
+            Gross: {formatPKR(summary.totalGrossSales || 0)} • {daybook?.salesOrders?.length || 0} orders
           </div>
         </div>
 
-        {/* Card 2: Inward Purchases */}
-        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Purchases</span>
-            <div className="w-6 h-6 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-              <Truck className="w-3.5 h-3.5" />
-            </div>
+        {/* 2. Purchases */}
+        <div className="p-2 rounded-lg border border-slate-200 bg-white border-l-4 border-l-blue-500 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
+            <span>Purchases</span>
+            <Truck className="w-3.5 h-3.5 text-blue-600" />
           </div>
-          <div className="text-base font-black text-blue-600 dark:text-blue-400 font-mono">
-            {currencySymbol} {Number(summary.totalPurchasesAmount || 0).toLocaleString()}
+          <div className="text-sm font-black font-mono tabular-nums text-blue-700 whitespace-nowrap">
+            {formatPKR(summary.totalPurchasesAmount || 0)}
           </div>
-          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-            <span>Paid: {currencySymbol} {Number(summary.totalPurchasesPaid || 0).toLocaleString()}</span>
-            <span className="text-blue-600 font-bold">{summary.purchasesCount || 0} bills</span>
+          <div className="text-[10px] text-slate-500 truncate mt-0.5">
+            Paid: {formatPKR(summary.totalPurchasesPaid || 0)} • {daybook?.purchases?.length || 0} bills
           </div>
         </div>
 
-        {/* Card 3: Food Cost / Ingredients Used */}
-        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Raw Ingredients</span>
-            <div className="w-6 h-6 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-              <ChefHat className="w-3.5 h-3.5" />
-            </div>
+        {/* 3. COGS (Ingredients) */}
+        <div className="p-2 rounded-lg border border-slate-200 bg-white border-l-4 border-l-violet-500 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
+            <span>COGS (Ingredients)</span>
+            <ChefHat className="w-3.5 h-3.5 text-violet-600" />
           </div>
-          <div className="text-base font-black text-purple-600 dark:text-purple-400 font-mono">
-            {currencySymbol} {Number(summary.totalIngredientsCost || 0).toLocaleString()}
+          <div className="text-sm font-black font-mono tabular-nums text-violet-700 whitespace-nowrap">
+            {formatPKR(summary.totalIngredientsCost || 0)}
           </div>
-          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-            <span>Food Cost: {summary.foodCostPercent || 0}%</span>
-            <span className="text-purple-600 font-bold">{summary.ingredientsCount || 0} items</span>
+          <div className="text-[10px] text-slate-500 truncate mt-0.5">
+            Food Cost: {cogsPercent}% • {daybook?.ingredientConsumptions?.length || 0} items
           </div>
         </div>
 
-        {/* Card 4: Wastage Loss */}
-        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Wastage Loss</span>
-            <div className="w-6 h-6 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-              <Trash2 className="w-3.5 h-3.5" />
-            </div>
+        {/* 4. Wastage Loss */}
+        <div
+          onClick={() => setActiveTab('wastage')}
+          className="p-2 rounded-lg border border-slate-200 bg-white border-l-4 border-l-amber-500 shadow-xs flex flex-col justify-between cursor-pointer hover:bg-amber-50/50 transition-colors"
+          title="Click to view wastage records"
+        >
+          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
+            <span className="text-amber-800">Wastage Loss</span>
+            <Trash2 className="w-3.5 h-3.5 text-amber-600" />
           </div>
-          <div className="text-base font-black text-amber-600 dark:text-amber-400 font-mono">
-            {currencySymbol} {Number(summary.totalWastageCost || 0).toLocaleString()}
+          <div className="text-sm font-black font-mono tabular-nums text-amber-700 whitespace-nowrap">
+            {formatPKR(summary.totalWastageCost || 0)}
           </div>
-          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-            <span>Lost: {Number(summary.totalWastageQuantity || 0).toFixed(1)} units</span>
-            <span className="text-amber-600 font-bold">{summary.wastageCount || 0} records</span>
-          </div>
-        </div>
-
-        {/* Card 5: Daily Expenses */}
-        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Daily Expenses</span>
-            <div className="w-6 h-6 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold">
-              <Receipt className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-base font-black text-rose-600 dark:text-rose-400 font-mono">
-            {currencySymbol} {Number(summary.totalExpensesAmount || 0).toLocaleString()}
-          </div>
-          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-            <span>Cash: {currencySymbol} {Number(summary.totalCashExpenses || 0).toLocaleString()}</span>
-            <span className="text-rose-600 font-bold">{summary.expensesCount || 0} entries</span>
+          <div className="text-[10px] text-slate-500 truncate mt-0.5">
+            {Number(summary.totalWastageQuantity || 0).toFixed(1)} units • {daybook?.wastageRecords?.length || 0} records
           </div>
         </div>
 
-        {/* Card 6: Net Operating Profit */}
-        <div className="p-3 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-xl shadow-xs border border-slate-800">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Net Day Profit</span>
-            <div className="w-6 h-6 rounded-lg bg-white/10 text-emerald-400 flex items-center justify-center font-bold">
-              <TrendingUp className="w-3.5 h-3.5" />
-            </div>
+        {/* 5. Daily Expenses */}
+        <div className="p-2 rounded-lg border border-slate-200 bg-white border-l-4 border-l-rose-500 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
+            <span>Daily Expenses</span>
+            <Receipt className="w-3.5 h-3.5 text-rose-600" />
           </div>
-          <div className={`text-base font-black font-mono ${Number(summary.netDailyProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {currencySymbol} {Number(summary.netDailyProfit || 0).toLocaleString()}
+          <div className="text-sm font-black font-mono tabular-nums text-rose-700 whitespace-nowrap">
+            {formatPKR(summary.totalExpensesAmount || 0)}
           </div>
-          <div className="mt-1 text-[10px] text-slate-300 flex items-center justify-between">
-            <span>Cash: {currencySymbol} {Number(summary.netOperatingCashPosition || 0).toLocaleString()}</span>
-            <span className="text-emerald-400 font-bold">{summary.grossMarginPercent || 0}% gross</span>
+          <div className="text-[10px] text-slate-500 truncate mt-0.5">
+            Cash: {formatPKR(summary.totalCashExpenses || 0)} • {daybook?.expenses?.length || 0} entries
+          </div>
+        </div>
+
+        {/* 6. Net Day Profit */}
+        <div className="p-2 rounded-lg border border-slate-800 bg-slate-900 text-white border-l-4 border-l-slate-700 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
+            <span>Net Day Profit</span>
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+          </div>
+          <div
+            className={`text-sm font-black font-mono tabular-nums whitespace-nowrap ${
+              Number(summary.netDailyProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+            }`}
+          >
+            {formatPKR(summary.netDailyProfit || 0)}
+          </div>
+          <div className="text-[10px] text-slate-300 truncate mt-0.5">
+            Drawer: {formatPKR(summary.netOperatingCashPosition || 0)} • {summary.grossMarginPercent || 0}% gross
           </div>
         </div>
       </div>
 
       {/* ======================================================== */}
-      {/* 3. BALANCED DAILY FINANCIAL LEDGER FLOW (P&L & CASH) */}
+      {/* ZONE 3: MASTER SPLIT WORKSPACE (Locked 100vh Layout)      */}
       {/* ======================================================== */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-        <div className="px-4 py-3 bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900 dark:text-white flex items-center space-x-2">
-            <Scale className="w-4 h-4 text-brand-500" />
-            <span>Balanced Daily Cash Flow & Operating Statement</span>
-          </h3>
-          <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-            Reconciled Statement
-          </span>
-        </div>
+      <div className="flex-1 grid grid-cols-12 gap-3 p-3 overflow-hidden min-h-0">
+        {/* ------------------------------------------------------ */}
+        {/* LEFT COLUMN: Cash Drawer & Operating Statement (col 4) */}
+        {/* ------------------------------------------------------ */}
+        <div className="col-span-4 flex flex-col bg-white border border-slate-200 rounded-lg shadow-xs overflow-y-auto min-h-0 text-xs">
+          {/* Header */}
+          <div className="px-3 py-2 bg-slate-100 border-b border-slate-200 flex items-center justify-between shrink-0">
+            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center space-x-1.5">
+              <Scale className="w-3.5 h-3.5 text-brand-600" />
+              <span>Daily Operating & Drawer Statement</span>
+            </h3>
+            <span className="text-[10px] font-bold text-slate-700 bg-slate-200/80 px-2 py-0.5 rounded">
+              Balanced
+            </span>
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-800">
-          {/* Column A: Inflows */}
-          <div className="p-4 space-y-2 text-xs">
-            <div className="flex items-center justify-between font-extrabold text-emerald-700 dark:text-emerald-400 pb-2 border-b border-slate-100 dark:border-slate-800">
-              <span className="flex items-center gap-1.5">
-                <TrendingUp className="w-3.5 h-3.5" />
-                <span>1. Cash & Revenue Inflows</span>
+          {/* Section A: Physical Cash Drawer Reconciliation */}
+          <div className="bg-emerald-50/50 p-3 border-b border-slate-200 space-y-2">
+            <div className="flex items-center justify-between text-emerald-900 font-bold">
+              <span className="flex items-center space-x-1.5">
+                <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>1. Physical Cash Drawer Reconciliation</span>
               </span>
-              <span className="font-mono">{currencySymbol} {(Number(summary.totalGrandTotal || 0) + Number(summary.openingRegisterCash || 0)).toLocaleString()}</span>
             </div>
-            <div className="space-y-1.5 pt-1 text-slate-700 dark:text-slate-300 text-[11px]">
-              <div className="flex justify-between">
+            <div className="space-y-1 text-slate-700 text-[11px] pt-1">
+              <div className="flex justify-between items-center">
                 <span className="text-slate-500">Opening Register Cash:</span>
-                <span className="font-bold font-mono">{currencySymbol} {Number(summary.openingRegisterCash || 0).toLocaleString()}</span>
+                <span className="font-mono font-semibold whitespace-nowrap tabular-nums text-right">
+                  {formatPKR(summary.openingRegisterCash || 0)}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Cash Sales Collected:</span>
-                <span className="font-bold font-mono text-emerald-600">{currencySymbol} {Number(summary.cashSalesCollected || 0).toLocaleString()}</span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">(+) Cash Sales Collected:</span>
+                <span className="font-mono font-bold text-emerald-700 whitespace-nowrap tabular-nums text-right">
+                  {formatPKR(summary.cashSalesCollected || 0)}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Digital / Card Collections:</span>
-                <span className="font-bold font-mono">{currencySymbol} {Number(summary.nonCashSalesCollected || 0).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Taxes & Delivery Fees:</span>
-                <span className="font-bold font-mono">{currencySymbol} {(Number(summary.totalTax || 0) + Number(summary.totalDeliveryFees || 0)).toLocaleString()}</span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">(-) Cash Expenses & Supplier Payouts:</span>
+                <span className="font-mono font-semibold text-rose-700 whitespace-nowrap tabular-nums text-right">
+                  {formatPKR((Number(summary.totalCashExpenses || 0) + Number(summary.totalPurchasesPaid || 0)))}
+                </span>
               </div>
             </div>
-          </div>
-
-          {/* Column B: Outflows */}
-          <div className="p-4 space-y-2 text-xs">
-            <div className="flex items-center justify-between font-extrabold text-rose-700 dark:text-rose-400 pb-2 border-b border-slate-100 dark:border-slate-800">
-              <span className="flex items-center gap-1.5">
-                <TrendingDown className="w-3.5 h-3.5" />
-                <span>2. Operating Costs & Outflows</span>
+            <div className="pt-2 border-t border-emerald-200/80 flex justify-between items-center">
+              <span className="font-black text-emerald-900 text-[11px] uppercase tracking-wide">
+                = Expected Cash in Drawer
               </span>
-              <span className="font-mono">{currencySymbol} {(Number(summary.totalIngredientsCost || 0) + Number(summary.totalExpensesAmount || 0) + Number(summary.totalWastageCost || 0)).toLocaleString()}</span>
+              <span className="font-mono font-black text-sm text-emerald-900 whitespace-nowrap tabular-nums text-right">
+                {formatPKR(summary.netOperatingCashPosition || 0)}
+              </span>
             </div>
-            <div className="space-y-1.5 pt-1 text-slate-700 dark:text-slate-300 text-[11px]">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Raw Ingredients Consumed (COGS):</span>
-                <span className="font-bold font-mono text-purple-600">{currencySymbol} {Number(summary.totalIngredientsCost || 0).toLocaleString()}</span>
+            <p className="text-[10px] text-emerald-700 leading-tight">
+              Physical currency expected in cashier registers at day close.
+            </p>
+          </div>
+
+          {/* Section B: Digital & Bank Collections */}
+          <div className="p-3 border-b border-slate-200 space-y-2">
+            <div className="flex items-center justify-between text-slate-900 font-bold">
+              <span className="flex items-center space-x-1.5">
+                <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+                <span>2. Digital & Bank Collections</span>
+              </span>
+            </div>
+            <div className="space-y-1 text-slate-700 text-[11px] pt-1">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Card / POS / Online Transfers:</span>
+                <span className="font-mono font-semibold whitespace-nowrap tabular-nums text-right">
+                  {formatPKR(summary.nonCashSalesCollected || 0)}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Daily Operational Expenses:</span>
-                <span className="font-bold font-mono text-rose-600">{currencySymbol} {Number(summary.totalExpensesAmount || 0).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Wastage & Spoilage Loss:</span>
-                <span className="font-bold font-mono text-amber-600">{currencySymbol} {Number(summary.totalWastageCost || 0).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Purchases Paid to Suppliers:</span>
-                <span className="font-bold font-mono">{currencySymbol} {Number(summary.totalPurchasesPaid || 0).toLocaleString()}</span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Taxes & Delivery Fees:</span>
+                <span className="font-mono font-semibold whitespace-nowrap tabular-nums text-right">
+                  {formatPKR((Number(summary.totalTaxAmount || 0) + Number(summary.totalDeliveryFees || 0)))}
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Column C: Net Position */}
-          <div className="p-4 space-y-2 text-xs bg-slate-50/50 dark:bg-slate-850/50 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between font-extrabold text-slate-900 dark:text-white pb-2 border-b border-slate-200 dark:border-slate-700">
-                <span className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-brand-500" />
-                  <span>3. Net Reconciliation</span>
-                </span>
-                <span className="font-black text-brand-600 dark:text-brand-400 font-mono">
-                  {summary.grossMarginPercent || 0}% Gross
+          {/* Section C: Inventory & Accrual P&L Impact */}
+          <div className="p-3 border-b border-slate-200 space-y-2">
+            <div className="flex items-center justify-between text-slate-900 font-bold">
+              <span className="flex items-center space-x-1.5">
+                <Scale className="w-3.5 h-3.5 text-violet-600" />
+                <span>3. Inventory & Accrual P&L Impact</span>
+              </span>
+            </div>
+            <div className="space-y-1 text-slate-700 text-[11px] pt-1">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">(-) Raw Ingredients Consumed (FIFO COGS):</span>
+                <span className="font-mono font-semibold text-violet-700 whitespace-nowrap tabular-nums text-right">
+                  {formatPKR(summary.totalIngredientsCost || 0)}
                 </span>
               </div>
-              <div className="space-y-1.5 pt-2 text-[11px]">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Gross Operating Profit:</span>
-                  <span className="font-bold font-mono">{currencySymbol} {Number(summary.grossProfit || 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Net Operating Day Profit:</span>
-                  <span className={`font-black font-mono ${Number(summary.netDailyProfit || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                    {currencySymbol} {Number(summary.netDailyProfit || 0).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Net Cash In Drawer:</span>
-                  <span className="font-bold font-mono text-slate-900 dark:text-white">
-                    {currencySymbol} {Number(summary.netOperatingCashPosition || 0).toLocaleString()}
-                  </span>
-                </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">(-) Wastage & Spoilage Loss (Non-Cash):</span>
+                <span className="font-mono font-bold text-amber-700 whitespace-nowrap tabular-nums text-right">
+                  {formatPKR(summary.totalWastageCost || 0)}
+                </span>
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
-              <span className="text-[10px] text-slate-400 font-semibold">Status: Balanced</span>
-              <button
-                onClick={() => setIsPrintModalOpen(true)}
-                className="text-[11px] font-bold text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1"
-              >
-                <span>View Full Z-Report</span>
-                <ArrowRight className="w-3 h-3" />
-              </button>
+            {/* Explanatory non-cash callout */}
+            <div className="bg-amber-50 border border-amber-200 rounded p-1.5 text-[10px] text-amber-800 flex items-start gap-1.5 leading-snug">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                <strong>Non-Cash Asset Loss:</strong> Wastage is an inventory asset write-off. It reduces net operating profit without reducing physical drawer cash.
+              </span>
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* ======================================================== */}
-      {/* 4. ACTIVITY TABS & TABLES */}
-      {/* ======================================================== */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        {/* Tab Headers */}
-        <div className="flex items-center space-x-1 p-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 overflow-x-auto text-xs">
-          {[
-            { id: 'overview', label: 'Overview & Collections', icon: PieChart },
-            { id: 'sales', label: `Sales Orders (${daybook?.salesOrders?.length || 0})`, icon: ShoppingBag },
-            { id: 'purchases', label: `Purchases Done (${daybook?.purchases?.length || 0})`, icon: Truck },
-            { id: 'ingredients', label: `Ingredients Used (${daybook?.ingredientConsumptions?.length || 0})`, icon: ChefHat },
-            { id: 'expenses', label: `Expenses Logged (${daybook?.expenses?.length || 0})`, icon: Receipt },
-            { id: 'wastage', label: `Wastage Recorded (${daybook?.wastageRecords?.length || 0})`, icon: Trash2 },
-            { id: 'shifts', label: `Shifts & Registers (${daybook?.shifts?.length || 0})`, icon: Clock },
-          ].map((t) => {
-            const Icon = t.icon;
-            const isActive = activeTab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id as any)}
-                className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl font-bold whitespace-nowrap transition-all ${
-                  isActive
-                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200/80 dark:border-slate-700'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100/60 dark:hover:bg-slate-800/40'
+            <div className="pt-2 border-t border-slate-200 flex items-center justify-between gap-2">
+              <span className="font-black text-slate-900 text-[11px] uppercase tracking-wide">
+                = Net Day Profit / Loss:
+              </span>
+              <span
+                className={`font-mono font-black text-sm whitespace-nowrap tabular-nums text-right ${
+                  Number(summary.netDailyProfit || 0) < 0 ? 'text-rose-700' : 'text-emerald-700'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ====================================================== */}
-        {/* TAB 1: OVERVIEW & COLLECTIONS */}
-        {/* ====================================================== */}
-        {activeTab === 'overview' && (
-          <div className="p-5 space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              {/* Payment Methods Breakdown */}
-              <div className="p-4 bg-slate-50/60 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-extrabold text-xs text-slate-900 dark:text-white flex items-center space-x-1.5">
-                    <Wallet className="w-4 h-4 text-brand-500" />
-                    <span>Payment Methods Collected Today</span>
-                  </h4>
-                  <span className="text-[10px] font-bold text-slate-400">
-                    Total: {currencySymbol} {Number(summary.totalGrandTotal || 0).toLocaleString()}
-                  </span>
-                </div>
-
-                {(!daybook?.paymentMethods || daybook.paymentMethods.length === 0) ? (
-                  <div className="py-8 text-center text-slate-400 text-xs">
-                    No payment collections recorded for this date.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {daybook.paymentMethods.map((pm: any) => (
-                      <div key={pm.method} className="space-y-1">
-                        <div className="flex items-center justify-between text-xs font-semibold">
-                          <span className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-200">
-                            {pm.method === 'CASH' && <Banknote className="w-3.5 h-3.5 text-emerald-500" />}
-                            {pm.method === 'CARD' && <CreditCard className="w-3.5 h-3.5 text-blue-500" />}
-                            {pm.method === 'DIGITAL_WALLET' && <Wallet className="w-3.5 h-3.5 text-purple-500" />}
-                            {pm.method === 'BANK_TRANSFER' && <Receipt className="w-3.5 h-3.5 text-amber-500" />}
-                            <span>{pm.method.replace('_', ' ')}</span>
-                            <span className="text-[10px] text-slate-400">({pm.transactionCount} txn)</span>
-                          </span>
-                          <span className="font-black text-slate-900 dark:text-white font-mono">
-                            {currencySymbol} {Number(pm.totalAmount).toLocaleString()} ({pm.percentage}%)
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              pm.method === 'CASH'
-                                ? 'bg-emerald-500'
-                                : pm.method === 'CARD'
-                                ? 'bg-blue-500'
-                                : pm.method === 'DIGITAL_WALLET'
-                                ? 'bg-purple-500'
-                                : 'bg-amber-500'
-                            }`}
-                            style={{ width: `${Math.max(2, pm.percentage)}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Order Channels & Stats */}
-              <div className="p-4 bg-slate-50/60 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-extrabold text-xs text-slate-900 dark:text-white flex items-center space-x-1.5">
-                    <BarChart3 className="w-4 h-4 text-brand-500" />
-                    <span>Daily Sales Channels & Status Summary</span>
-                  </h4>
-                  <span className="text-[10px] font-bold text-slate-400">
-                    {summary.completedOrdersCount || 0} Finished Orders
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                    <span className="text-[10px] text-slate-400 block font-bold mb-0.5">COMPLETED ORDERS</span>
-                    <span className="text-base font-black text-emerald-600 dark:text-emerald-400">{summary.completedOrdersCount || 0}</span>
-                  </div>
-                  <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                    <span className="text-[10px] text-slate-400 block font-bold mb-0.5">IN-FLIGHT / ACTIVE</span>
-                    <span className="text-base font-black text-amber-600 dark:text-amber-400">{summary.activeOrdersCount || 0}</span>
-                  </div>
-                  <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                    <span className="text-[10px] text-slate-400 block font-bold mb-0.5">CANCELLED ORDERS</span>
-                    <span className="text-base font-black text-rose-600 dark:text-rose-400">{summary.cancelledOrdersCount || 0}</span>
-                  </div>
-                  <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                    <span className="text-[10px] text-slate-400 block font-bold mb-0.5">REFUNDED TOTAL</span>
-                    <span className="text-base font-black text-slate-700 dark:text-slate-300">
-                      {currencySymbol} {Number(summary.totalRefundedAmount || 0).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-brand-50/50 dark:bg-brand-950/20 rounded-xl border border-brand-200/60 dark:border-brand-900/40 text-[11px] text-brand-900 dark:text-brand-300">
-                  <p className="font-semibold">
-                    💡 All sales orders are automatically reconciled with exact ingredient batch deductions (FIFO) and register cash tracking.
-                  </p>
-                </div>
-              </div>
+                {formatPKR(summary.netDailyProfit || 0)}
+              </span>
             </div>
           </div>
-        )}
 
-        {/* ====================================================== */}
-        {/* TAB 2: SALES ORDERS */}
-        {/* ====================================================== */}
-        {activeTab === 'sales' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 font-extrabold uppercase text-[10px]">
-                <tr>
-                  <th className="px-4 py-3">Order #</th>
-                  <th className="px-4 py-3">Time</th>
-                  <th className="px-4 py-3">Channel / Customer</th>
-                  <th className="px-4 py-3 text-center">Items</th>
-                  <th className="px-4 py-3">Cashier</th>
-                  <th className="px-4 py-3">Payment</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-right">Grand Total</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                {(!daybook?.salesOrders || daybook.salesOrders.length === 0) ? (
-                  <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
-                      No sales orders found for this date.
-                    </td>
-                  </tr>
-                ) : (
-                  daybook.salesOrders.map((ord: any) => {
-                    const time = new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    return (
-                      <tr key={ord.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                        <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
-                          #{ord.orderNumber}
-                        </td>
-                        <td className="px-4 py-3 text-slate-500 text-[11px]">
-                          {time}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="font-bold text-slate-900 dark:text-white block">
-                            {ord.orderType} {ord.tableNumber ? `• Table ${ord.tableNumber}` : ''}
-                          </span>
-                          <span className="text-[10px] text-slate-400 block">
-                            {ord.customerName ? `${ord.customerName} (${ord.customerPhone || ''})` : 'Walk-in Guest'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center font-bold">
-                          {ord.itemsCount}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                          {ord.cashierName || 'Cashier'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-block px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                            {ord.paymentMethods || 'Cash'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                              ord.status === 'COMPLETED'
-                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                                : ord.status === 'CANCELLED'
-                                ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
-                                : 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
-                            }`}
-                          >
-                            {ord.status.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-black font-mono text-slate-900 dark:text-white">
-                          {currencySymbol} {Number(ord.grandTotal).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <ActionMenu
-                            items={[
-                              {
-                                label: 'Preview Breakdown',
-                                icon: Eye,
-                                onClick: () => handleViewOrderDetail(ord.id),
-                              },
-                              {
-                                label: 'Print Receipt',
-                                icon: Printer,
-                                onClick: async () => {
-                                  const currentBranch = branches?.find((b: any) => b.id === (currentBranchId || user?.branchId));
-                                  try {
-                                    const receiptRes = await api.get(`/orders/${ord.id}/receipt`);
-                                    executeThermalPrint(receiptRes.receipt || ord, {
-                                      isReprint: true,
-                                      context: { tenant, branch: currentBranch, user },
-                                    });
-                                  } catch {
-                                    executeThermalPrint(ord, {
-                                      isReprint: true,
-                                      context: { tenant, branch: currentBranch, user },
-                                    });
-                                  }
-                                },
-                              },
-                            ]}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ====================================================== */}
-        {/* TAB 3: INWARD PURCHASES */}
-        {/* ====================================================== */}
-        {activeTab === 'purchases' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 font-extrabold uppercase text-[10px]">
-                <tr>
-                  <th className="px-4 py-3">Invoice #</th>
-                  <th className="px-4 py-3">Supplier</th>
-                  <th className="px-4 py-3">Branch</th>
-                  <th className="px-4 py-3 text-center">Items Count</th>
-                  <th className="px-4 py-3">Received By</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-right">Total Amount</th>
-                  <th className="px-4 py-3 text-right">Paid Amount</th>
-                  <th className="px-4 py-3 text-right">Balance Due</th>
-                  <th className="px-4 py-3 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                {(!daybook?.purchases || daybook.purchases.length === 0) ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
-                      No inward purchases recorded on this date.
-                    </td>
-                  </tr>
-                ) : (
-                  daybook.purchases.map((p: any) => (
-                    <tr key={p.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
-                        {p.invoiceNumber}
-                      </td>
-                      <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">
-                        {p.supplierName}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500">
-                        {p.branchName}
-                      </td>
-                      <td className="px-4 py-3 text-center font-bold">
-                        {p.itemsCount} lines
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                        {p.receivedByName || 'Inventory Manager'}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                            p.balancePayable <= 0
-                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200'
-                              : 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200'
-                          }`}
-                        >
-                          {p.balancePayable <= 0 ? 'PAID' : 'UNPAID / CREDIT'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-black font-mono text-slate-900 dark:text-white">
-                        {currencySymbol} {Number(p.totalAmount).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                        {currencySymbol} {Number(p.paidAmount).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold font-mono text-amber-600 dark:text-amber-400">
-                        {currencySymbol} {Number(p.balancePayable).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-center whitespace-nowrap">
-                        <ActionMenu
-                          items={[
-                            {
-                              label: 'View Invoice Details',
-                              icon: Eye,
-                              onClick: () => setSelectedDaybookPurchase(p),
-                            },
-                            {
-                              label: 'Download A4 Voucher (PDF)',
-                              icon: Download,
-                              onClick: () => handleDownloadDaybookPurchase(p),
-                            },
-                            {
-                              label: 'Print A4 Voucher',
-                              icon: Printer,
-                              onClick: () => handlePrintDaybookPurchase(p),
-                            },
-                          ]}
-                        />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ====================================================== */}
-        {/* TAB 4: INGREDIENTS USED IN TODAY'S SALES (FIFO COGS) */}
-        {/* ====================================================== */}
-        {activeTab === 'ingredients' && (
-          <div className="space-y-4 p-5">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <h4 className="font-extrabold text-xs text-slate-900 dark:text-white flex items-center space-x-1.5">
-                  <ChefHat className="w-4 h-4 text-purple-600" />
-                  <span>Exact Ingredients Consumed in Today's Sales (FIFO Cost of Goods Sold)</span>
-                </h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Calculated directly from recipe ingredient deductions and weighted inward lot consumption.
-                </p>
+          {/* Section D: Compact Payment Mode & Order Status Pills */}
+          <div className="p-3 space-y-2.5">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+              Daily Sales Channels & Status Summary
+            </span>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="text-[10px] text-slate-400 block font-semibold">Completed Orders</span>
+                <span className="text-sm font-black text-emerald-600">{summary.completedOrdersCount || 0}</span>
               </div>
-              <div className="text-right">
-                <span className="text-[10px] font-bold text-slate-400 uppercase block">Total FIFO Ingredient Cost</span>
-                <span className="text-base font-black text-purple-700 dark:text-purple-300 font-mono">
-                  {currencySymbol} {Number(summary.totalIngredientsCost || 0).toLocaleString()}
+              <div className="p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="text-[10px] text-slate-400 block font-semibold">In-Flight / Active</span>
+                <span className="text-sm font-black text-amber-600">{summary.inFlightOrdersCount || 0}</span>
+              </div>
+              <div className="p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="text-[10px] text-slate-400 block font-semibold">Cancelled Orders</span>
+                <span className="text-sm font-black text-rose-600">{summary.cancelledOrdersCount || 0}</span>
+              </div>
+              <div className="p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="text-[10px] text-slate-400 block font-semibold">Refunded Total</span>
+                <span className="text-sm font-mono font-black text-slate-700 whitespace-nowrap tabular-nums">
+                  {formatPKR(summary.refundedAmount || 0)}
                 </span>
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 font-extrabold uppercase text-[10px]">
+            <div className="pt-1 flex items-center justify-between text-[11px] text-slate-500 font-mono">
+              <span>Cash: <strong className="text-slate-900">{formatPKR(summary.cashSalesCollected || 0)}</strong></span>
+              <span>Digital: <strong className="text-slate-900">{formatPKR(summary.nonCashSalesCollected || 0)}</strong></span>
+            </div>
+          </div>
+        </div>
+
+        {/* ------------------------------------------------------ */}
+        {/* RIGHT COLUMN: Unified Vyapar Transaction Ledger (col 8)*/}
+        {/* ------------------------------------------------------ */}
+        <div className="col-span-8 bg-white border border-slate-200 rounded-lg flex flex-col overflow-hidden min-h-0">
+          {/* Top Filter & Segmented Tabs Bar */}
+          <div className="h-10 bg-slate-50 border-b border-slate-200 px-3 flex items-center justify-between gap-2 shrink-0">
+            {/* Tabs */}
+            <div className="flex items-center space-x-1 overflow-x-auto min-w-0 py-0.5">
+              {[
+                { id: 'all', label: 'All', count: allTransactions.length },
+                { id: 'sales', label: 'Sales', count: daybook?.salesOrders?.length || 0 },
+                { id: 'purchases', label: 'Purchases', count: daybook?.purchases?.length || 0 },
+                { id: 'ingredients', label: 'COGS', count: daybook?.ingredientConsumptions?.length || 0 },
+                { id: 'expenses', label: 'Expenses', count: daybook?.expenses?.length || 0 },
+                { id: 'wastage', label: 'Wastage', count: daybook?.wastageRecords?.length || 0 },
+                { id: 'shifts', label: 'Shifts', count: daybook?.shifts?.length || 0 },
+              ].map((t) => {
+                const isActive = activeTab === t.id;
+                const isWastageActive = t.id === 'wastage' && t.count > 0;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setActiveTab(t.id as any)}
+                    className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap transition-colors ${
+                      isActive
+                        ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
+                        : isWastageActive
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300 font-bold hover:bg-amber-200'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <span>{t.label}</span>
+                    <span
+                      className={`px-1 py-0.2 rounded-full text-[10px] font-mono ${
+                        isWastageActive
+                          ? 'bg-amber-500 text-white font-bold'
+                          : isActive
+                          ? 'bg-slate-200 text-slate-800'
+                          : 'bg-slate-200/80 text-slate-600'
+                      }`}
+                    >
+                      {t.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Search Input */}
+            <div className="relative shrink-0 w-44">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Filter ledger..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-7 pr-5 py-1 bg-white border border-slate-200 rounded text-[11px] text-slate-800 placeholder-slate-400 focus:outline-none focus:border-brand-500 font-sans"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Table Container (flex-1 overflow-auto) */}
+          <div ref={tableContainerRef} className="flex-1 overflow-auto min-h-0 bg-white">
+            {/* ================================================== */}
+            {/* TAB: ALL TRANSACTIONS (DEFAULT CHRONOLOGICAL FEED)  */}
+            {/* ================================================== */}
+            {activeTab === 'all' && (
+              <table className="w-full text-left text-xs border-collapse min-w-[780px]">
+                <thead className="sticky top-0 bg-slate-100 text-slate-700 text-[10px] font-bold uppercase tracking-wider border-b border-slate-300 z-10">
                   <tr>
-                    <th className="px-4 py-2.5">Ingredient Name</th>
-                    <th className="px-4 py-2.5 text-center">Unit</th>
-                    <th className="px-4 py-2.5 text-center">Total Quantity Consumed</th>
-                    <th className="px-4 py-2.5 text-center">Orders Drawn</th>
-                    <th className="px-4 py-2.5 text-right">Avg Unit Cost</th>
-                    <th className="px-4 py-2.5 text-right">Total FIFO Cost</th>
+                    <th className="px-2 py-1.5 w-16">Time</th>
+                    <th className="px-2 py-1.5 w-24">Ref / #</th>
+                    <th className="px-2 py-1.5 w-20">Type</th>
+                    <th className="px-2 py-1.5">Particulars / Description</th>
+                    <th className="px-2 py-1.5 w-24">Mode / Lot</th>
+                    <th className="px-2 py-1.5 w-20 text-right">Cash In (+)</th>
+                    <th className="px-2 py-1.5 w-20 text-right">Cash Out (-)</th>
+                    <th className="px-2 py-1.5 w-24 text-right">Inv / P&L</th>
+                    <th className="px-2 py-1.5 w-16 text-center">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                  {(!daybook?.ingredientConsumptions || daybook.ingredientConsumptions.length === 0) ? (
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {filteredTransactions.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
-                        No recipe ingredient deductions recorded for today's completed orders.
+                      <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
+                        No transactions recorded for this date.
                       </td>
                     </tr>
                   ) : (
-                    daybook.ingredientConsumptions.map((c: any) => {
-                      const avgUnitCost = c.totalQuantityUsed > 0 ? (c.totalFifoCost / c.totalQuantityUsed) : 0;
+                    filteredTransactions.map((tx) => {
+                      const timeStr = new Date(tx.time).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      });
                       return (
-                        <tr key={c.ingredientId} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="px-4 py-3 font-bold text-slate-900 dark:text-white flex items-center space-x-2">
-                            <span className="w-2 h-2 rounded-full bg-purple-500" />
-                            <span>{c.ingredientName}</span>
+                        <tr
+                          key={tx.id}
+                          className="h-8 hover:bg-amber-50/50 transition-colors divide-x divide-slate-100 text-slate-800 text-[11px]"
+                        >
+                          <td className="px-2 py-1 font-mono text-[10px] text-slate-500 whitespace-nowrap">
+                            {timeStr}
                           </td>
-                          <td className="px-4 py-3 text-center text-slate-500 font-mono text-[11px]">
-                            {c.unit}
+                          <td className="px-2 py-1 font-mono font-bold text-slate-900 whitespace-nowrap">
+                            {tx.ref}
                           </td>
-                          <td className="px-4 py-3 text-center font-bold text-slate-900 dark:text-white font-mono">
-                            {Number(c.totalQuantityUsed).toFixed(2)} {c.unit}
+                          <td className="px-2 py-1 whitespace-nowrap">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider inline-block ${
+                                tx.type === 'SALE'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : tx.type === 'PURCHASE'
+                                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                  : tx.type === 'EXPENSE'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : tx.type === 'WASTAGE'
+                                  ? 'bg-amber-100 text-amber-900 border border-amber-300 font-black'
+                                  : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                              }`}
+                            >
+                              {tx.type}
+                            </span>
                           </td>
-                          <td className="px-4 py-3 text-center font-bold text-purple-600 dark:text-purple-400">
-                            {c.ordersCount} orders
+                          <td className="px-2 py-1 truncate max-w-[200px]" title={tx.particulars}>
+                            {tx.particulars}
                           </td>
-                          <td className="px-4 py-3 text-right text-slate-500 font-mono">
-                            {currencySymbol} {avgUnitCost.toFixed(2)} / {c.unit}
+                          <td className="px-2 py-1 font-mono text-[10px] text-slate-600 truncate max-w-[110px]" title={tx.modeOrLot}>
+                            {tx.modeOrLot}
                           </td>
-                          <td className="px-4 py-3 text-right font-black font-mono text-purple-700 dark:text-purple-300">
-                            {currencySymbol} {Number(c.totalFifoCost).toFixed(2)}
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap text-emerald-700 font-bold">
+                            {tx.cashIn > 0 ? formatPKR(tx.cashIn) : '—'}
+                          </td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap text-rose-700 font-bold">
+                            {tx.cashOut > 0 ? formatPKR(tx.cashOut) : '—'}
+                          </td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap text-amber-700 font-bold">
+                            {tx.inventoryImpact > 0 ? formatPKR(tx.inventoryImpact) : '—'}
+                          </td>
+                          <td className="px-1.5 py-1 text-center whitespace-nowrap">
+                            {tx.type === 'WASTAGE' ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDaybookWastage(tx.raw)}
+                                className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded text-[10px] font-bold transition-colors"
+                              >
+                                Inspect
+                              </button>
+                            ) : tx.type === 'SALE' ? (
+                              <button
+                                type="button"
+                                onClick={() => handleViewOrderDetail(tx.raw.id)}
+                                className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded text-[10px] font-semibold transition-colors"
+                              >
+                                Inspect
+                              </button>
+                            ) : tx.type === 'PURCHASE' ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDaybookPurchase(tx.raw)}
+                                className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] font-semibold transition-colors"
+                              >
+                                Inspect
+                              </button>
+                            ) : tx.type === 'EXPENSE' ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDaybookExpense(tx.raw)}
+                                className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[10px] font-semibold transition-colors"
+                              >
+                                Inspect
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDaybookShift(tx.raw)}
+                                className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-[10px] font-semibold transition-colors"
+                              >
+                                Inspect
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+                <tfoot className="sticky bottom-0 bg-slate-100 font-bold text-xs border-t-2 border-slate-300 z-10 divide-x divide-slate-200">
+                  <tr>
+                    <td colSpan={5} className="px-2 py-1.5 text-right uppercase text-[10px] text-slate-700">
+                      TOTALS
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-emerald-800 whitespace-nowrap text-[11px]">
+                      {formatPKR(totalCashIn)}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-rose-800 whitespace-nowrap text-[11px]">
+                      {formatPKR(totalCashOut)}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-amber-800 whitespace-nowrap text-[11px]">
+                      {formatPKR(totalNonCashLoss)}
+                    </td>
+                    <td className="px-2 py-1.5"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+
+            {/* ================================================== */}
+            {/* TAB: SALES ORDERS                                  */}
+            {/* ================================================== */}
+            {activeTab === 'sales' && (
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 bg-slate-100 text-slate-700 text-[11px] font-bold uppercase tracking-wider border-b border-slate-300 z-10">
+                  <tr>
+                    <th className="px-3 py-2">Order #</th>
+                    <th className="px-3 py-2">Time</th>
+                    <th className="px-3 py-2">Channel / Customer</th>
+                    <th className="px-3 py-2 text-center">Items</th>
+                    <th className="px-3 py-2">Cashier</th>
+                    <th className="px-3 py-2">Payment</th>
+                    <th className="px-3 py-2 text-center">Status</th>
+                    <th className="px-3 py-2 text-right">Grand Total</th>
+                    <th className="px-3 py-2 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {(!daybook?.salesOrders || daybook.salesOrders.length === 0) ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
+                        No sales orders found for this date.
+                      </td>
+                    </tr>
+                  ) : (
+                    daybook.salesOrders.map((ord: any) => {
+                      const time = new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      return (
+                        <tr key={ord.id} className="h-9 hover:bg-slate-50 transition-colors divide-x divide-slate-100">
+                          <td className="px-3 py-1 font-mono font-bold text-slate-900 whitespace-nowrap">
+                            #{ord.orderNumber}
+                          </td>
+                          <td className="px-3 py-1 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                            {time}
+                          </td>
+                          <td className="px-3 py-1 truncate max-w-[180px]">
+                            <span className="font-semibold text-slate-900 block truncate">
+                              {ord.orderType} {ord.tableNumber ? `• Table ${ord.tableNumber}` : ''}
+                            </span>
+                            <span className="text-[10px] text-slate-400 block truncate">
+                              {ord.customerName ? `${ord.customerName} (${ord.customerPhone || ''})` : 'Walk-in Guest'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1 text-center font-bold">
+                            {ord.itemsCount}
+                          </td>
+                          <td className="px-3 py-1 text-slate-600 truncate max-w-[120px]">
+                            {ord.cashierName || 'Cashier'}
+                          </td>
+                          <td className="px-3 py-1">
+                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                              {ord.paymentMethods || 'Cash'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                ord.status === 'COMPLETED'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : ord.status === 'CANCELLED'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}
+                            >
+                              {ord.status.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1 text-right font-black font-mono tabular-nums whitespace-nowrap text-slate-900">
+                            {formatPKR(ord.grandTotal)}
+                          </td>
+                          <td className="px-2 py-1 text-center whitespace-nowrap">
+                            <ActionMenu
+                              items={[
+                                {
+                                  label: 'Preview Breakdown',
+                                  icon: Eye,
+                                  onClick: () => handleViewOrderDetail(ord.id),
+                                },
+                                {
+                                  label: 'Print Receipt',
+                                  icon: Printer,
+                                  onClick: async () => {
+                                    const currentBranch = branches?.find((b: any) => b.id === (currentBranchId || user?.branchId));
+                                    try {
+                                      const receiptRes = await api.get(`/orders/${ord.id}/receipt`);
+                                      executeThermalPrint(receiptRes.receipt || ord, {
+                                        isReprint: true,
+                                        context: { tenant, branch: currentBranch, user },
+                                      });
+                                    } catch {
+                                      executeThermalPrint(ord, {
+                                        isReprint: true,
+                                        context: { tenant, branch: currentBranch, user },
+                                      });
+                                    }
+                                  },
+                                },
+                              ]}
+                            />
                           </td>
                         </tr>
                       );
@@ -1129,52 +1314,178 @@ export const Daybook: React.FC = () => {
                   )}
                 </tbody>
               </table>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* ====================================================== */}
-        {/* TAB 5: EXPENSES LOGGED */}
-        {/* ====================================================== */}
-        {activeTab === 'expenses' && (
-          <div className="space-y-4 p-5">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <h4 className="font-extrabold text-xs text-slate-900 dark:text-white flex items-center space-x-1.5">
-                  <Receipt className="w-4 h-4 text-rose-600" />
-                  <span>Daily Operational Expenses & Petty Cash Out</span>
-                </h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Log utilities, staff refreshments, maintenance, and petty cash vouchers.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsExpenseModalOpen(true)}
-                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs flex items-center space-x-1.5 transition-colors shadow-sm"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ Add Expense</span>
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 font-extrabold uppercase text-[10px]">
+            {/* ================================================== */}
+            {/* TAB: PURCHASES DONE                                */}
+            {/* ================================================== */}
+            {activeTab === 'purchases' && (
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 bg-slate-100 text-slate-700 text-[11px] font-bold uppercase tracking-wider border-b border-slate-300 z-10">
                   <tr>
-                    <th className="px-4 py-2.5">Category</th>
-                    <th className="px-4 py-2.5">Description / Voucher</th>
-                    <th className="px-4 py-2.5">Branch</th>
-                    <th className="px-4 py-2.5">Payment Method</th>
-                    <th className="px-4 py-2.5">Recorded By</th>
-                    <th className="px-4 py-2.5">Time</th>
-                    <th className="px-4 py-2.5 text-right">Amount</th>
-                    <th className="px-4 py-2.5 text-center">Action</th>
+                    <th className="px-3 py-2">Inward Date</th>
+                    <th className="px-3 py-2">Invoice #</th>
+                    <th className="px-3 py-2">Supplier</th>
+                    <th className="px-3 py-2">Branch</th>
+                    <th className="px-3 py-2 text-center">Items</th>
+                    <th className="px-3 py-2 text-center">Status</th>
+                    <th className="px-3 py-2 text-right">Total Amount</th>
+                    <th className="px-3 py-2 text-right">Paid Amount</th>
+                    <th className="px-3 py-2 text-right">Balance Due</th>
+                    <th className="px-3 py-2 text-center">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {(!daybook?.purchases || daybook.purchases.length === 0) ? (
+                    <tr>
+                      <td colSpan={10} className="px-4 py-12 text-center text-slate-400">
+                        No inward purchases logged for this date.
+                      </td>
+                    </tr>
+                  ) : (
+                    daybook.purchases.map((p: any) => {
+                      const time = new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      return (
+                        <tr key={p.id} className="h-9 hover:bg-slate-50 transition-colors divide-x divide-slate-100">
+                          <td className="px-3 py-1 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                            {time}
+                          </td>
+                          <td className="px-3 py-1 font-mono font-bold text-slate-900 whitespace-nowrap">
+                            {p.invoiceNumber}
+                          </td>
+                          <td className="px-3 py-1 font-semibold text-slate-900 truncate max-w-[150px]">
+                            {p.supplierName}
+                          </td>
+                          <td className="px-3 py-1 text-slate-500 truncate max-w-[100px]">
+                            {p.branchName}
+                          </td>
+                          <td className="px-3 py-1 text-center font-bold">
+                            {p.itemsCount}
+                          </td>
+                          <td className="px-3 py-1 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                p.status === 'RECEIVED'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}
+                            >
+                              {p.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1 text-right font-black font-mono tabular-nums whitespace-nowrap text-slate-900">
+                            {formatPKR(p.totalAmount)}
+                          </td>
+                          <td className="px-3 py-1 text-right font-mono tabular-nums whitespace-nowrap text-emerald-700 font-bold">
+                            {formatPKR(p.paidAmount)}
+                          </td>
+                          <td className="px-3 py-1 text-right font-mono tabular-nums whitespace-nowrap text-rose-700 font-bold">
+                            {formatPKR(p.balancePayable)}
+                          </td>
+                          <td className="px-2 py-1 text-center whitespace-nowrap">
+                            <ActionMenu
+                              items={[
+                                {
+                                  label: 'View Voucher',
+                                  icon: Eye,
+                                  onClick: () => setSelectedDaybookPurchase(p),
+                                },
+                                {
+                                  label: 'Download PDF',
+                                  icon: Download,
+                                  onClick: () => handleDownloadDaybookPurchase(p),
+                                },
+                                {
+                                  label: 'Print Voucher',
+                                  icon: Printer,
+                                  onClick: () => handlePrintDaybookPurchase(p),
+                                },
+                              ]}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {/* ================================================== */}
+            {/* TAB: INGREDIENTS CONSUMED (FIFO COGS)              */}
+            {/* ================================================== */}
+            {activeTab === 'ingredients' && (
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 bg-slate-100 text-slate-700 text-[11px] font-bold uppercase tracking-wider border-b border-slate-300 z-10">
+                  <tr>
+                    <th className="px-3 py-2">Ingredient</th>
+                    <th className="px-3 py-2 text-center">Unit</th>
+                    <th className="px-3 py-2 text-center">Orders</th>
+                    <th className="px-3 py-2 text-center">Quantity Consumed</th>
+                    <th className="px-3 py-2 text-right">Est. FIFO Cost</th>
+                    <th className="px-3 py-2 text-right">Total COGS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {(!daybook?.ingredientConsumptions || daybook.ingredientConsumptions.length === 0) ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
+                        No recipe-linked ingredient consumptions computed for this date.
+                      </td>
+                    </tr>
+                  ) : (
+                    daybook.ingredientConsumptions.map((c: any) => {
+                      const avgUnitCost = c.totalQuantityUsed > 0 ? c.totalFifoCost / c.totalQuantityUsed : 0;
+                      return (
+                        <tr key={c.ingredientId} className="h-9 hover:bg-slate-50 transition-colors divide-x divide-slate-100">
+                          <td className="px-3 py-1 font-bold text-slate-900 flex items-center space-x-2">
+                            <span className="w-2 h-2 rounded-full bg-violet-500" />
+                            <span>{c.ingredientName}</span>
+                          </td>
+                          <td className="px-3 py-1 text-center text-slate-500 font-mono text-[11px]">
+                            {c.unit}
+                          </td>
+                          <td className="px-3 py-1 text-center font-bold text-violet-700">
+                            {c.ordersCount} orders
+                          </td>
+                          <td className="px-3 py-1 text-center font-bold text-slate-900 font-mono">
+                            {Number(c.totalQuantityUsed).toFixed(2)} {c.unit}
+                          </td>
+                          <td className="px-3 py-1 text-right text-slate-500 font-mono tabular-nums whitespace-nowrap">
+                            {formatPKR(avgUnitCost)} / {c.unit}
+                          </td>
+                          <td className="px-3 py-1 text-right font-black font-mono tabular-nums whitespace-nowrap text-violet-700">
+                            {formatPKR(c.totalFifoCost)}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {/* ================================================== */}
+            {/* TAB: EXPENSES LOGGED                               */}
+            {/* ================================================== */}
+            {activeTab === 'expenses' && (
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 bg-slate-100 text-slate-700 text-[11px] font-bold uppercase tracking-wider border-b border-slate-300 z-10">
+                  <tr>
+                    <th className="px-3 py-2">Time</th>
+                    <th className="px-3 py-2">Voucher #</th>
+                    <th className="px-3 py-2">Category</th>
+                    <th className="px-3 py-2">Description / Voucher</th>
+                    <th className="px-3 py-2">Paid Via</th>
+                    <th className="px-3 py-2">Recorded By</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                    <th className="px-3 py-2 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
                   {(!daybook?.expenses || daybook.expenses.length === 0) ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
+                      <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
                         No operational expenses recorded for this date.
                       </td>
                     </tr>
@@ -1182,45 +1493,45 @@ export const Daybook: React.FC = () => {
                     daybook.expenses.map((e: any) => {
                       const time = new Date(e.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                       return (
-                        <tr key={e.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">
-                            <span className="px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 text-[10px]">
-                              {e.categoryName}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-slate-800 dark:text-slate-200 font-medium">
-                            {e.description}
-                          </td>
-                          <td className="px-4 py-3 text-slate-500">
-                            {e.branchName}
-                          </td>
-                          <td className="px-4 py-3 font-bold">
-                            {e.paymentMethod}
-                          </td>
-                          <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                            {e.recordedByName || 'Staff'}
-                          </td>
-                          <td className="px-4 py-3 text-slate-400 text-[11px]">
+                        <tr key={e.id} className="h-9 hover:bg-slate-50 transition-colors divide-x divide-slate-100">
+                          <td className="px-3 py-1 font-mono text-[11px] text-slate-500 whitespace-nowrap">
                             {time}
                           </td>
-                          <td className="px-4 py-3 text-right font-black font-mono text-rose-600 dark:text-rose-400">
-                            {currencySymbol} {Number(e.amount).toLocaleString()}
+                          <td className="px-3 py-1 font-mono font-bold text-slate-800 whitespace-nowrap">
+                            EXP-{e.id.substring(0, 6).toUpperCase()}
                           </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <td className="px-3 py-1 font-bold text-rose-700 whitespace-nowrap">
+                            {e.categoryName}
+                          </td>
+                          <td className="px-3 py-1 text-slate-700 truncate max-w-[200px]" title={e.description}>
+                            {e.description}
+                          </td>
+                          <td className="px-3 py-1">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                              {e.paymentMethod}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1 text-slate-500 text-[11px] truncate max-w-[120px]">
+                            {e.recordedByName || 'Staff'}
+                          </td>
+                          <td className="px-3 py-1 text-right font-black font-mono tabular-nums whitespace-nowrap text-rose-700">
+                            {formatPKR(e.amount)}
+                          </td>
+                          <td className="px-2 py-1 text-center whitespace-nowrap">
                             <ActionMenu
                               items={[
                                 {
-                                  label: 'View Voucher Details',
+                                  label: 'View Voucher',
                                   icon: Eye,
                                   onClick: () => setSelectedDaybookExpense(e),
                                 },
                                 {
-                                  label: 'Download A4 Voucher (PDF)',
+                                  label: 'Download PDF',
                                   icon: Download,
                                   onClick: () => handleDownloadDaybookExpense(e),
                                 },
                                 {
-                                  label: 'Print A4 Voucher',
+                                  label: 'Print Voucher',
                                   icon: Printer,
                                   onClick: () => handlePrintDaybookExpense(e),
                                 },
@@ -1233,79 +1544,74 @@ export const Daybook: React.FC = () => {
                   )}
                 </tbody>
               </table>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* ====================================================== */}
-        {/* TAB 6: WASTAGE & SPOILAGE LOG */}
-        {/* ====================================================== */}
-        {activeTab === 'wastage' && (
-          <div className="space-y-4 p-5">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <h4 className="font-extrabold text-xs text-slate-900 dark:text-white flex items-center space-x-1.5">
-                  <Trash2 className="w-4 h-4 text-amber-600" />
-                  <span>Kitchen Spoilage, Damage & Wastage Records</span>
-                </h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Tracks raw material waste, burns, power outage spoilage, and automatically adjusts FIFO inventory.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsWastageModalOpen(true)}
-                className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs flex items-center space-x-1.5 transition-colors shadow-sm"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ Log Wastage</span>
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 font-extrabold uppercase text-[10px]">
+            {/* ================================================== */}
+            {/* TAB: WASTAGE RECORDED (Rs. 14,000 Immediately Here) */}
+            {/* ================================================== */}
+            {activeTab === 'wastage' && (
+              <table className="w-full text-left text-xs border-collapse min-w-[760px]">
+                <thead className="sticky top-0 bg-slate-100 text-slate-700 text-[10px] font-bold uppercase tracking-wider border-b border-slate-300 z-10">
                   <tr>
-                    <th className="px-4 py-2.5">Ingredient Wasted</th>
-                    <th className="px-4 py-2.5 text-center">Quantity</th>
-                    <th className="px-4 py-2.5 text-right">Unit Cost</th>
-                    <th className="px-4 py-2.5 text-right">Financial Loss</th>
-                    <th className="px-4 py-2.5">Reason & Notes</th>
-                    <th className="px-4 py-2.5">Logged By</th>
-                    <th className="px-4 py-2.5">Time</th>
+                    <th className="px-2 py-1.5 w-16">Time</th>
+                    <th className="px-2 py-1.5 w-24">Ref #</th>
+                    <th className="px-2 py-1.5">Ingredient</th>
+                    <th className="px-2 py-1.5 text-center w-14">Unit</th>
+                    <th className="px-2 py-1.5 text-center w-20">Wasted Qty</th>
+                    <th className="px-2 py-1.5 text-right w-24">FIFO Unit Cost</th>
+                    <th className="px-2 py-1.5 text-right w-28">Total Loss Value</th>
+                    <th className="px-2 py-1.5">Reason</th>
+                    <th className="px-2 py-1.5 w-24">Logged By</th>
+                    <th className="px-2 py-1.5 text-center w-16">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                <tbody className="divide-y divide-slate-100 font-medium">
                   {(!daybook?.wastageRecords || daybook.wastageRecords.length === 0) ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                        No wastage or spoilage incidents recorded on this date.
+                      <td colSpan={10} className="px-4 py-12 text-center text-slate-400">
+                        No food wastage or kitchen spoilage recorded for this date.
                       </td>
                     </tr>
                   ) : (
                     daybook.wastageRecords.map((w: any) => {
                       const time = new Date(w.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                       return (
-                        <tr key={w.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">
+                        <tr key={w.id} className="h-8 hover:bg-amber-50/50 transition-colors divide-x divide-slate-100 text-[11px]">
+                          <td className="px-2 py-1 font-mono text-[10px] text-slate-500 whitespace-nowrap">
+                            {time}
+                          </td>
+                          <td className="px-2 py-1 font-mono font-bold text-slate-800 whitespace-nowrap">
+                            WST-{w.id.substring(0, 6).toUpperCase()}
+                          </td>
+                          <td className="px-2 py-1 font-bold text-slate-900 whitespace-nowrap">
                             {w.ingredientName}
                           </td>
-                          <td className="px-4 py-3 text-center font-bold text-amber-600 font-mono">
-                            {w.quantity} {w.unit}
+                          <td className="px-2 py-1 text-center font-mono text-slate-500 text-[10px]">
+                            {w.unit}
                           </td>
-                          <td className="px-4 py-3 text-right text-slate-500 font-mono">
-                            {currencySymbol} {Number(w.unitCost).toFixed(2)}
+                          <td className="px-2 py-1 text-center font-mono font-bold text-rose-700">
+                            {Number(w.quantity).toFixed(1)} {w.unit}
                           </td>
-                          <td className="px-4 py-3 text-right font-black font-mono text-rose-600 dark:text-rose-400">
-                            {currencySymbol} {Number(w.totalCost).toLocaleString()}
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap text-slate-600">
+                            {formatPKR(w.unitCost)} / {w.unit}
                           </td>
-                          <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-medium">
+                          <td className="px-2 py-1 text-right font-black font-mono tabular-nums whitespace-nowrap text-amber-700">
+                            {formatPKR(w.totalCost)}
+                          </td>
+                          <td className="px-2 py-1 text-slate-600 truncate max-w-[160px]" title={w.reason}>
                             {w.reason}
                           </td>
-                          <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                            {w.recordedByName || 'Chef'}
+                          <td className="px-2 py-1 text-slate-500 text-[10px] truncate max-w-[100px]">
+                            {w.recordedByName || 'Staff'}
                           </td>
-                          <td className="px-4 py-3 text-slate-400 text-[11px]">
-                            {time}
+                          <td className="px-1.5 py-1 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDaybookWastage(w)}
+                              className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded text-[10px] font-bold transition-colors"
+                            >
+                              Inspect
+                            </button>
                           </td>
                         </tr>
                       );
@@ -1313,121 +1619,125 @@ export const Daybook: React.FC = () => {
                   )}
                 </tbody>
               </table>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* ====================================================== */}
-        {/* TAB 7: SHIFTS & REGISTERS */}
-        {/* ====================================================== */}
-        {activeTab === 'shifts' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 font-extrabold uppercase text-[10px]">
-                <tr>
-                  <th className="px-4 py-3">Cashier</th>
-                  <th className="px-4 py-3">Branch</th>
-                  <th className="px-4 py-3">Opened At</th>
-                  <th className="px-4 py-3">Closed At</th>
-                  <th className="px-4 py-3 text-right">Opening Cash</th>
-                  <th className="px-4 py-3 text-right">Cash Sales</th>
-                  <th className="px-4 py-3 text-right">Cash In / Out</th>
-                  <th className="px-4 py-3 text-right">Expected Cash</th>
-                  <th className="px-4 py-3 text-right">Actual Count</th>
-                  <th className="px-4 py-3 text-right">Variance</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                {(!daybook?.shifts || daybook.shifts.length === 0) ? (
+            {/* ================================================== */}
+            {/* TAB: SHIFTS & REGISTERS                            */}
+            {/* ================================================== */}
+            {activeTab === 'shifts' && (
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 bg-slate-100 text-slate-700 text-[11px] font-bold uppercase tracking-wider border-b border-slate-300 z-10">
                   <tr>
-                    <td colSpan={12} className="px-4 py-8 text-center text-slate-400">
-                      No cashier register shifts opened or closed on this date.
-                    </td>
+                    <th className="px-3 py-2">Cashier</th>
+                    <th className="px-3 py-2">Branch</th>
+                    <th className="px-3 py-2">Opened At</th>
+                    <th className="px-3 py-2">Closed At</th>
+                    <th className="px-3 py-2 text-right">Opening Cash</th>
+                    <th className="px-3 py-2 text-right">Cash Sales</th>
+                    <th className="px-3 py-2 text-right">Expected Cash</th>
+                    <th className="px-3 py-2 text-right">Actual Count</th>
+                    <th className="px-3 py-2 text-right">Variance</th>
+                    <th className="px-3 py-2 text-center">Status</th>
+                    <th className="px-3 py-2 text-center">Action</th>
                   </tr>
-                ) : (
-                  daybook.shifts.map((s: any) => {
-                    const openTime = new Date(s.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    const closeTime = s.closedAt ? new Date(s.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'In Progress';
-                    return (
-                      <tr key={s.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                        <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">
-                          {s.cashierName}
-                        </td>
-                        <td className="px-4 py-3 text-slate-500">
-                          {s.branchName}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300 font-mono text-[11px]">
-                          {openTime}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300 font-mono text-[11px]">
-                          {closeTime}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold">
-                          {currencySymbol} {s.openingCash.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          {currencySymbol} {s.cashSales.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-[11px] text-slate-500">
-                          +{s.cashIn} / -{s.cashOut}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
-                          {currencySymbol} {s.expectedCash.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-slate-900 dark:text-white">
-                          {s.actualCash !== null ? `${currencySymbol} ${s.actualCash.toLocaleString()}` : '—'}
-                        </td>
-                        <td className={`px-4 py-3 text-right font-mono font-black ${
-                          s.variance === null ? 'text-slate-400' : s.variance === 0 ? 'text-emerald-600' : s.variance > 0 ? 'text-blue-600' : 'text-rose-600'
-                        }`}>
-                          {s.variance !== null ? `${s.variance > 0 ? '+' : ''}${currencySymbol} ${s.variance.toLocaleString()}` : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                              s.status === 'OPEN'
-                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {(!daybook?.shifts || daybook.shifts.length === 0) ? (
+                    <tr>
+                      <td colSpan={11} className="px-4 py-12 text-center text-slate-400">
+                        No cashier register shifts opened or closed on this date.
+                      </td>
+                    </tr>
+                  ) : (
+                    daybook.shifts.map((s: any) => {
+                      const openTime = new Date(s.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      const closeTime = s.closedAt
+                        ? new Date(s.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        : 'In Progress';
+                      return (
+                        <tr key={s.id} className="h-9 hover:bg-slate-50 transition-colors divide-x divide-slate-100">
+                          <td className="px-3 py-1 font-bold text-slate-900 whitespace-nowrap">
+                            {s.cashierName}
+                          </td>
+                          <td className="px-3 py-1 text-slate-500 truncate max-w-[120px]">
+                            {s.branchName}
+                          </td>
+                          <td className="px-3 py-1 text-slate-600 font-mono text-[11px] whitespace-nowrap">
+                            {openTime}
+                          </td>
+                          <td className="px-3 py-1 text-slate-600 font-mono text-[11px] whitespace-nowrap">
+                            {closeTime}
+                          </td>
+                          <td className="px-3 py-1 text-right font-mono font-bold whitespace-nowrap tabular-nums">
+                            {formatPKR(s.openingCash)}
+                          </td>
+                          <td className="px-3 py-1 text-right font-mono font-bold text-emerald-700 whitespace-nowrap tabular-nums">
+                            {formatPKR(s.cashSales)}
+                          </td>
+                          <td className="px-3 py-1 text-right font-mono font-bold text-slate-800 whitespace-nowrap tabular-nums">
+                            {formatPKR(s.expectedCash)}
+                          </td>
+                          <td className="px-3 py-1 text-right font-mono font-bold text-slate-900 whitespace-nowrap tabular-nums">
+                            {s.actualCash !== null ? formatPKR(s.actualCash) : '—'}
+                          </td>
+                          <td
+                            className={`px-3 py-1 text-right font-mono font-black whitespace-nowrap tabular-nums ${
+                              s.variance === null
+                                ? 'text-slate-400'
+                                : s.variance === 0
+                                ? 'text-emerald-700'
+                                : s.variance > 0
+                                ? 'text-blue-700'
+                                : 'text-rose-700'
                             }`}
                           >
-                            {s.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
-                          <ActionMenu
-                            items={[
-                              {
-                                label: 'View Shift Breakdown',
-                                icon: Eye,
-                                onClick: () => setSelectedDaybookShift(s),
-                              },
-                              {
-                                label: 'Download A4 Z-Report (PDF)',
-                                icon: Download,
-                                onClick: () => handleDownloadDaybookShift(s),
-                              },
-                              {
-                                label: 'Print A4 Z-Report',
-                                icon: Printer,
-                                onClick: () => handlePrintDaybookShift(s),
-                              },
-                            ]}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                            {s.variance !== null ? `${s.variance > 0 ? '+' : ''}${formatPKR(s.variance)}` : '—'}
+                          </td>
+                          <td className="px-3 py-1 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                s.status === 'OPEN'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              {s.status}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1 text-center whitespace-nowrap">
+                            <ActionMenu
+                              items={[
+                                {
+                                  label: 'View Shift Particulars',
+                                  icon: Eye,
+                                  onClick: () => setSelectedDaybookShift(s),
+                                },
+                                {
+                                  label: 'Download Z-Report PDF',
+                                  icon: Download,
+                                  onClick: () => handleDownloadDaybookShift(s),
+                                },
+                                {
+                                  label: 'Print Shift Slip',
+                                  icon: Printer,
+                                  onClick: () => handlePrintDaybookShift(s),
+                                },
+                              ]}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* ======================================================== */}
-      {/* MODAL 1: RECORD EXPENSE */}
+      {/* MODAL 1: RECORD OPERATIONAL EXPENSE                      */}
       {/* ======================================================== */}
       {isExpenseModalOpen && (
         <Modal
@@ -1436,102 +1746,105 @@ export const Daybook: React.FC = () => {
           title="Record Daily Operational Expense"
           maxWidth="md"
         >
-          <form onSubmit={handleSaveExpense} className="space-y-4 text-xs">
-            {branches.length > 1 && (
-              <div>
-                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                  Branch *
-                </label>
-                <select
-                  value={expenseForm.branchId}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, branchId: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
-                >
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+          <form onSubmit={handleSaveExpense} className="space-y-4 text-xs font-sans">
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">Branch</label>
+              <select
+                value={expenseForm.branchId}
+                onChange={(e) => setExpenseForm({ ...expenseForm, branchId: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div>
-              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                Expense Category *
-              </label>
+              <label className="block text-slate-700 font-bold mb-1">Expense Category *</label>
               <select
                 value={expenseForm.categoryId}
                 onChange={(e) => setExpenseForm({ ...expenseForm, categoryId: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
                 required
               >
+                <option value="">Select Category...</option>
                 {expenseCategories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
                 ))}
               </select>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                  Amount ({currencySymbol}) *
-                </label>
+                <label className="block text-slate-700 font-bold mb-1">Amount ({currencySymbol}) *</label>
                 <input
                   type="number"
                   step="0.01"
                   min="0.01"
-                  required
-                  placeholder="e.g. 1500"
+                  placeholder="0.00"
                   value={expenseForm.amount}
                   onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-black text-sm"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono font-bold"
+                  required
                 />
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                  Payment Method *
-                </label>
+                <label className="block text-slate-700 font-bold mb-1">Payment Method</label>
                 <select
                   value={expenseForm.paymentMethod}
                   onChange={(e) => setExpenseForm({ ...expenseForm, paymentMethod: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
-                  <option value={PaymentMethod.CASH}>Cash (Petty Cash)</option>
-                  <option value={PaymentMethod.CARD}>Company Card</option>
+                  <option value={PaymentMethod.CASH}>Cash (Drawer)</option>
+                  <option value={PaymentMethod.CARD}>Card / POS</option>
                   <option value={PaymentMethod.BANK_TRANSFER}>Bank Transfer</option>
-                  <option value={PaymentMethod.DIGITAL_WALLET}>Digital Wallet / EasyPaisa</option>
+                  <option value={PaymentMethod.DIGITAL_WALLET}>Digital Wallet (JazzCash/Easypaisa)</option>
                 </select>
               </div>
             </div>
 
             <div>
-              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                Description / Voucher Reference *
-              </label>
+              <label className="block text-slate-700 font-bold mb-1">Description / Voucher Ref *</label>
               <textarea
                 rows={2}
-                required
-                placeholder="e.g. Purchased cleaning detergent, tissue rolls, and handwash..."
+                placeholder="e.g. Daily vegetable market purchase, cleaning supplies, milk refill"
                 value={expenseForm.description}
                 onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium resize-none"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+                required
               />
             </div>
 
-            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">Expense Date</label>
+              <input
+                type="date"
+                value={expenseForm.expenseDate}
+                onChange={(e) => setExpenseForm({ ...expenseForm, expenseDate: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => setIsExpenseModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100"
+                className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100 font-semibold"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmittingExpense}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold transition-colors"
+                className="px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-bold shadow-sm"
               >
-                {isSubmittingExpense ? 'Saving...' : 'Save Expense Voucher'}
+                {isSubmittingExpense ? 'Saving...' : 'Record Expense'}
               </button>
             </div>
           </form>
@@ -1539,26 +1852,40 @@ export const Daybook: React.FC = () => {
       )}
 
       {/* ======================================================== */}
-      {/* MODAL 2: RECORD WASTAGE */}
+      {/* MODAL 2: LOG INVENTORY WASTAGE                           */}
       {/* ======================================================== */}
       {isWastageModalOpen && (
         <Modal
           isOpen={isWastageModalOpen}
           onClose={() => setIsWastageModalOpen(false)}
-          title="Log Kitchen Spoilage / Wastage"
+          title="Log Kitchen Wastage & Spoilage"
           maxWidth="md"
         >
-          <form onSubmit={handleSaveWastage} className="space-y-4 text-xs">
+          <form onSubmit={handleSaveWastage} className="space-y-4 text-xs font-sans">
             <div>
-              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                Select Ingredient Wasted *
-              </label>
+              <label className="block text-slate-700 font-bold mb-1">Branch</label>
+              <select
+                value={wastageForm.branchId}
+                onChange={(e) => setWastageForm({ ...wastageForm, branchId: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">Ingredient *</label>
               <select
                 value={wastageForm.ingredientId}
                 onChange={(e) => setWastageForm({ ...wastageForm, ingredientId: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
                 required
               >
+                <option value="">Select Ingredient...</option>
                 {ingredients.map((ing) => (
                   <option key={ing.id} value={ing.id}>
                     {ing.name} ({ing.unit})
@@ -1568,49 +1895,45 @@ export const Daybook: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                Quantity Wasted *
-              </label>
+              <label className="block text-slate-700 font-bold mb-1">Wasted Quantity *</label>
               <input
                 type="number"
                 step="0.01"
                 min="0.01"
-                required
                 placeholder="e.g. 2.50"
                 value={wastageForm.quantity}
                 onChange={(e) => setWastageForm({ ...wastageForm, quantity: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-black text-sm"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono font-bold"
+                required
               />
             </div>
 
             <div>
-              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                Reason for Wastage *
-              </label>
+              <label className="block text-slate-700 font-bold mb-1">Reason for Wastage *</label>
               <textarea
                 rows={2}
-                required
-                placeholder="e.g. Freezing compartment tripped during load shedding; thawed chicken spoiled..."
+                placeholder="e.g. Expired, spilled, burnt during preparation, power outage spoil"
                 value={wastageForm.reason}
                 onChange={(e) => setWastageForm({ ...wastageForm, reason: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium resize-none"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+                required
               />
             </div>
 
-            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => setIsWastageModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100"
+                className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100 font-semibold"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmittingWastage}
-                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold transition-colors"
+                className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-bold shadow-sm"
               >
-                {isSubmittingWastage ? 'Logging...' : 'Log Wastage & Deduct Stock'}
+                {isSubmittingWastage ? 'Logging...' : 'Log Wastage'}
               </button>
             </div>
           </form>
@@ -1618,7 +1941,7 @@ export const Daybook: React.FC = () => {
       )}
 
       {/* ======================================================== */}
-      {/* MODAL 3: PRINTABLE DAYBOOK Z-REPORT (DAILY CLOSING STATEMENT) */}
+      {/* MODAL 3: PRINTABLE DAYBOOK Z-REPORT STATEMENT            */}
       {/* ======================================================== */}
       {isPrintModalOpen && (
         <Modal
@@ -1627,8 +1950,8 @@ export const Daybook: React.FC = () => {
           title="Print Daily Daybook & Z-Report"
           maxWidth="2xl"
         >
-          <div className="space-y-6 text-xs font-sans">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+          <div className="space-y-4 text-xs font-sans">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <p className="text-slate-500">
                 Official Daily Operations & Financial Statement in standard A4 PDF format.
               </p>
@@ -1636,124 +1959,67 @@ export const Daybook: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleDownloadPdf}
-                  className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl text-xs flex items-center space-x-1.5 shadow-sm"
+                  className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg text-xs flex items-center space-x-1.5 shadow-xs"
                 >
-                  <Download className="w-4 h-4" />
+                  <Download className="w-3.5 h-3.5" />
                   <span>Download A4 PDF</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleDownloadPdf}
-                  className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black rounded-xl text-xs flex items-center space-x-1.5 shadow-md"
+                  className="px-3 py-1.5 bg-slate-900 text-white font-bold rounded-lg text-xs flex items-center space-x-1.5 shadow-xs"
                 >
-                  <Printer className="w-4 h-4" />
+                  <Printer className="w-3.5 h-3.5" />
                   <span>Print A4 Statement</span>
                 </button>
               </div>
             </div>
 
-            {/* Print Document Paper Container */}
-            <div id="printable-daybook-statement" className="p-6 bg-white text-slate-900 border border-slate-300 rounded-2xl shadow-sm space-y-5 print:p-0 print:border-none print:shadow-none">
-              {/* Header */}
-              <div className="text-center pb-4 border-b border-slate-300 space-y-1">
-                <h2 className="text-xl font-black uppercase tracking-wider">{tenant?.name || 'Restaurant Management'}</h2>
+            {/* Document Paper Container */}
+            <div id="printable-daybook-statement" className="p-5 bg-white text-slate-900 border border-slate-300 rounded-xl space-y-4">
+              <div className="text-center pb-3 border-b border-slate-300 space-y-0.5">
+                <h2 className="text-lg font-black uppercase tracking-wider">{tenant?.name || 'Restaurant Management'}</h2>
                 <p className="text-xs font-bold text-slate-600">{daybook?.branchName || 'Branch'}</p>
-                <p className="text-sm font-extrabold text-slate-800 uppercase mt-1">Daily Operations & Financial Daybook (Z-Report)</p>
-                <p className="text-[11px] text-slate-500 font-mono">Date: {daybook?.displayDate} ({selectedDate}) • Generated: {new Date().toLocaleTimeString()}</p>
+                <p className="text-xs font-extrabold text-slate-800 uppercase">Daily Operations & Financial Daybook (Z-Report)</p>
+                <p className="text-[10px] text-slate-500 font-mono">Date: {daybook?.displayDate} ({selectedDate}) • Generated: {new Date().toLocaleTimeString()}</p>
               </div>
 
-              {/* Summary Statement Table */}
-              <div className="space-y-2">
-                <h4 className="font-black text-xs uppercase tracking-wider text-slate-700">1. Financial & Operating Summary</h4>
+              <div className="space-y-1.5">
+                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700">Financial Summary</h4>
                 <table className="w-full text-xs border border-slate-300">
                   <tbody>
                     <tr className="border-b border-slate-200">
-                      <td className="p-2 font-medium">Gross Sales ({summary.completedOrdersCount} orders)</td>
-                      <td className="p-2 text-right font-bold font-mono">{currencySymbol} {Number(summary.totalGrossSales || 0).toLocaleString()}</td>
+                      <td className="p-1.5 bg-slate-50 font-bold">Gross Sales</td>
+                      <td className="p-1.5 text-right font-mono font-bold">{formatPKR(summary.totalGrossSales || 0)}</td>
                     </tr>
                     <tr className="border-b border-slate-200">
-                      <td className="p-2 font-medium">(-) Discounts Given</td>
-                      <td className="p-2 text-right font-bold font-mono text-rose-600">-{currencySymbol} {Number(summary.totalDiscounts || 0).toLocaleString()}</td>
-                    </tr>
-                    <tr className="border-b border-slate-200 bg-slate-50 font-bold">
-                      <td className="p-2">Net Food Revenue</td>
-                      <td className="p-2 text-right font-mono text-emerald-700">{currencySymbol} {Number(summary.totalNetSales || 0).toLocaleString()}</td>
+                      <td className="p-1.5 bg-slate-50 font-bold">Net Sales</td>
+                      <td className="p-1.5 text-right font-mono font-bold text-emerald-700">{formatPKR(summary.totalNetSales || 0)}</td>
                     </tr>
                     <tr className="border-b border-slate-200">
-                      <td className="p-2 font-medium">(-) Raw Ingredients Cost (FIFO COGS)</td>
-                      <td className="p-2 text-right font-bold font-mono text-purple-700">-{currencySymbol} {Number(summary.totalIngredientsCost || 0).toLocaleString()}</td>
-                    </tr>
-                    <tr className="border-b border-slate-200 bg-slate-50 font-bold">
-                      <td className="p-2">Gross Profit Margin ({summary.grossMarginPercent}%)</td>
-                      <td className="p-2 text-right font-mono">{currencySymbol} {Number(summary.grossProfit || 0).toLocaleString()}</td>
+                      <td className="p-1.5 bg-slate-50 font-bold">Raw Ingredients (COGS)</td>
+                      <td className="p-1.5 text-right font-mono text-violet-700">{formatPKR(summary.totalIngredientsCost || 0)}</td>
                     </tr>
                     <tr className="border-b border-slate-200">
-                      <td className="p-2 font-medium">(-) Daily Operational Expenses</td>
-                      <td className="p-2 text-right font-bold font-mono text-rose-600">-{currencySymbol} {Number(summary.totalExpensesAmount || 0).toLocaleString()}</td>
+                      <td className="p-1.5 bg-slate-50 font-bold">Wastage Loss (Non-Cash)</td>
+                      <td className="p-1.5 text-right font-mono text-amber-700">{formatPKR(summary.totalWastageCost || 0)}</td>
                     </tr>
                     <tr className="border-b border-slate-200">
-                      <td className="p-2 font-medium">(-) Recorded Wastage / Spoilage Loss</td>
-                      <td className="p-2 text-right font-bold font-mono text-amber-700">-{currencySymbol} {Number(summary.totalWastageCost || 0).toLocaleString()}</td>
+                      <td className="p-1.5 bg-slate-50 font-bold">Daily Expenses</td>
+                      <td className="p-1.5 text-right font-mono text-rose-700">{formatPKR(summary.totalExpensesAmount || 0)}</td>
                     </tr>
-                    <tr className="bg-slate-100 font-black text-sm">
-                      <td className="p-2">Net Operating Day Profit</td>
-                      <td className="p-2 text-right font-mono">{currencySymbol} {Number(summary.netDailyProfit || 0).toLocaleString()}</td>
+                    <tr className="border-b border-slate-200 bg-slate-50">
+                      <td className="p-1.5 font-black">Net Operating Day Profit</td>
+                      <td className={`p-1.5 text-right font-mono font-black ${Number(summary.netDailyProfit || 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {formatPKR(summary.netDailyProfit || 0)}
+                      </td>
+                    </tr>
+                    <tr className="bg-emerald-50">
+                      <td className="p-1.5 font-black text-emerald-900">Expected Register Drawer Cash</td>
+                      <td className="p-1.5 text-right font-mono font-black text-emerald-900">{formatPKR(summary.netOperatingCashPosition || 0)}</td>
                     </tr>
                   </tbody>
                 </table>
-              </div>
-
-              {/* Collections by Payment Method */}
-              <div className="space-y-2">
-                <h4 className="font-black text-xs uppercase tracking-wider text-slate-700">2. Payment Collections Breakdown</h4>
-                <table className="w-full text-xs border border-slate-300">
-                  <thead className="bg-slate-100 font-bold">
-                    <tr>
-                      <th className="p-2 text-left">Payment Channel</th>
-                      <th className="p-2 text-center">Transactions</th>
-                      <th className="p-2 text-right">Amount Collected</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(daybook?.paymentMethods || []).map((pm: any) => (
-                      <tr key={pm.method} className="border-b border-slate-200">
-                        <td className="p-2 font-medium">{pm.method.replace('_', ' ')}</td>
-                        <td className="p-2 text-center font-mono">{pm.transactionCount}</td>
-                        <td className="p-2 text-right font-bold font-mono">{currencySymbol} {Number(pm.totalAmount).toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Inward Purchases & Expenses Summary */}
-              <div className="grid grid-cols-2 gap-4 text-[11px]">
-                <div className="p-3 border border-slate-300 rounded-xl space-y-1">
-                  <h5 className="font-bold uppercase text-slate-600">Purchases Received Today</h5>
-                  <p>Invoices: <span className="font-bold">{summary.purchasesCount || 0}</span></p>
-                  <p>Total Purchases: <span className="font-bold">{currencySymbol} {Number(summary.totalPurchasesAmount || 0).toLocaleString()}</span></p>
-                  <p>Paid: <span className="font-bold text-emerald-600">{currencySymbol} {Number(summary.totalPurchasesPaid || 0).toLocaleString()}</span></p>
-                  <p>Payable: <span className="font-bold text-amber-600">{currencySymbol} {Number(summary.totalPurchasesUnpaid || 0).toLocaleString()}</span></p>
-                </div>
-                <div className="p-3 border border-slate-300 rounded-xl space-y-1">
-                  <h5 className="font-bold uppercase text-slate-600">Register Cash Reconciliation</h5>
-                  <p>Opening Register Cash: <span className="font-bold">{currencySymbol} {Number(summary.openingRegisterCash || 0).toLocaleString()}</span></p>
-                  <p>Cash Sales In: <span className="font-bold text-emerald-600">+{currencySymbol} {Number(summary.cashSalesCollected || 0).toLocaleString()}</span></p>
-                  <p>Cash Out (Expenses): <span className="font-bold text-rose-600">-{currencySymbol} {Number(summary.totalCashExpenses || 0).toLocaleString()}</span></p>
-                  <p className="font-bold text-slate-900 border-t border-slate-200 pt-1">
-                    Ending Cash in Drawer: {currencySymbol} {Number(summary.netOperatingCashPosition || 0).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-
-              {/* Signatures */}
-              <div className="pt-8 grid grid-cols-2 gap-8 text-center text-xs">
-                <div className="border-t border-slate-400 pt-1.5 font-bold">
-                  Prepared By (Cashier / Accountant)
-                </div>
-                <div className="border-t border-slate-400 pt-1.5 font-bold">
-                  Approved By (General Manager / Owner)
-                </div>
               </div>
             </div>
           </div>
@@ -1761,7 +2027,7 @@ export const Daybook: React.FC = () => {
       )}
 
       {/* ======================================================== */}
-      {/* MODAL 4: ORDER BREAKDOWN PREVIEW */}
+      {/* MODAL 4: ORDER DETAILS BREAKDOWN                         */}
       {/* ======================================================== */}
       {selectedOrderDetail && (
         <Modal
@@ -1771,53 +2037,57 @@ export const Daybook: React.FC = () => {
           maxWidth="lg"
         >
           <div className="space-y-4 text-xs font-sans">
-            <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex items-center justify-between">
+            <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
               <div>
-                <span className="font-black text-sm text-slate-900 dark:text-white block">
+                <span className="font-black text-sm text-slate-900 block">
                   {selectedOrderDetail.order_type} {selectedOrderDetail.table_number ? `• Table ${selectedOrderDetail.table_number}` : ''}
                 </span>
                 <span className="text-[11px] text-slate-500">
                   {new Date(selectedOrderDetail.created_at).toLocaleString()}
                 </span>
               </div>
-              <span className="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 border border-emerald-200">
+              <span className="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800">
                 {selectedOrderDetail.status}
               </span>
             </div>
 
-            {selectedOrderDetail.customer_name && (
-              <div className="p-3 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl space-y-1 text-[11px]">
-                <p><strong>Customer:</strong> {selectedOrderDetail.customer_name} ({selectedOrderDetail.customer_phone || ''})</p>
-                {selectedOrderDetail.delivery_address && <p><strong>Address:</strong> {selectedOrderDetail.delivery_address}</p>}
-                {selectedOrderDetail.rider_name && <p><strong>Rider:</strong> {selectedOrderDetail.rider_name} ({selectedOrderDetail.rider_phone || ''})</p>}
-              </div>
-            )}
-
-            <div>
-              <h5 className="font-bold mb-1.5">Order Line Items:</h5>
-              <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-                {(selectedOrderDetail.items || []).map((it: any) => (
-                  <div key={it.id} className="p-2.5 flex justify-between items-center bg-white dark:bg-slate-900">
+            <div className="space-y-2">
+              <h4 className="font-bold text-slate-700">Order Items</h4>
+              <div className="border border-slate-200 rounded-lg overflow-hidden divide-y divide-slate-100">
+                {selectedOrderDetail.items?.map((item: any, idx: number) => (
+                  <div key={idx} className="p-2.5 flex items-center justify-between">
                     <div>
-                      <span className="font-bold text-slate-900 dark:text-white">{it.quantity}x {it.product_name}</span>
-                      {it.variant_name && <span className="text-slate-400 ml-1">({it.variant_name})</span>}
+                      <span className="font-bold text-slate-900">{item.item_name}</span>
+                      <span className="text-slate-500 text-[11px] block">
+                        Qty: {item.quantity} × {formatPKR(item.unit_price)}
+                      </span>
                     </div>
-                    <span className="font-mono font-bold">{currencySymbol} {Number(it.total_price).toLocaleString()}</span>
+                    <span className="font-mono font-bold text-slate-900">{formatPKR(item.total_price)}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="flex justify-between items-center pt-2 font-bold text-sm">
-              <span>Total Paid:</span>
-              <span className="font-mono text-emerald-600">{currencySymbol} {Number(selectedOrderDetail.grand_total).toLocaleString()}</span>
+            <div className="bg-slate-50 p-3 rounded-lg space-y-1 text-slate-700">
+              <div className="flex justify-between">
+                <span>Subtotal</span>
+                <span className="font-mono">{formatPKR(selectedOrderDetail.subtotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Tax</span>
+                <span className="font-mono">{formatPKR(selectedOrderDetail.tax_amount)}</span>
+              </div>
+              <div className="flex justify-between font-black text-slate-900 pt-1 border-t border-slate-200 text-sm">
+                <span>Grand Total</span>
+                <span className="font-mono">{formatPKR(selectedOrderDetail.grand_total)}</span>
+              </div>
             </div>
           </div>
         </Modal>
       )}
 
       {/* ======================================================== */}
-      {/* MODAL: DAYBOOK PURCHASE DETAILS */}
+      {/* MODAL 5: INWARD PURCHASE INVOICE DETAILS                 */}
       {/* ======================================================== */}
       {selectedDaybookPurchase && (
         <Modal
@@ -1826,64 +2096,57 @@ export const Daybook: React.FC = () => {
           title="Inward Purchase Invoice Details"
           maxWidth="md"
         >
-          <div className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
+          <div className="space-y-4 text-xs font-sans">
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-semibold">Invoice #</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white">{selectedDaybookPurchase.invoiceNumber}</span>
+                <span className="font-mono font-bold text-slate-900">{selectedDaybookPurchase.invoiceNumber}</span>
               </div>
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-semibold">Supplier</span>
-                <span className="font-bold text-slate-900 dark:text-white">{selectedDaybookPurchase.supplierName}</span>
+                <span className="font-bold text-slate-900">{selectedDaybookPurchase.supplierName}</span>
               </div>
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-semibold">Branch</span>
-                <span className="text-slate-700 dark:text-slate-300">{selectedDaybookPurchase.branchName}</span>
+                <span className="font-semibold text-slate-700">{selectedDaybookPurchase.branchName}</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Received By</span>
-                <span className="text-slate-700 dark:text-slate-300">{selectedDaybookPurchase.receivedByName || 'Inventory Manager'}</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Status</span>
+                <span className="font-bold text-emerald-700">{selectedDaybookPurchase.status}</span>
               </div>
             </div>
 
-            <div className="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 p-3 space-y-2">
+            <div className="bg-slate-50 p-3 rounded-lg space-y-1.5 text-slate-700">
               <div className="flex justify-between">
-                <span className="text-slate-600 dark:text-slate-400">Total Purchase Amount:</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white">{currencySymbol} {Number(selectedDaybookPurchase.totalAmount).toLocaleString()}</span>
+                <span>Total Amount:</span>
+                <span className="font-mono font-bold text-slate-900">{formatPKR(selectedDaybookPurchase.totalAmount)}</span>
               </div>
-              <div className="flex justify-between pt-2">
-                <span className="text-slate-600 dark:text-slate-400">Paid Amount:</span>
-                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{currencySymbol} {Number(selectedDaybookPurchase.paidAmount).toLocaleString()}</span>
+              <div className="flex justify-between">
+                <span>Paid Amount:</span>
+                <span className="font-mono font-bold text-emerald-700">{formatPKR(selectedDaybookPurchase.paidAmount)}</span>
               </div>
-              <div className="flex justify-between pt-2">
-                <span className="text-slate-600 dark:text-slate-400">Outstanding Balance:</span>
-                <span className="font-mono font-bold text-amber-600 dark:text-amber-400">{currencySymbol} {Number(selectedDaybookPurchase.balancePayable).toLocaleString()}</span>
+              <div className="flex justify-between">
+                <span>Balance Due:</span>
+                <span className="font-mono font-bold text-rose-700">{formatPKR(selectedDaybookPurchase.balancePayable)}</span>
               </div>
             </div>
 
-            <div className="flex justify-end space-x-2 pt-2">
+            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => handleDownloadDaybookPurchase(selectedDaybookPurchase)}
-                className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg text-xs shadow-sm transition-all"
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold flex items-center space-x-1"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Download A4 PDF</span>
+                <span>Download PDF</span>
               </button>
               <button
                 type="button"
                 onClick={() => handlePrintDaybookPurchase(selectedDaybookPurchase)}
-                className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
+                className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold flex items-center space-x-1"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print A4 Voucher</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedDaybookPurchase(null)}
-                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                Close
+                <span>Print Voucher</span>
               </button>
             </div>
           </div>
@@ -1891,7 +2154,7 @@ export const Daybook: React.FC = () => {
       )}
 
       {/* ======================================================== */}
-      {/* MODAL: DAYBOOK EXPENSE DETAILS */}
+      {/* MODAL 6: OPERATIONAL EXPENSE PARTICULARS                 */}
       {/* ======================================================== */}
       {selectedDaybookExpense && (
         <Modal
@@ -1900,61 +2163,42 @@ export const Daybook: React.FC = () => {
           title="Operational Expense Particulars"
           maxWidth="md"
         >
-          <div className="space-y-4 text-xs">
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+          <div className="space-y-4 text-xs font-sans">
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
               <div className="flex justify-between">
                 <span className="text-slate-400 text-[10px] uppercase font-semibold">Category</span>
-                <span className="font-bold text-rose-600 dark:text-rose-400">{selectedDaybookExpense.categoryName}</span>
+                <span className="font-bold text-rose-700">{selectedDaybookExpense.categoryName}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400 text-[10px] uppercase font-semibold">Description</span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">{selectedDaybookExpense.description}</span>
+                <span className="font-semibold text-slate-900">{selectedDaybookExpense.description}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400 text-[10px] uppercase font-semibold">Branch</span>
-                <span className="text-slate-700 dark:text-slate-300">{selectedDaybookExpense.branchName}</span>
+                <span className="text-slate-400 text-[10px] uppercase font-semibold">Amount</span>
+                <span className="font-mono font-bold text-rose-700 text-sm">{formatPKR(selectedDaybookExpense.amount)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400 text-[10px] uppercase font-semibold">Payment Method</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">{selectedDaybookExpense.paymentMethod}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400 text-[10px] uppercase font-semibold">Recorded By</span>
-                <span className="text-slate-700 dark:text-slate-300">{selectedDaybookExpense.recordedByName || 'Staff'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400 text-[10px] uppercase font-semibold">Time</span>
-                <span className="text-slate-600 dark:text-slate-400">{new Date(selectedDaybookExpense.createdAt).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-200 dark:border-slate-700 pt-2 font-bold text-sm">
-                <span>Amount Paid:</span>
-                <span className="font-mono text-rose-600 dark:text-rose-400">{currencySymbol} {Number(selectedDaybookExpense.amount).toLocaleString()}</span>
+                <span className="font-semibold text-slate-700">{selectedDaybookExpense.paymentMethod}</span>
               </div>
             </div>
 
-            <div className="flex justify-end space-x-2 pt-2">
+            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => handleDownloadDaybookExpense(selectedDaybookExpense)}
-                className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg text-xs shadow-sm transition-all"
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold flex items-center space-x-1"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Download A4 PDF</span>
+                <span>Download PDF</span>
               </button>
               <button
                 type="button"
                 onClick={() => handlePrintDaybookExpense(selectedDaybookExpense)}
-                className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold flex items-center space-x-1"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print A4 Voucher</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedDaybookExpense(null)}
-                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                Close
+                <span>Print Voucher</span>
               </button>
             </div>
           </div>
@@ -1962,7 +2206,7 @@ export const Daybook: React.FC = () => {
       )}
 
       {/* ======================================================== */}
-      {/* MODAL: DAYBOOK SHIFT DETAILS */}
+      {/* MODAL 7: CASHIER SHIFT RECONCILIATION                    */}
       {/* ======================================================== */}
       {selectedDaybookShift && (
         <Modal
@@ -1971,72 +2215,118 @@ export const Daybook: React.FC = () => {
           title="Cashier Shift Reconciliation"
           maxWidth="md"
         >
-          <div className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
+          <div className="space-y-4 text-xs font-sans">
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-semibold">Cashier</span>
-                <span className="font-bold text-slate-900 dark:text-white">{selectedDaybookShift.cashierName}</span>
+                <span className="font-bold text-slate-900">{selectedDaybookShift.cashierName}</span>
               </div>
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-semibold">Branch</span>
-                <span className="text-slate-700 dark:text-slate-300">{selectedDaybookShift.branchName}</span>
+                <span className="font-semibold text-slate-700">{selectedDaybookShift.branchName}</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Opened</span>
-                <span className="text-slate-700 dark:text-slate-300 font-mono">{new Date(selectedDaybookShift.openedAt).toLocaleTimeString()}</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Status</span>
+                <span className="font-bold text-emerald-700">{selectedDaybookShift.status}</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Closed</span>
-                <span className="text-slate-700 dark:text-slate-300 font-mono">{selectedDaybookShift.closedAt ? new Date(selectedDaybookShift.closedAt).toLocaleTimeString() : 'In Progress'}</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Expected Cash</span>
+                <span className="font-mono font-bold text-slate-900">{formatPKR(selectedDaybookShift.expectedCash)}</span>
               </div>
             </div>
 
-            <div className="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 p-3 space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-600 dark:text-slate-400">Opening Cash Float:</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white">{currencySymbol} {Number(selectedDaybookShift.openingCash).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between pt-2">
-                <span className="text-slate-600 dark:text-slate-400">+ Cash Sales Revenue:</span>
-                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">+{currencySymbol} {Number(selectedDaybookShift.cashSales).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between pt-2">
-                <span className="text-slate-600 dark:text-slate-400">Expected Drawer Cash:</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white">{currencySymbol} {Number(selectedDaybookShift.expectedCash).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between pt-2">
-                <span className="text-slate-600 dark:text-slate-400">Actual Counted Cash:</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white">{selectedDaybookShift.actualCash !== null ? `${currencySymbol} ${Number(selectedDaybookShift.actualCash).toLocaleString()}` : '—'}</span>
-              </div>
-              <div className="flex justify-between pt-2 font-bold">
-                <span>Cash Variance:</span>
-                <span className={selectedDaybookShift.variance === 0 ? 'text-emerald-600' : selectedDaybookShift.variance > 0 ? 'text-blue-600' : 'text-rose-600'}>
-                  {selectedDaybookShift.variance !== null ? `${selectedDaybookShift.variance > 0 ? '+' : ''}${currencySymbol} ${Number(selectedDaybookShift.variance).toLocaleString()}` : '—'}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-2">
+            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => handleDownloadDaybookShift(selectedDaybookShift)}
-                className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg text-xs shadow-sm transition-all"
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold flex items-center space-x-1"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Download A4 PDF</span>
+                <span>Download PDF</span>
               </button>
               <button
                 type="button"
                 onClick={() => handlePrintDaybookShift(selectedDaybookShift)}
-                className="flex items-center space-x-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-black text-white font-bold rounded-lg text-xs"
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center space-x-1"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print A4 Z-Report</span>
+                <span>Print Z-Report</span>
               </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL 8: WASTAGE DETAIL INSPECT MODAL                    */}
+      {/* ======================================================== */}
+      {selectedDaybookWastage && (
+        <Modal
+          isOpen={!!selectedDaybookWastage}
+          onClose={() => setSelectedDaybookWastage(null)}
+          title="Wastage & Spoilage Particulars"
+          maxWidth="md"
+        >
+          <div className="space-y-4 text-xs font-sans">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-900 space-y-1">
+              <div className="flex items-center space-x-1.5 font-bold text-amber-800">
+                <AlertCircle className="w-4 h-4 text-amber-600" />
+                <span>Non-Cash Inventory Write-Off</span>
+              </div>
+              <p className="text-[11px] text-amber-700">
+                This record accounts for physical stock reduction (FIFO asset cost). It is deducted from operating profit but does not reduce cash register drawer balances.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Ingredient</span>
+                <span className="font-bold text-slate-900 text-sm">{selectedDaybookWastage.ingredientName}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Quantity Wasted</span>
+                <span className="font-mono font-bold text-rose-600 text-sm">
+                  {selectedDaybookWastage.quantity} {selectedDaybookWastage.unit}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">FIFO Unit Cost</span>
+                <span className="font-mono font-semibold text-slate-800">
+                  {formatPKR(selectedDaybookWastage.unitCost)} / {selectedDaybookWastage.unit}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Total Loss Value</span>
+                <span className="font-mono font-black text-rose-700 text-sm">
+                  {formatPKR(selectedDaybookWastage.totalCost)}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between py-1 border-b border-slate-100">
+                <span className="text-slate-500">Reason</span>
+                <span className="font-semibold text-slate-900">{selectedDaybookWastage.reason || 'Not specified'}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-100">
+                <span className="text-slate-500">Recorded By</span>
+                <span className="font-semibold text-slate-900">{selectedDaybookWastage.recordedByName || 'Staff'}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-100">
+                <span className="text-slate-500">Branch</span>
+                <span className="font-semibold text-slate-900">{selectedDaybookWastage.branchName || 'Main Branch'}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-100">
+                <span className="text-slate-500">Recorded At</span>
+                <span className="font-mono text-slate-700">{new Date(selectedDaybookWastage.createdAt).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
               <button
                 type="button"
-                onClick={() => setSelectedDaybookShift(null)}
-                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                onClick={() => setSelectedDaybookWastage(null)}
+                className="px-4 py-1.5 bg-slate-900 text-white rounded-lg font-bold text-xs hover:bg-slate-800"
               >
                 Close
               </button>
@@ -2044,7 +2334,8 @@ export const Daybook: React.FC = () => {
           </div>
         </Modal>
       )}
-
     </div>
   );
 };
+
+export default Daybook;
