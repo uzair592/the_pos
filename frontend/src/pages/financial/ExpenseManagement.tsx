@@ -129,6 +129,17 @@ export const ExpenseManagement: React.FC = () => {
     applyDateFilter('month');
   }, []);
 
+  // Keyboard shortcut: ESC closes full-screen voucher
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isRecordModalOpen) setIsRecordModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isRecordModalOpen]);
+
   const applyDateFilter = (mode: 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom') => {
     setDateRangeMode(mode);
     const now = new Date();
@@ -176,7 +187,7 @@ export const ExpenseManagement: React.FC = () => {
         api.get(url + params.toString()),
         api.get('/financial/expenses/categories'),
         api.get('/financial/bank-accounts').catch(() => ({ bankAccounts: [] })),
-        api.get('/branches').catch(() => ({ branches: [] })),
+        api.get('/restaurant/branches').catch(() => ({ branches: [] })),
       ]);
 
       setExpenses(expRes.expenses || []);
@@ -405,110 +416,97 @@ export const ExpenseManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Top Banner / Breadcrumb & Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1">
-            <Receipt className="w-4 h-4" />
-            <span>Finance & Accounts</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            Operating Expenses (OPEX)
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Record, audit, and track operational overheads including rent, staff salaries, utilities, crockery, and maintenance.
-          </p>
-        </div>
+    <div className="h-[calc(100vh-48px)] overflow-hidden flex flex-col bg-slate-50 dark:bg-slate-950">
+      {/* 1. Desktop High-Density Page Header (44px) */}
+      <ErpPageHeader
+        title="Operating Expenses (OPEX)"
+        badge={`${filteredExpenses.length} Vouchers`}
+        subtitle="Operational overheads, utility bills, salaries, and disbursements"
+        actions={
+          <div className="flex items-center gap-2">
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setIsCategoryModalOpen(true)}
+                className="px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/60 transition flex items-center gap-1.5 shadow-2xs"
+              >
+                <Layers className="w-3.5 h-3.5 text-slate-500" />
+                <span className="hidden sm:inline">Categories</span>
+              </button>
+            )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          {canManage && (
             <button
-              onClick={() => setIsCategoryModalOpen(true)}
-              className="px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/60 transition flex items-center gap-1.5 shadow-sm"
+              type="button"
+              onClick={handleExportPdf}
+              disabled={filteredExpenses.length === 0}
+              className="px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/60 transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
             >
-              <Layers className="w-3.5 h-3.5 text-slate-500" />
-              <span>Categories</span>
+              <Download className="w-3.5 h-3.5 text-blue-500" />
+              <span className="hidden sm:inline">Export PDF</span>
             </button>
-          )}
 
-          <button
-            onClick={handleExportPdf}
-            disabled={filteredExpenses.length === 0}
-            className="px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/60 transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
-          >
-            <Download className="w-3.5 h-3.5 text-blue-500" />
-            <span>Export PDF</span>
-          </button>
-
-          {canManage && (
-            <button
-              onClick={handleOpenCreateModal}
-              className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-800 rounded-lg shadow-sm transition flex items-center gap-1.5"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Record Expense</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Operating Expenses"
-          value={`${currencySymbol} ${stats.total.toLocaleString()}`}
-          subtitle={`${stats.count} recorded entries`}
-          icon={TrendingDown}
-          color="orange"
-        />
-
-        <StatCard
-          title="Cash in Hand Disbursements"
-          value={`${currencySymbol} ${stats.cash.toLocaleString()}`}
-          subtitle="Drawn from active cash register drawer"
-          icon={Wallet}
-          color="green"
-        />
-
-        <StatCard
-          title="Bank & Online Outflows"
-          value={`${currencySymbol} ${stats.bank.toLocaleString()}`}
-          subtitle="Direct bank transfers & digital accounts"
-          icon={Landmark}
-          color="blue"
-        />
-
-        <StatCard
-          title="Average Expense Entry"
-          value={`${currencySymbol} ${Math.round(stats.average).toLocaleString()}`}
-          subtitle="Per recorded operational voucher"
-          icon={CreditCard}
-          color="purple"
-        />
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm space-y-3">
-        {/* Date Presets */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 text-xs">
-          <div className="flex items-center gap-1.5 font-medium text-slate-500 dark:text-slate-400">
-            <Calendar className="w-4 h-4 text-slate-400" />
-            <span>Period:</span>
+            {canManage && (
+              <button
+                type="button"
+                onClick={handleOpenCreateModal}
+                className="px-3 py-1 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-800 rounded-lg shadow-sm transition flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Record Expense</span>
+              </button>
+            )}
           </div>
+        }
+      />
 
-          <div className="flex flex-wrap items-center gap-1">
+      {/* 2. Compact Vyapar-Style Metric Ribbon (44px) */}
+      <ErpMetricRibbon
+        metrics={[
+          {
+            label: 'Total Expenses',
+            value: `${currencySymbol} ${stats.total.toLocaleString()}`,
+            variant: 'rose',
+            subtext: `${stats.count} entries`,
+          },
+          {
+            label: 'Cash in Hand (Drawer)',
+            value: `${currencySymbol} ${stats.cash.toLocaleString()}`,
+            variant: 'emerald',
+            subtext: 'disbursed',
+          },
+          {
+            label: 'Bank & Online',
+            value: `${currencySymbol} ${stats.bank.toLocaleString()}`,
+            variant: 'indigo',
+            subtext: 'transfers',
+          },
+          {
+            label: 'Avg Entry',
+            value: `${currencySymbol} ${Math.round(stats.average).toLocaleString()}`,
+            variant: 'slate',
+            subtext: 'per voucher',
+          },
+        ]}
+      />
+
+      {/* 3. Compact Filter & Search Toolbar (44px) */}
+      <div className="h-11 min-h-[44px] max-h-[44px] bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between gap-2 shrink-0 select-none overflow-x-auto">
+        {/* Left: Date Presets & Picker */}
+        <div className="flex items-center gap-1.5 shrink-0 text-xs">
+          <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <div className="flex items-center gap-1">
             {[
               { id: 'today', label: 'Today' },
               { id: 'yesterday', label: 'Yesterday' },
-              { id: 'week', label: 'Last 7 Days' },
+              { id: 'week', label: '7D' },
               { id: 'month', label: 'This Month' },
-              { id: 'all', label: 'All History' },
+              { id: 'all', label: 'All' },
             ].map((p) => (
               <button
                 key={p.id}
+                type="button"
                 onClick={() => applyDateFilter(p.id as any)}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
                   dateRangeMode === p.id
                     ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -519,7 +517,7 @@ export const ExpenseManagement: React.FC = () => {
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="hidden lg:flex items-center gap-1 pl-1 border-l border-slate-200 dark:border-slate-800 text-[11px]">
             <input
               type="date"
               value={startDate}
@@ -527,9 +525,9 @@ export const ExpenseManagement: React.FC = () => {
                 setStartDate(e.target.value);
                 setDateRangeMode('custom');
               }}
-              className="px-2 py-1 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-700 dark:text-slate-300"
+              className="px-1.5 py-0.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-700 dark:text-slate-300"
             />
-            <span className="text-slate-400 text-xs">to</span>
+            <span className="text-slate-400">to</span>
             <input
               type="date"
               value={endDate}
@@ -537,462 +535,527 @@ export const ExpenseManagement: React.FC = () => {
                 setEndDate(e.target.value);
                 setDateRangeMode('custom');
               }}
-              className="px-2 py-1 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-700 dark:text-slate-300"
+              className="px-1.5 py-0.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-700 dark:text-slate-300"
             />
           </div>
         </div>
 
-        {/* Search & Dropdown Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-          {/* Search text */}
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+        {/* Right: Search & Dropdowns */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Search box */}
+          <div className="relative w-44 sm:w-56">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
             <input
               type="text"
-              placeholder="Search title, payee, memo..."
+              placeholder="Search memo, payee..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              className="w-full pl-8 pr-6 py-1 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-rose-500"
             />
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {/* Category Filter */}
-          <div>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full py-2 px-3 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-rose-500"
-            >
-              <option value="ALL">All Categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Category Dropdown */}
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="py-1 px-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-rose-500 max-w-[130px] truncate"
+          >
+            <option value="ALL">All Categories</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
 
-          {/* Payment Method Filter */}
-          <div>
-            <select
-              value={selectedPaymentMethod}
-              onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-              className="w-full py-2 px-3 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-rose-500"
-            >
-              <option value="ALL">All Payment Methods</option>
-              <option value="CASH">Cash Drawer</option>
-              <option value="BANK_TRANSFER">Bank Transfer</option>
-              <option value="ONLINE">Online / Card</option>
-            </select>
-          </div>
+          {/* Payment Method */}
+          <select
+            value={selectedPaymentMethod}
+            onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+            className="py-1 px-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-rose-500 max-w-[120px] truncate"
+          >
+            <option value="ALL">All Channels</option>
+            <option value="CASH">Cash Drawer</option>
+            <option value="BANK_TRANSFER">Bank Transfer</option>
+            <option value="ONLINE">Online / Card</option>
+          </select>
 
-          {/* Branch Filter */}
-          <div>
+          {/* Branch Dropdown */}
+          {branches.length > 1 && (
             <select
               value={selectedBranch}
               onChange={(e) => setSelectedBranch(e.target.value)}
-              className="w-full py-2 px-3 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-rose-500"
+              className="hidden md:block py-1 px-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-rose-500 max-w-[120px] truncate"
             >
-              <option value="ALL">All Outlets / Branches</option>
+              <option value="ALL">All Outlets</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name} {b.is_main_branch ? '(Main)' : ''}
+                  {b.name}
                 </option>
               ))}
             </select>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Main Expense Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-800 dark:text-white text-sm">Recorded Expense Ledger</span>
-            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-              {filteredExpenses.length} entries
-            </span>
-          </div>
-
-          <div className="text-xs text-slate-500">
-            Total Shown: <strong className="text-rose-600 dark:text-rose-400">{currencySymbol} {stats.total.toLocaleString()}</strong>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[10px]">
+      {/* 4. Main Expense Ledger Table (Full Viewport Height) */}
+      <div className="flex-1 overflow-auto min-h-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+        <table className="w-full text-left text-xs border-collapse">
+          <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700 uppercase tracking-wider text-[10px] z-10 shadow-2xs">
+            <tr>
+              <th className="px-3.5 py-2.5 whitespace-nowrap">Date</th>
+              <th className="px-3.5 py-2.5">Expense Purpose & Particulars</th>
+              <th className="px-3.5 py-2.5 whitespace-nowrap">Category</th>
+              <th className="px-3.5 py-2.5 whitespace-nowrap">Payee / Paid To</th>
+              <th className="px-3.5 py-2.5 whitespace-nowrap">Payment Channel</th>
+              <th className="px-3.5 py-2.5 whitespace-nowrap">Branch</th>
+              <th className="px-3.5 py-2.5 text-right whitespace-nowrap">Amount</th>
+              <th className="px-3.5 py-2.5 whitespace-nowrap">Recorded By</th>
+              <th className="px-3.5 py-2.5 text-center whitespace-nowrap">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-850 text-slate-700 dark:text-slate-300">
+            {loading ? (
               <tr>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Expense Purpose & Notes</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Paid To / Payee</th>
-                <th className="px-4 py-3">Payment Channel</th>
-                <th className="px-4 py-3">Branch</th>
-                <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3">Recorded By</th>
-                <th className="px-4 py-3 text-center">Actions</th>
+                <td colSpan={9} className="px-4 py-16 text-center text-slate-400">
+                  <div className="animate-spin w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full mx-auto mb-2" />
+                  Loading expense transactions...
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-              {loading ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
-                    <div className="animate-spin w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full mx-auto mb-2" />
-                    Loading expense transactions...
+            ) : filteredExpenses.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="px-4 py-16 text-center text-slate-400">
+                  <Receipt className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                  <p className="font-semibold text-slate-600 dark:text-slate-400">No expense vouchers found</p>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Adjust your date filters or click "Record Expense" to create a new disbursement voucher.
+                  </p>
+                </td>
+              </tr>
+            ) : (
+              filteredExpenses.map((exp) => (
+                <tr key={exp.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition">
+                  {/* Date */}
+                  <td className="px-3.5 py-2.5 whitespace-nowrap font-medium text-slate-900 dark:text-white font-mono text-[11px]">
+                    {new Date(exp.expense_date).toLocaleDateString('en-GB', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
                   </td>
-                </tr>
-              ) : filteredExpenses.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
-                    <Receipt className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-                    <p className="font-semibold text-slate-600 dark:text-slate-400">No expense transactions found</p>
-                    <p className="text-[11px] text-slate-400 mt-1">Try adjusting the date range or filter presets, or click "Record Expense" to add a new voucher.</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredExpenses.map((exp) => (
-                  <tr key={exp.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition">
-                    {/* Date */}
-                    <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-900 dark:text-white">
-                      {new Date(exp.expense_date).toLocaleDateString('en-GB', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
-                    </td>
 
-                    {/* Title & Notes */}
-                    <td className="px-4 py-3 max-w-xs">
-                      <div className="font-bold text-slate-900 dark:text-white truncate">
-                        {exp.title || exp.description}
+                  {/* Title & Notes */}
+                  <td className="px-3.5 py-2.5 max-w-xs">
+                    <div className="font-bold text-slate-900 dark:text-white truncate">
+                      {exp.title || exp.description}
+                    </div>
+                    {exp.notes && exp.notes !== exp.title && (
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
+                        {exp.notes}
                       </div>
-                      {exp.notes && exp.notes !== exp.title && (
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
-                          {exp.notes}
-                        </div>
-                      )}
-                    </td>
+                    )}
+                  </td>
 
-                    {/* Category */}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-100 dark:border-rose-900">
-                        {exp.category_name}
-                      </span>
-                    </td>
+                  {/* Category */}
+                  <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-100 dark:border-rose-900">
+                      {exp.category_name}
+                    </span>
+                  </td>
 
-                    {/* Paid To */}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {exp.paid_to ? (
-                        <span className="font-medium text-slate-800 dark:text-slate-200">{exp.paid_to}</span>
+                  {/* Paid To */}
+                  <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    {exp.paid_to ? (
+                      <span className="font-medium text-slate-800 dark:text-slate-200">{exp.paid_to}</span>
+                    ) : (
+                      <span className="text-slate-400 italic">—</span>
+                    )}
+                  </td>
+
+                  {/* Payment Channel */}
+                  <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    <div className="flex items-center gap-1.5">
+                      {exp.payment_method === 'CASH' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400">
+                          <Wallet className="w-3 h-3" /> Cash Drawer
+                        </span>
                       ) : (
-                        <span className="text-slate-400 italic">—</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400">
+                          <Landmark className="w-3 h-3" />
+                          {exp.bank_name ? `${exp.bank_name} (${exp.bank_account_name || 'Acc'})` : 'Bank Transfer'}
+                        </span>
                       )}
-                    </td>
+                    </div>
+                  </td>
 
-                    {/* Payment Channel */}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        {exp.payment_method === 'CASH' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400">
-                            <Wallet className="w-3 h-3" /> Cash Drawer
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400">
-                            <Landmark className="w-3 h-3" />
-                            {exp.bank_name ? `${exp.bank_name} (${exp.bank_account_name || 'Acc'})` : 'Bank Transfer'}
-                          </span>
-                        )}
-                      </div>
-                    </td>
+                  {/* Branch */}
+                  <td className="px-3.5 py-2.5 whitespace-nowrap text-slate-600 dark:text-slate-400 text-[11px]">
+                    {exp.branch_name || 'Main'}
+                  </td>
 
-                    {/* Branch */}
-                    <td className="px-4 py-3 whitespace-nowrap text-slate-600 dark:text-slate-400">
-                      {exp.branch_name || 'Main'}
-                    </td>
+                  {/* Amount */}
+                  <td className="px-3.5 py-2.5 whitespace-nowrap text-right font-black font-mono text-rose-600 dark:text-rose-400 text-xs">
+                    {currencySymbol} {Number(exp.amount).toLocaleString()}
+                  </td>
 
-                    {/* Amount */}
-                    <td className="px-4 py-3 whitespace-nowrap text-right font-black font-mono text-rose-600 dark:text-rose-400 text-sm">
-                      {currencySymbol} {Number(exp.amount).toLocaleString()}
-                    </td>
+                  {/* Recorded By */}
+                  <td className="px-3.5 py-2.5 whitespace-nowrap text-slate-500 text-[11px]">
+                    {exp.recorded_by_name || 'Staff'}
+                  </td>
 
-                    {/* Recorded By */}
-                    <td className="px-4 py-3 whitespace-nowrap text-slate-500 text-[11px]">
-                      {exp.recorded_by_name || 'Staff'}
-                    </td>
+                  {/* Actions */}
+                  <td className="px-3.5 py-2.5 whitespace-nowrap text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handlePrintVoucher(exp)}
+                        title="Print / View Voucher PDF"
+                        className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded transition"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                      </button>
 
-                    {/* Actions */}
-                    <td className="px-4 py-3 whitespace-nowrap text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => handlePrintVoucher(exp)}
-                          title="Print / View Voucher PDF"
-                          className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded transition"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                        </button>
+                      {canManage && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(exp)}
+                            title="Edit Expense Voucher"
+                            className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded transition"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
 
-                        {canManage && (
-                          <>
-                            <button
-                              onClick={() => handleOpenEditModal(exp)}
-                              title="Edit Expense"
-                              className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded transition"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
+                          <button
+                            type="button"
+                            onClick={() => setExpenseToDelete(exp)}
+                            title="Delete Expense Record"
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
 
-                            <button
-                              onClick={() => setExpenseToDelete(exp)}
-                              title="Delete Expense"
-                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+          {filteredExpenses.length > 0 && (
+            <tfoot className="sticky bottom-0 bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 dark:border-slate-700 font-bold text-xs shadow-md">
+              <tr>
+                <td colSpan={6} className="px-3.5 py-2 text-right uppercase tracking-wider text-slate-500">
+                  Total Filtered Expenses:
+                </td>
+                <td className="px-3.5 py-2 text-right font-black font-mono text-rose-600 dark:text-rose-400">
+                  {currencySymbol} {stats.total.toLocaleString()}
+                </td>
+                <td colSpan={2} className="px-3.5 py-2 text-slate-400 text-[11px]">
+                  {stats.count} vouchers
+                </td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
       </div>
 
       {/* ======================================================== */}
-      {/* RECORD / EDIT EXPENSE MODAL                              */}
+      {/* FULL-SCREEN VYAPAR EXPENSE VOUCHER WORKSPACE             */}
       {/* ======================================================== */}
       {isRecordModalOpen && (
-        <Modal
-          isOpen={true}
-          onClose={() => setIsRecordModalOpen(false)}
-          title={
+        <div className="fixed inset-0 z-50 bg-slate-100 dark:bg-slate-950 flex flex-col h-screen w-screen overflow-hidden select-none animate-in fade-in duration-150">
+          {/* Top Bar Header (48px) */}
+          <div className="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between shrink-0 shadow-xs">
             <div className="flex items-center space-x-3">
-              <div className="p-2 bg-rose-50 dark:bg-rose-950/50 rounded-xl text-rose-600 dark:text-rose-400">
-                <DollarSign className="w-5 h-5" />
+              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-rose-600 text-white font-black text-xs uppercase tracking-wider shadow-xs">
+                <Receipt className="w-3.5 h-3.5" />
+                <span>EXPENSE VOUCHER</span>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  {editingExpense ? 'Edit Operating Expense' : 'Record Operating Expense'}
-                </h3>
-                <p className="text-xs text-slate-500 font-normal mt-0.5">Post business expenditures, vendor invoices, utility bills, or staff payroll</p>
-              </div>
-            </div>
-          }
-          maxWidth="2xl"
-        >
-          <form onSubmit={handleSubmitExpense} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Title / Expense Purpose */}
-              <div className="sm:col-span-2">
-                <label className="form-label">
-                  Expense Title / Purpose <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Staff Salary - Chef Ali, Shop Rent Nov, Electricity Bill, Crockery purchase"
-                  value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
-                  className="form-input text-sm font-semibold"
-                />
-              </div>
-
-              {/* Category */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="form-label mb-0">
-                    Category <span className="text-rose-500">*</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsCategoryModalOpen(true)}
-                    className="text-xs text-rose-600 dark:text-rose-400 hover:underline font-bold"
-                  >
-                    + New Category
-                  </button>
-                </div>
-                <select
-                  required
-                  value={formCategoryId}
-                  onChange={(e) => setFormCategoryId(e.target.value)}
-                  className="form-select font-semibold"
-                >
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Amount */}
-              <div>
-                <label className="form-label">
-                  Amount ({currencySymbol}) <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono font-bold text-slate-400 text-xs">
-                    {currencySymbol}
-                  </span>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    min="0.01"
-                    placeholder="0.00"
-                    value={formAmount}
-                    onChange={(e) => setFormAmount(e.target.value)}
-                    className="form-input pl-8 pr-3 font-mono font-bold text-slate-900 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              {/* Payment Method */}
-              <div>
-                <label className="form-label">
-                  Payment Method <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={formPaymentMethod}
-                  onChange={(e) => setFormPaymentMethod(e.target.value as PaymentMethod)}
-                  className="form-select font-semibold"
-                >
-                  <option value={PaymentMethod.CASH}>Cash Drawer (Cash in Hand)</option>
-                  <option value={PaymentMethod.BANK_TRANSFER}>Bank Transfer</option>
-                  <option value={PaymentMethod.CARD}>Credit / Debit Card</option>
-                  <option value={PaymentMethod.DIGITAL_WALLET}>Digital Wallet (EasyPaisa/JazzCash)</option>
-                </select>
-              </div>
-
-              {/* Bank Account (Conditional) */}
-              {(formPaymentMethod === PaymentMethod.BANK_TRANSFER || formPaymentMethod === PaymentMethod.DIGITAL_WALLET || formPaymentMethod === PaymentMethod.CARD) && (
-                <div>
-                  <label className="form-label">
-                    Select Bank Account <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    required
-                    value={formBankAccountId}
-                    onChange={(e) => setFormBankAccountId(e.target.value)}
-                    className="form-select font-semibold"
-                  >
-                    <option value="">-- Choose Account to Deduct --</option>
-                    {bankAccounts.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.bank_name} - {b.account_name} ({currencySymbol} {Number(b.current_balance).toLocaleString()})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Paid To / Payee */}
-              <div>
-                <label className="form-label">
-                  Paid To / Payee Details
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Landlord Name, K-Electric, Sui Gas, Staff Employee"
-                  value={formPaidTo}
-                  onChange={(e) => setFormPaidTo(e.target.value)}
-                  className="form-input"
-                />
-              </div>
-
-              {/* Date */}
-              <div>
-                <label className="form-label">
-                  Expense Date <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={formDate}
-                  onChange={(e) => setFormDate(e.target.value)}
-                  className="form-input"
-                />
-              </div>
-
-              {/* Branch */}
-              {branches.length > 1 && (
-                <div>
-                  <label className="form-label">
-                    Operating Branch
-                  </label>
-                  <select
-                    value={formBranchId}
-                    onChange={(e) => setFormBranchId(e.target.value)}
-                    className="form-select"
-                  >
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name} {b.is_main_branch ? '(Main Branch)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Notes / Particulars */}
-              <div className="sm:col-span-2">
-                <label className="form-label">
-                  Notes / Bill Memo / Reference <span className="text-slate-400 font-normal">(Optional)</span>
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Optional bill number, cheque reference, receipt notes..."
-                  value={formNotes}
-                  onChange={(e) => setFormNotes(e.target.value)}
-                  className="form-textarea"
-                />
-              </div>
+              <span className="font-extrabold text-sm text-slate-900 dark:text-white">
+                {editingExpense ? 'Edit Operating Expense Voucher' : 'Record Operating Expense Voucher'}
+              </span>
+              <span className="hidden sm:inline text-xs text-slate-400 font-medium">
+                • {branches.find((b) => b.id === formBranchId)?.name || 'Main Branch'}
+              </span>
             </div>
 
-            {/* Financial Integration Notice */}
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-500 flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-              <div>
-                <strong className="text-slate-700 dark:text-slate-300">Automatic Ledger Integration:</strong> This expense will automatically reflect in{' '}
-                <span className="text-slate-900 dark:text-white font-semibold">Cash & Bank Balance</span>,{' '}
-                <span className="text-slate-900 dark:text-white font-semibold">Daily Daybook</span>, and the{' '}
-                <span className="text-slate-900 dark:text-white font-semibold">Profit & Loss (P&L) Statement</span>.
-              </div>
-            </div>
-
-            {/* Modal Buttons */}
-            <div className="flex justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex items-center space-x-2">
               <button
                 type="button"
                 onClick={() => setIsRecordModalOpen(false)}
-                className="px-5 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-sm text-slate-700 dark:text-slate-300 transition-colors"
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                title="Close and return to Expenses list (ESC)"
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl font-bold text-sm shadow-md hover:shadow-lg flex items-center gap-2 disabled:opacity-50 transition-all"
-              >
-                {submitting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                <span>{editingExpense ? 'Save Changes' : 'Record Expense Voucher'}</span>
+                <X className="w-4 h-4" />
+                <span>Close (ESC)</span>
               </button>
             </div>
-          </form>
-        </Modal>
-      )}
+          </div>
 
+          <form onSubmit={handleSubmitExpense} className="flex-1 flex flex-col overflow-hidden min-h-0">
+            {/* Scrollable Center Voucher Slip */}
+            <div className="flex-1 overflow-auto bg-slate-100/70 dark:bg-slate-950 p-4 sm:p-6 flex justify-center items-start">
+              <div className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-6 sm:p-8 space-y-6">
+                {/* 1. Header & Voucher Particulars */}
+                <div className="border-b border-slate-200 dark:border-slate-800 pb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[11px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                        Payment & Disbursement Voucher
+                      </span>
+                      <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                        Operational Outflow Voucher
+                      </h2>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                          Voucher Date <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={formDate}
+                          onChange={(e) => setFormDate(e.target.value)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                        />
+                      </div>
+
+                      {branches.length > 1 && (
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                            Operating Branch
+                          </label>
+                          <select
+                            value={formBranchId}
+                            onChange={(e) => setFormBranchId(e.target.value)}
+                            className="px-3 py-1.5 text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                          >
+                            {branches.map((b) => (
+                              <option key={b.id} value={b.id}>
+                                {b.name} {b.is_main_branch ? '(Main Branch)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Main Expense Details Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* Title / Purpose */}
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Expense Title / Purpose <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. November Outlet Rent, Chef Staff Payroll, K-Electric Utility Bill, Crockery replacement"
+                      value={formTitle}
+                      onChange={(e) => setFormTitle(e.target.value)}
+                      className="w-full px-4 py-2.5 text-sm font-bold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+
+                  {/* Category */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
+                        Expense Category <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCategoryModalOpen(true)}
+                        className="text-xs text-rose-600 dark:text-rose-400 hover:underline font-bold"
+                      >
+                        + New Category
+                      </button>
+                    </div>
+                    <select
+                      required
+                      value={formCategoryId}
+                      onChange={(e) => setFormCategoryId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    >
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Amount */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Expense Amount ({currencySymbol}) <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono font-black text-rose-600 dark:text-rose-400 text-sm">
+                        {currencySymbol}
+                      </span>
+                      <input
+                        type="number"
+                        step="any"
+                        required
+                        min="0.01"
+                        placeholder="0.00"
+                        value={formAmount}
+                        onChange={(e) => setFormAmount(e.target.value)}
+                        className="w-full pl-11 pr-4 py-2 text-base font-black font-mono bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-rose-600 dark:text-rose-400 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Payment Channel Selection */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Disbursement Channel <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={formPaymentMethod}
+                      onChange={(e) => setFormPaymentMethod(e.target.value as PaymentMethod)}
+                      className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    >
+                      <option value={PaymentMethod.CASH}>Cash Drawer (Cash in Hand)</option>
+                      <option value={PaymentMethod.BANK_TRANSFER}>Bank Transfer (Direct Account)</option>
+                      <option value={PaymentMethod.CARD}>Credit / Debit Card</option>
+                      <option value={PaymentMethod.DIGITAL_WALLET}>Digital Wallet (EasyPaisa / JazzCash)</option>
+                    </select>
+                  </div>
+
+                  {/* Paid To / Payee */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Paid To / Payee Details
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Landlord Name, K-Electric, Sui Gas, Staff Employee"
+                      value={formPaidTo}
+                      onChange={(e) => setFormPaidTo(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+
+                  {/* Bank Account Selection (Conditional) */}
+                  {(formPaymentMethod === PaymentMethod.BANK_TRANSFER ||
+                    formPaymentMethod === PaymentMethod.DIGITAL_WALLET ||
+                    formPaymentMethod === PaymentMethod.CARD) && (
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                        Select Bank Account to Deduct <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={formBankAccountId}
+                        onChange={(e) => setFormBankAccountId(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      >
+                        <option value="">-- Choose Bank Account --</option>
+                        {bankAccounts.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.bank_name} - {b.account_name} ({currencySymbol} {Number(b.current_balance).toLocaleString()} available)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Notes / Particulars */}
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Particulars / Memo / Bill Reference <span className="text-slate-400 font-normal">(Optional)</span>
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="Optional voucher note, cheque number, utility consumer ID, or invoice memo..."
+                      value={formNotes}
+                      onChange={(e) => setFormNotes(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Automatic Ledger Banner */}
+                <div className="p-4 bg-rose-50/60 dark:bg-rose-950/30 rounded-xl border border-rose-200/80 dark:border-rose-900/50 flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                  <div className="text-xs text-slate-600 dark:text-slate-300">
+                    <strong className="text-slate-900 dark:text-white font-bold">Automatic Multi-Ledger Posting:</strong>{' '}
+                    This operational expense voucher will instantly update your{' '}
+                    <span className="font-semibold text-rose-700 dark:text-rose-300">Cash/Bank Balance</span>, record into the{' '}
+                    <span className="font-semibold text-rose-700 dark:text-rose-300">Daily Daybook</span>, and reduce net profit on your{' '}
+                    <span className="font-semibold text-rose-700 dark:text-rose-300">Profit & Loss (P&L) Statement</span>.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Docked Financial Summary Bar (h-16) */}
+            <div className="h-16 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-lg z-10">
+              <div className="flex items-center space-x-4">
+                <span className="text-xs text-slate-500 font-semibold">
+                  Category: <strong className="text-slate-900 dark:text-white">{categories.find((c) => c.id === formCategoryId)?.name || 'General'}</strong>
+                </span>
+                <span className="text-xs text-slate-400">
+                  Channel: <strong className="text-slate-900 dark:text-white font-mono">{formPaymentMethod}</strong>
+                </span>
+                {formPaidTo && (
+                  <span className="hidden sm:inline text-xs text-slate-400">
+                    Payee: <strong className="text-slate-900 dark:text-white">{formPaidTo}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold uppercase text-slate-400">Voucher Total:</span>
+                  <span className="text-xl font-black font-mono text-rose-600 dark:text-rose-400">
+                    {currencySymbol} {Number(formAmount || 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRecordModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-colors"
+                >
+                  Cancel (ESC)
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-6 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg flex items-center space-x-1.5 disabled:opacity-50 transition-all transform active:scale-95"
+                >
+                  {submitting ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  <span>{editingExpense ? 'Save Voucher Changes' : 'Record Expense Voucher'}</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
       {/* ======================================================== */}
       {/* CATEGORY MANAGEMENT MODAL                                */}
       {/* ======================================================== */}

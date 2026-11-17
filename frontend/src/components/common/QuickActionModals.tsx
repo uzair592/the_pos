@@ -25,6 +25,8 @@ import {
   AlertCircle,
   Search,
   Package,
+  Receipt,
+  X,
 } from 'lucide-react';
 
 export type QuickActionType =
@@ -1396,126 +1398,244 @@ export const QuickActionModals: React.FC<QuickActionModalsProps> = ({
         </Modal>
       )}
 
-      {/* 7. RECORD EXPENSE MODAL */}
+      {/* 7. RECORD EXPENSE FULL-SCREEN WORKSPACE */}
       {activeModal === 'RECORD_EXPENSE' && (
-        <Modal isOpen={true} onClose={handleClose} title="Record Operating Expense" maxWidth="md">
-          <form onSubmit={handleExpenseSubmit} className="space-y-4 text-xs">
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Expense Title / Purpose *</label>
-              <input
-                type="text"
-                value={expenseTitle}
-                onChange={(e) => setExpenseTitle(e.target.value)}
-                required
-                placeholder="e.g. Staff Salary, Electricity Bill, Kitchen Crockery"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-bold"
-              />
+        <div className="fixed inset-0 z-50 bg-slate-100 dark:bg-slate-950 flex flex-col h-screen w-screen overflow-hidden select-none animate-in fade-in duration-150">
+          {/* Top Bar Header (48px) */}
+          <div className="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between shrink-0 shadow-xs">
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-rose-600 text-white font-black text-xs uppercase tracking-wider shadow-xs">
+                <Receipt className="w-3.5 h-3.5" />
+                <span>EXPENSE VOUCHER</span>
+              </div>
+              <span className="font-extrabold text-sm text-slate-900 dark:text-white">
+                Record Operating Expense Voucher
+              </span>
+              <span className="hidden sm:inline text-xs text-slate-400 font-medium">
+                • {branches.find((b) => b.id === branchId)?.name || 'Main Branch'}
+              </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Expense Category *</label>
-                <select
-                  value={expenseCategoryId}
-                  onChange={(e) => setExpenseCategoryId(e.target.value)}
-                  required
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-bold"
+            <button
+              type="button"
+              onClick={handleClose}
+              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              title="Close (ESC)"
+            >
+              <X className="w-4 h-4" />
+              <span>Close (ESC)</span>
+            </button>
+          </div>
+
+          <form onSubmit={handleExpenseSubmit} className="flex-1 flex flex-col overflow-hidden min-h-0">
+            {/* Scrollable Center Voucher Slip */}
+            <div className="flex-1 overflow-auto bg-slate-100/70 dark:bg-slate-950 p-4 sm:p-6 flex justify-center items-start">
+              <div className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-6 sm:p-8 space-y-6">
+                {/* 1. Header & Voucher Particulars */}
+                <div className="border-b border-slate-200 dark:border-slate-800 pb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[11px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                        Payment & Disbursement Voucher
+                      </span>
+                      <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                        Operational Outflow Voucher
+                      </h2>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        Date:
+                      </label>
+                      <input
+                        type="date"
+                        value={expenseDate}
+                        onChange={(e) => setExpenseDate(e.target.value)}
+                        className="px-2.5 py-1 text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Main Expense Details Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Expense Title / Purpose <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={expenseTitle}
+                      onChange={(e) => setExpenseTitle(e.target.value)}
+                      required
+                      placeholder="e.g. Staff Salary, Electricity Bill, Kitchen Crockery, Shop Maintenance"
+                      className="w-full px-4 py-2.5 text-sm font-bold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Expense Category <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={expenseCategoryId}
+                      onChange={(e) => setExpenseCategoryId(e.target.value)}
+                      required
+                      className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    >
+                      <option value="">-- Select Category --</option>
+                      {expenseCategories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Amount ({currencySymbol}) <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono font-black text-rose-600 dark:text-rose-400 text-sm">
+                        {currencySymbol}
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="0.01"
+                        value={expenseAmount}
+                        onChange={(e) => setExpenseAmount(e.target.value ? parseFloat(e.target.value) : '')}
+                        required
+                        placeholder="0.00"
+                        className="w-full pl-11 pr-4 py-2 text-base font-black font-mono bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-rose-600 dark:text-rose-400 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Payment Method <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={expenseMethod}
+                      onChange={(e) => setExpenseMethod(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    >
+                      <option value="CASH">Cash Drawer (Cash in Hand)</option>
+                      <option value="BANK_TRANSFER">Bank Account (Direct)</option>
+                      <option value="ONLINE">Digital Wallet (EasyPaisa/JazzCash)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Paid To / Payee
+                    </label>
+                    <input
+                      type="text"
+                      value={expensePaidTo}
+                      onChange={(e) => setExpensePaidTo(e.target.value)}
+                      placeholder="e.g. Chef Ali, Landlord, K-Electric"
+                      className="w-full px-3.5 py-2.5 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+
+                  {expenseMethod === 'BANK_TRANSFER' && bankAccounts.length > 0 && (
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                        Deduct from Bank Account <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        value={expenseBankId}
+                        onChange={(e) => setExpenseBankId(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      >
+                        <option value="">-- Select Bank Account --</option>
+                        {bankAccounts.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.bank_name} ({b.account_number}) - Bal: {currencySymbol} {Number(b.current_balance).toLocaleString()}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1.5">
+                      Particulars / Description / Bill Memo <span className="text-rose-500">*</span>
+                    </label>
+                    <textarea
+                      value={expenseDesc}
+                      onChange={(e) => setExpenseDesc(e.target.value)}
+                      required
+                      rows={3}
+                      placeholder="Electricity bill, kitchen cleaning chemicals, staff lunch, maintenance notes..."
+                      className="w-full px-3.5 py-2.5 text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Automatic Ledger Banner */}
+                <div className="p-4 bg-rose-50/60 dark:bg-rose-950/30 rounded-xl border border-rose-200/80 dark:border-rose-900/50 flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                  <div className="text-xs text-slate-600 dark:text-slate-300">
+                    <strong className="text-slate-900 dark:text-white font-bold">Automatic Multi-Ledger Posting:</strong>{' '}
+                    This operational expense voucher will instantly update your{' '}
+                    <span className="font-semibold text-rose-700 dark:text-rose-300">Cash/Bank Balance</span>, record into the{' '}
+                    <span className="font-semibold text-rose-700 dark:text-rose-300">Daily Daybook</span>, and reflect in{' '}
+                    <span className="font-semibold text-rose-700 dark:text-rose-300">P&L Statements</span>.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Docked Financial Summary Bar (h-16) */}
+            <div className="h-16 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-lg z-10">
+              <div className="flex items-center space-x-4">
+                <span className="text-xs text-slate-500 font-semibold">
+                  Channel: <strong className="text-slate-900 dark:text-white font-mono">{expenseMethod}</strong>
+                </span>
+                {expensePaidTo && (
+                  <span className="hidden sm:inline text-xs text-slate-400">
+                    Payee: <strong className="text-slate-900 dark:text-white">{expensePaidTo}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold uppercase text-slate-400">Voucher Total:</span>
+                  <span className="text-xl font-black font-mono text-rose-600 dark:text-rose-400">
+                    {currencySymbol} {Number(expenseAmount || 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-colors"
                 >
-                  <option value="">-- Select Category --</option>
-                  {expenseCategories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Paid To / Payee</label>
-                <input
-                  type="text"
-                  value={expensePaidTo}
-                  onChange={(e) => setExpensePaidTo(e.target.value)}
-                  placeholder="e.g. Chef Ali, Landlord, K-Electric"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Amount ({currencySymbol}) *</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.01"
-                  value={expenseAmount}
-                  onChange={(e) => setExpenseAmount(e.target.value ? parseFloat(e.target.value) : '')}
-                  required
-                  placeholder="e.g. 2500"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono font-bold"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Payment Method</label>
-                <select
-                  value={expenseMethod}
-                  onChange={(e) => setExpenseMethod(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-bold"
+                  Cancel (ESC)
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-6 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg flex items-center space-x-1.5 disabled:opacity-50 transition-all transform active:scale-95"
                 >
-                  <option value="CASH">Cash Drawer</option>
-                  <option value="BANK_TRANSFER">Bank Account</option>
-                  <option value="ONLINE">Digital Wallet</option>
-                </select>
+                  {submitting ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  <span>Record Expense</span>
+                </button>
               </div>
-            </div>
-
-            {expenseMethod === 'BANK_TRANSFER' && bankAccounts.length > 0 && (
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Deduct from Bank</label>
-                <select
-                  value={expenseBankId}
-                  onChange={(e) => setExpenseBankId(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-                >
-                  <option value="">-- Select Account --</option>
-                  {bankAccounts.map((b) => (
-                    <option key={b.id} value={b.id}>{b.bank_name} ({b.account_number})</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Description / Bill Memo *</label>
-              <textarea
-                value={expenseDesc}
-                onChange={(e) => setExpenseDesc(e.target.value)}
-                required
-                rows={2}
-                placeholder="Electricity bill, kitchen cleaning chemicals, staff lunch..."
-                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-              />
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={handleClose}
-                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition-all flex items-center space-x-1.5"
-              >
-                <DollarSign className="w-4 h-4" />
-                <span>{submitting ? 'Recording...' : 'Record Expense'}</span>
-              </button>
             </div>
           </form>
-        </Modal>
+        </div>
       )}
 
       {/* 8. CASH MOVEMENT MODAL (Cash In / Cash Out) */}

@@ -1,6 +1,39 @@
 # Session Notes
 
 ## Goals
+- Transform Sales, Purchases, and Expenses into full-screen Vyapar ERP workspaces.
+- Eliminate cramped floating modal dialogs for bill and voucher creation.
+- Modernize the Expenses Register (/app/expenses) with compact ErpPageHeader, ErpMetricRibbon, and full-viewport table.
+- Verify across viewports (especially 14-inch laptop baseline 1366x768) with Playwright and ensure zero console errors.
+
+## Blockers
+- None. Dev servers operational, TypeScript build passes with zero errors, and Playwright verification succeeded with zero console errors.
+
+## Key Decisions
+- Decision 72: Full-Screen Vyapar Workspaces for Sales, Purchases, and Expenses:
+  1. Full-Screen Purchase Bill Workspace (PurchaseManagement.tsx):
+     - Replaced <Modal maxWidth="6xl"> with a full-screen workspace (fixed inset-0 z-50 bg-slate-100 flex flex-col h-screen w-screen overflow-hidden).
+     - Added 48px top bar with PURCHASE BILL badge, outlet particulars, and Close (ESC).
+     - Added desktop cards for Vendor & Invoice Details, high-density spreadsheet item entries with live lookups, FIFO batch creation, and delivery notes.
+     - Implemented 64px docked bottom financial summary bar (Lines, Subtotal, Tax, Total Bill, Paid, Balance, Save Purchase Bill).
+  2. Full-Screen Expense Voucher Workspace (ExpenseManagement.tsx & QuickActionModals.tsx):
+     - Replaced <Modal maxWidth="2xl"> and quick-action modals with dedicated full-screen voucher workspace (fixed inset-0 z-50 bg-slate-100 flex flex-col h-screen w-screen overflow-hidden).
+     - Built paper-voucher layout with Voucher Date, Operating Branch, Title/Purpose, Category (with + New Category), prominent currency Amount, Disbursement Channel (Cash Drawer vs Bank Account with live balance), Payee, and Memo.
+     - Added 64px docked bottom financial calculation bar (Channel, Payee, Voucher Total, Cancel (ESC), Record Expense Voucher).
+     - Implemented keyboard shortcut Escape to close the workspace.
+  3. High-Density Expenses Register (/app/expenses):
+     - Replaced 4 giant KPI cards with ErpPageHeader (44px) and ErpMetricRibbon (44px: Total Expenses, Cash in Hand, Bank & Online, Avg Entry).
+     - Built compact filter bar (44px) with quick presets (Today, Yesterday, 7D, This Month, All), search, and dropdowns.
+     - Locked page height to h-[calc(100vh-48px)] flex flex-col overflow-hidden so only the ledger table scrolls with sticky thead and tfoot.
+     - Fixed API route from /branches to /restaurant/branches.
+  4. Full-Screen Sale / POS Terminal (PosTerminal.tsx):
+     - Verified /pos full-viewport usage (width=1366, height=768) with zero horizontal overflow, clean category navigation, and billing panel.
+  5. Playwright Browser Verification:
+     - Verified all 3 workspaces on 14-inch laptop baseline (1366 x 768).
+     - Captured and inspected screenshots: vyapar_fullscreen_sale_pos.png, vyapar_fullscreen_purchase_bill.png, vyapar_purchases_register.png, vyapar_fullscreen_expense_voucher.png, vyapar_expenses_register.png.
+     - Confirmed zero console errors across the entire flow.
+
+## Goals
 - Restructure purchasing, inventory, recipe management, and FIFO costing to match real-world restaurant workflows.
 - Enable single-step purchase workflow with on-the-fly inventory item and supplier creation.
 - Ensure strict zero automatic unit conversions (preserve purchased and entered units exactly).

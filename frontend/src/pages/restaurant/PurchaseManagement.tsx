@@ -30,6 +30,7 @@ import {
   Boxes,
   Users,
   FolderPlus,
+  X,
 } from 'lucide-react';
 import {
   StockUnit,
@@ -1194,25 +1195,43 @@ export const PurchaseManagement: React.FC = () => {
       </div>
       )}
 
-      {/* Modal 1: Create Purchase Invoice */}
-      <Modal
-        isOpen={isCreateInvoiceOpen}
-        onClose={() => setIsCreateInvoiceOpen(false)}
-        title={
-          <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
-              <Truck className="w-5 h-5" />
+      {/* Full-Screen Vyapar Purchase Bill Workspace */}
+      {isCreateInvoiceOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-100 dark:bg-slate-950 flex flex-col h-screen w-screen overflow-hidden select-none animate-in fade-in duration-150">
+          {/* Top Bar Header (48px) */}
+          <div className="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between shrink-0 shadow-xs">
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-indigo-600 text-white font-black text-xs uppercase tracking-wider shadow-xs">
+                <Truck className="w-3.5 h-3.5" />
+                <span>PURCHASE BILL</span>
+              </div>
+              <span className="font-extrabold text-sm text-slate-900 dark:text-white">
+                Record New Purchase & Stock Inward
+              </span>
+              <span className="hidden sm:inline text-xs text-slate-400 font-medium">
+                • {branches.find((b) => b.id === invoiceForm.branchId)?.name || 'Main Branch'}
+              </span>
             </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">Record New Purchase & Stock Inward</h3>
-              <p className="text-xs text-slate-500 font-normal mt-0.5">Enter vendor supplies, create FIFO inventory batches, and update ingredient balances</p>
+
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreateInvoiceOpen(false);
+                  setIsNewSupplierMode(false);
+                }}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                title="Close and return to Purchases list (ESC)"
+              >
+                <X className="w-4 h-4" />
+                <span>Close (ESC)</span>
+              </button>
             </div>
           </div>
-        }
-        maxWidth="6xl"
-      >
-        <form onSubmit={handleCreateInvoice} className="space-y-6">
-          <div className="bg-slate-50/80 dark:bg-slate-850/60 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-4">
+
+          <form onSubmit={handleCreateInvoice} className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <div className="flex-1 overflow-auto bg-slate-100/70 dark:bg-slate-950 p-4 space-y-4">
+              <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-4 shadow-xs">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-800">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 1. Vendor & Invoice Details
@@ -1598,25 +1617,65 @@ export const PurchaseManagement: React.FC = () => {
             </div>
           </div>
 
-          {/* Section 4: Modal Actions */}
-          <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
-            <button
-              type="button"
-              onClick={() => setIsCreateInvoiceOpen(false)}
-              className="px-5 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-sm font-bold transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-7 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg flex items-center space-x-2 transition-all transform active:scale-95"
-            >
-              <CheckCircle2 className="w-5 h-5" />
-              <span>Save & Record Purchase</span>
-            </button>
-          </div>
-        </form>
-      </Modal>
+            </div>
+
+            {/* Bottom Docked Financial Summary Bar (h-16) */}
+            <div className="h-16 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-lg z-10">
+              <div className="flex items-center space-x-4">
+                <span className="text-xs text-slate-500 font-semibold">
+                  Lines: <strong className="text-slate-900 dark:text-white font-mono">{invoiceForm.items.length}</strong>
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  Subtotal: <strong className="text-slate-900 dark:text-white">{currencySymbol} {formSubtotal.toFixed(2)}</strong>
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-500">
+                  Tax: <strong className="text-slate-900 dark:text-white">{currencySymbol} {invoiceForm.taxAmount.toFixed(2)}</strong>
+                </span>
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold uppercase text-slate-400">Total Bill:</span>
+                  <span className="text-xl font-black font-mono text-indigo-600 dark:text-indigo-400">
+                    {currencySymbol} {formGrandTotal.toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-1.5 text-xs pl-3 border-l border-slate-200 dark:border-slate-800">
+                  <span className="text-slate-500">Paid:</span>
+                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                    {currencySymbol} {invoiceForm.paidAmount.toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-1.5 text-xs">
+                  <span className="text-slate-500">Balance:</span>
+                  <span className={`font-mono font-bold ${formBalancePayable > 0 ? 'text-rose-500 font-extrabold' : 'text-emerald-500 font-bold'}`}>
+                    {currencySymbol} {formBalancePayable.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateInvoiceOpen(false)}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg flex items-center space-x-1.5 transition-all transform active:scale-95"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Save Purchase Bill</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Modal 2: View Invoice Details & Stock Receiving */}
       {selectedInvoice && (
