@@ -63,6 +63,9 @@ const formatDisplayDate = (ymd: string): string => {
 };
 
 import { executeThermalPrint } from '../../utils/receiptPrinter.js';
+import { formatPKR } from '../../utils/formatPKR.js';
+import { ErpPageHeader } from '../../components/common/ErpPageHeader.js';
+import { ErpMetricRibbon } from '../../components/common/ErpMetricRibbon.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
 
 export type OrdersTab = 'active' | 'all' | 'completed' | 'cancelled' | 'reservations' | 'waitlist';
@@ -757,7 +760,26 @@ export const OrdersHub: React.FC<OrdersHubProps> = ({ defaultTab = 'active' }) =
                       );
                     })}
                   </tbody>
-                </table>
+                  <tfoot className="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 dark:border-slate-700 sticky bottom-0 z-10 text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                  <tr className="divide-x divide-slate-200/70 dark:divide-slate-700">
+                    <td colSpan={4} className="py-2 px-3 font-black text-slate-900 dark:text-white">
+                      TOTALS ({historyOrders.length} records)
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono font-black text-slate-900 dark:text-white tabular-nums">
+                      {formatPKR(historyOrders.reduce((sum, o) => sum + Number(o.grand_total || 0), 0))}
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      {formatPKR(historyOrders.reduce((sum, o) => sum + Number(o.total_cogs || 0), 0))}
+                    </td>
+                    <td colSpan={2} className="py-2 px-3 text-center text-slate-500 font-semibold">
+                      Gross Profit: {formatPKR(
+                        historyOrders.reduce((sum, o) => sum + Number(o.grand_total || 0), 0) -
+                        historyOrders.reduce((sum, o) => sum + Number(o.total_cogs || 0), 0)
+                      )}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
               </div>
             </div>
           ) : (
@@ -1235,7 +1257,7 @@ export const OrdersHub: React.FC<OrdersHubProps> = ({ defaultTab = 'active' }) =
                     </tr>
                   ) : (
                     historyOrders.map((ord) => (
-                      <tr key={ord.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                      <tr key={ord.id} className="hover:bg-orange-50/50 dark:hover:bg-slate-850/50 transition-colors even:bg-slate-50/50 dark:even:bg-slate-900/40 divide-x divide-slate-200/70 dark:divide-slate-800 text-xs">
                         <td className="px-5 py-3.5 font-black text-slate-900 dark:text-white">
                           #{ord.order_number}
                         </td>
@@ -1460,21 +1482,21 @@ export const OrdersHub: React.FC<OrdersHubProps> = ({ defaultTab = 'active' }) =
               <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 space-y-1.5 text-xs">
                 <div className="flex justify-between text-slate-500">
                   <span>Subtotal:</span>
-                  <span>{tenant?.currency || 'PKR'} {Number(selectedOrder.subtotal).toLocaleString()}</span>
+                  <span className="font-mono tabular-nums">{formatPKR(Number(selectedOrder.subtotal))}</span>
                 </div>
                 {Number(selectedOrder.total_discount) > 0 && (
                   <div className="flex justify-between text-rose-500">
                     <span>Discount:</span>
-                    <span>- {tenant?.currency || 'PKR'} {Number(selectedOrder.total_discount).toLocaleString()}</span>
+                    <span className="font-mono tabular-nums">-{formatPKR(Number(selectedOrder.total_discount))}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-slate-500">
                   <span>Tax:</span>
-                  <span>{tenant?.currency || 'PKR'} {Number(selectedOrder.tax_amount).toLocaleString()}</span>
+                  <span className="font-mono tabular-nums">{formatPKR(Number(selectedOrder.tax_amount))}</span>
                 </div>
                 <div className="flex justify-between font-black text-base text-slate-900 dark:text-white pt-2 border-t border-slate-200 dark:border-slate-700">
                   <span>Grand Total:</span>
-                  <span>{tenant?.currency || 'PKR'} {Number(selectedOrder.grand_total).toLocaleString()}</span>
+                  <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 tabular-nums">{formatPKR(Number(selectedOrder.grand_total))}</span>
                 </div>
                 {selectedOrder.totalCogs > 0 && (
                   <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold pt-1">

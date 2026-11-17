@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
+import { ErpPageHeader } from '../../components/common/ErpPageHeader.js';
+import { ErpMetricRibbon } from '../../components/common/ErpMetricRibbon.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
 import {
   Users,

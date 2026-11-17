@@ -5,6 +5,9 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
+import { ErpPageHeader } from '../../components/common/ErpPageHeader.js';
+import { ErpMetricRibbon } from '../../components/common/ErpMetricRibbon.js';
+import { formatPKR } from '../../utils/formatPKR.js';
 import {
   Utensils,
   UtensilsCrossed,
@@ -80,6 +83,7 @@ export const MenuCatalog: React.FC = () => {
   // View and Filter State
   const [viewMode, setViewMode] = useState<'TABLE' | 'GRID'>('TABLE');
   const [search, setSearch] = useState('');
+  const [categorySearch, setCategorySearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [selectedSubCategory, setSelectedSubCategory] = useState('ALL');
   const [selectedStation, setSelectedStation] = useState<string>('ALL');
@@ -717,344 +721,455 @@ export const MenuCatalog: React.FC = () => {
     ? categories.filter((c) => c.parent_id === selectedCategory)
     : [];
 
+  const filteredCategoryTree = categories
+    .filter((c) => !c.parent_id)
+    .filter((c) => {
+      if (!categorySearch) return true;
+      const q = categorySearch.toLowerCase();
+      const matchParent = c.name.toLowerCase().includes(q);
+      const matchChild = categories.some((sub) => sub.parent_id === c.id && sub.name.toLowerCase().includes(q));
+      return matchParent || matchChild;
+    });
+
+  // Calculate table view totals
+  const totalSellingSum = filteredProducts.reduce((acc, p) => acc + Number(p.base_price || 0), 0);
+  const totalCostSum = filteredProducts.reduce((acc, p) => acc + Number(p.cost_price || p.calculatedCost || 0), 0);
+  const avgFilteredMargin = filteredProducts.length > 0 && totalSellingSum > 0
+    ? Math.round(((totalSellingSum - totalCostSum) / totalSellingSum) * 100)
+    : 0;
+
   return (
-    <div className="space-y-6 font-sans">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-500 to-amber-500 flex items-center justify-center text-white shadow-md">
-              <Utensils className="w-5 h-5" />
+    <div className="h-[calc(100vh-48px)] flex flex-col overflow-hidden font-sans select-none bg-slate-50 dark:bg-slate-950">
+      {/* 1. Zero-Bloat ERP Page Header (< 44px) */}
+      <ErpPageHeader
+        title="Menu Catalog"
+        subtitle="Recipe Engineering & Margins"
+        badge={`${products.length} Items`}
+        actions={
+          <div className="flex items-center gap-1.5">
+            {/* View tabs inside header for zero vertical waste */}
+            <div className="flex p-0.5 bg-slate-200/80 dark:bg-slate-800 rounded-lg text-xs font-semibold mr-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab('PRODUCTS')}
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  activeTab === 'PRODUCTS'
+                    ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                Products ({products.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('CATEGORIES')}
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  activeTab === 'CATEGORIES'
+                    ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                Categories ({categories.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('MODIFIERS')}
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  activeTab === 'MODIFIERS'
+                    ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                Addons ({modifierGroups.length})
+              </button>
             </div>
-            <span>Menu Catalog & Engineering</span>
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Organize main & sub-categories, configure item add-ons & extra sauces, and track exact recipe gross margins.
-          </p>
-        </div>
 
-        {/* Global Catalog Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => setIsPrintMenuModalOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold shadow-sm transition-all"
-            title="Preview and Print Customer Restaurant Menu"
-          >
-            <Printer className="w-3.5 h-3.5 text-slate-500" />
-            <span>Print Menu</span>
-          </button>
-
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold shadow-sm transition-all"
-            title="Download CSV spreadsheet of entire catalog"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Export CSV</span>
-          </button>
-
-          {activeTab === 'PRODUCTS' ? (
             <button
-              onClick={handleOpenCreateProduct}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md shadow-brand-500/20 transition-all shrink-0"
+              onClick={() => setIsPrintMenuModalOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold"
+              title="Print Customer Menu"
             >
-              <Plus className="w-4 h-4" />
-              <span>New Product</span>
+              <Printer className="w-3.5 h-3.5 text-slate-500" />
+              <span className="hidden sm:inline">Print Menu</span>
             </button>
-          ) : activeTab === 'CATEGORIES' ? (
-            <button
-              onClick={handleOpenCreateCategory}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md shadow-brand-500/20 transition-all shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New Category</span>
-            </button>
-          ) : (
-            <button
-              onClick={handleOpenCreateModifier}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md shadow-brand-500/20 transition-all shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New Addon Group</span>
-            </button>
-          )}
-        </div>
-      </div>
 
-      {/* Main Module Tabs Switcher */}
-      <div className="flex p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700/80 max-w-fit">
-        <button
-          onClick={() => setActiveTab('PRODUCTS')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'PRODUCTS'
-              ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <Utensils className="w-4 h-4" />
-          <span>Products & Recipes ({products.length})</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('CATEGORIES')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'CATEGORIES'
-              ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <FolderTree className="w-4 h-4" />
-          <span>Categories & Sub-Categories ({categories.length})</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('MODIFIERS')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'MODIFIERS'
-              ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <Sparkles className="w-4 h-4 text-amber-500" />
-          <span>Addons & Extra Sauces ({modifierGroups.length})</span>
-        </button>
-      </div>
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold"
+              title="Export CSV"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">Export CSV</span>
+            </button>
 
-      {/* ======================================================== */}
-      {/* TAB 1: MENU PRODUCTS & RECIPE MARGINS */}
-      {/* ======================================================== */}
+            {activeTab === 'PRODUCTS' ? (
+              <button
+                onClick={handleOpenCreateProduct}
+                className="flex items-center gap-1 px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-xs shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ New Product</span>
+              </button>
+            ) : activeTab === 'CATEGORIES' ? (
+              <button
+                onClick={handleOpenCreateCategory}
+                className="flex items-center gap-1 px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-xs shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ New Category</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleOpenCreateModifier}
+                className="flex items-center gap-1 px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-xs shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ New Addon Group</span>
+              </button>
+            )}
+          </div>
+        }
+      />
+
+      {/* 2. Compact Vyapar Summary Ribbon (44px) */}
       {activeTab === 'PRODUCTS' && (
-        <div className="space-y-4">
-          {/* Executive Stats Bar (Like Toast POS / Square) */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
-                <span className="text-xs font-bold uppercase tracking-wider">Total Menu Items</span>
-                <Package className="w-4 h-4 text-brand-500" />
+        <ErpMetricRibbon
+          metrics={[
+            {
+              label: 'Total Products',
+              value: totalProductsCount,
+              variant: 'slate',
+            },
+            {
+              label: 'Available (In-Stock)',
+              value: inStockCount,
+              variant: 'emerald',
+              onClick: () => setStockFilter(stockFilter === 'IN_STOCK' ? 'ALL' : 'IN_STOCK'),
+            },
+            {
+              label: "86'd (Out of Stock)",
+              value: outOfStockCount,
+              variant: 'rose',
+              onClick: () => setStockFilter(stockFilter === 'OUT_OF_STOCK' ? 'ALL' : 'OUT_OF_STOCK'),
+            },
+            {
+              label: 'Recipes Tracked',
+              value: `${withRecipeCount} of ${totalProductsCount}`,
+              variant: 'indigo',
+              onClick: () => setStockFilter(stockFilter === 'WITH_RECIPE' ? 'ALL' : 'WITH_RECIPE'),
+            },
+            {
+              label: 'Avg Gross Margin',
+              value: `${avgMargin}%`,
+              variant: avgMargin >= 50 ? 'emerald' : avgMargin >= 25 ? 'amber' : 'rose',
+            },
+          ]}
+          actions={
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-slate-400 text-[11px] hidden sm:inline">Category:</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {selectedCategory === 'ALL'
+                  ? 'All Categories'
+                  : categories.find((c) => c.id === selectedCategory)?.name || 'Selected'}
+              </span>
+              {selectedCategory !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory('ALL');
+                    setSelectedSubCategory('ALL');
+                  }}
+                  className="text-xs text-rose-500 hover:text-rose-700 font-bold ml-1"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          }
+        />
+      )}
+
+      {/* 3. Main Master-Detail Workspace Area */}
+      {activeTab === 'PRODUCTS' && (
+        <div className="flex-1 flex overflow-hidden">
+          {/* ========================================================= */}
+          {/* LEFT MASTER PANE: Category Tree Navigation (w-56 / w-64)  */}
+          {/* ========================================================= */}
+          <div className="w-56 xl:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0">
+            {/* Category Search & Add Header */}
+            <div className="p-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-1.5 shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Filter categories..."
+                  value={categorySearch}
+                  onChange={(e) => setCategorySearch(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md pl-7 pr-2 py-1 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                />
               </div>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-black text-slate-900 dark:text-white">{totalProductsCount}</span>
-                <span className="text-[11px] font-bold text-slate-400">({categories.length} categories)</span>
-              </div>
+              <button
+                type="button"
+                onClick={handleOpenCreateCategory}
+                className="p-1 rounded-md bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 hover:bg-orange-100 border border-orange-200 dark:border-orange-800 shrink-0"
+                title="Add New Category"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
-                <span className="text-xs font-bold uppercase tracking-wider">In-Stock & Ready</span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              </div>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{inStockCount}</span>
-                <span className="text-[11px] font-bold text-emerald-600/70">Available in POS</span>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
-                <span className="text-xs font-bold uppercase tracking-wider">86'd / Out of Stock</span>
-                <XCircle className="w-4 h-4 text-rose-500" />
-              </div>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-black text-rose-600 dark:text-rose-400">{outOfStockCount}</span>
-                <span className="text-[11px] font-bold text-rose-500/80">Hidden at POS</span>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
-                <span className="text-xs font-bold uppercase tracking-wider">Avg Menu Margin</span>
-                <TrendingUp className="w-4 h-4 text-brand-500" />
-              </div>
-              <div className="flex items-baseline space-x-2">
-                <span className={`text-2xl font-black ${
-                  avgMargin >= 50 ? 'text-emerald-600 dark:text-emerald-400' : avgMargin >= 25 ? 'text-amber-600' : 'text-slate-900 dark:text-white'
-                }`}>
-                  {avgMargin}%
+            {/* Scrollable Category List */}
+            <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+              {/* All Items Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategory('ALL');
+                  setSelectedSubCategory('ALL');
+                }}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                  selectedCategory === 'ALL'
+                    ? 'bg-orange-600 text-white font-bold shadow-xs'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium'
+                }`}
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <Utensils className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                  <span className="truncate">All Menu Items</span>
+                </div>
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                    selectedCategory === 'ALL'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {products.length}
                 </span>
-                <span className="text-[11px] font-bold text-slate-400">({withRecipeCount} recipes tracked)</span>
+              </button>
+
+              <div className="pt-1 pb-1">
+                <div className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Categories ({categories.filter((c) => !c.parent_id).length})
+                </div>
               </div>
+
+              {filteredCategoryTree.map((c) => {
+                const subCats = categories.filter((sub) => sub.parent_id === c.id);
+                const isSelected = selectedCategory === c.id;
+                const catItemCount = products.filter(
+                  (p) => p.category_id === c.id || subCats.some((sub) => sub.id === p.category_id)
+                ).length;
+
+                return (
+                  <div key={c.id} className="space-y-0.5">
+                    {/* Parent Category Row */}
+                    <div
+                      className={`group w-full flex items-center justify-between px-2 py-1.5 rounded-md text-xs cursor-pointer transition-colors ${
+                        isSelected && selectedSubCategory === 'ALL'
+                          ? 'bg-orange-600 text-white font-bold shadow-xs'
+                          : isSelected
+                          ? 'bg-orange-100 dark:bg-orange-950/40 text-orange-900 dark:text-orange-200 font-semibold'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                      onClick={() => {
+                        setSelectedCategory(c.id);
+                        setSelectedSubCategory('ALL');
+                      }}
+                    >
+                      <div className="flex items-center gap-1.5 truncate">
+                        <FolderTree className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                        <span className="truncate">{c.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span
+                          className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                            isSelected && selectedSubCategory === 'ALL'
+                              ? 'bg-white/25 text-white'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          {catItemCount}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEditCategory(c);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-orange-600 transition-opacity"
+                          title="Edit Category"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Child Subcategories Indented */}
+                    {subCats.length > 0 && (
+                      <div className="pl-3.5 space-y-0.5 border-l border-slate-200 dark:border-slate-800 ml-2.5 my-0.5">
+                        {subCats.map((sub) => {
+                          const isSubSelected = selectedSubCategory === sub.id;
+                          const subCount = products.filter(
+                            (p) => p.category_id === sub.id || p.sub_category_id === sub.id
+                          ).length;
+
+                          return (
+                            <button
+                              key={sub.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedCategory(c.id);
+                                setSelectedSubCategory(sub.id);
+                              }}
+                              className={`w-full flex items-center justify-between px-2 py-1 rounded text-[11px] transition-colors ${
+                                isSubSelected
+                                  ? 'bg-orange-600 text-white font-bold'
+                                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900'
+                              }`}
+                            >
+                              <span className="truncate">↳ {sub.name}</span>
+                              <span
+                                className={`text-[9px] font-mono px-1 rounded ${
+                                  isSubSelected ? 'bg-white/25 text-white' : 'text-slate-400'
+                                }`}
+                              >
+                                {subCount}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          {/* Controls Bar: Search, Filters & View Mode Toggle */}
-          <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3 shadow-sm">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              {/* Search Bar */}
-              <div className="relative flex-1 min-w-[240px]">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+          {/* ========================================================= */}
+          {/* RIGHT DETAIL PANE: Menu Engineering Spreadsheet Grid     */}
+          {/* ========================================================= */}
+          <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-950">
+            {/* Compact Filter Strip (36px) */}
+            <div className="h-9 min-h-[36px] bg-slate-50 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between gap-2 shrink-0">
+              {/* Left Search input */}
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search products by name, SKU, or barcode..."
+                  placeholder="Search item name, SKU, or barcode..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:ring-2 focus:ring-brand-500"
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md pl-8 pr-3 py-1 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
               </div>
 
-              {/* Station Filter, Stock Filter & View Mode */}
-              <div className="flex flex-wrap items-center gap-2">
+              {/* Center Filters */}
+              <div className="flex items-center gap-1.5 overflow-x-auto">
                 {/* Station Filter */}
                 <select
                   value={selectedStation}
                   onChange={(e) => setSelectedStation(e.target.value)}
-                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-500"
+                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 >
                   <option value="ALL">All Stations</option>
-                  <option value={PrepStation.KITCHEN}>Kitchen Station</option>
-                  <option value={PrepStation.DRINKS}>Beverage Bar / Drinks</option>
-                  <option value={PrepStation.BBQ}>Live BBQ / Grill</option>
-                  <option value={PrepStation.DESSERTS}>Dessert Section</option>
-                  <option value={PrepStation.PACKAGING}>Packaging / Counter</option>
+                  <option value={PrepStation.KITCHEN}>Kitchen</option>
+                  <option value={PrepStation.DRINKS}>Drinks Bar</option>
+                  <option value={PrepStation.BBQ}>BBQ / Grill</option>
+                  <option value={PrepStation.DESSERTS}>Desserts</option>
+                  <option value={PrepStation.PACKAGING}>Packaging</option>
                 </select>
 
-                {/* Stock / Recipe Filter */}
+                {/* Stock Filter */}
                 <select
                   value={stockFilter}
                   onChange={(e) => setStockFilter(e.target.value as any)}
-                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-500"
+                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 >
                   <option value="ALL">All Stock Statuses</option>
                   <option value="IN_STOCK">In Stock Only</option>
-                  <option value="OUT_OF_STOCK">86'd / Out of Stock Only</option>
-                  <option value="WITH_RECIPE">With Recipe Configured</option>
+                  <option value="OUT_OF_STOCK">86'd / Out of Stock</option>
+                  <option value="WITH_RECIPE">With Recipe</option>
                   <option value="NO_RECIPE">Missing Recipe</option>
                 </select>
 
-                {/* View Switcher: Table vs Grid */}
-                <div className="flex p-0.5 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                {/* Table vs Grid toggle */}
+                <div className="flex p-0.5 bg-slate-200 dark:bg-slate-800 rounded-md">
                   <button
+                    type="button"
                     onClick={() => setViewMode('TABLE')}
-                    className={`p-1.5 rounded-lg transition-all ${
+                    className={`p-1 rounded transition-colors ${
                       viewMode === 'TABLE'
-                        ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                        ? 'bg-white dark:bg-slate-900 text-orange-600 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400'
                     }`}
-                    title="Table / List View"
+                    title="Spreadsheet Table View"
                   >
-                    <List className="w-4 h-4" />
+                    <List className="w-3.5 h-3.5" />
                   </button>
                   <button
+                    type="button"
                     onClick={() => setViewMode('GRID')}
-                    className={`p-1.5 rounded-lg transition-all ${
+                    className={`p-1 rounded transition-colors ${
                       viewMode === 'GRID'
-                        ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                        ? 'bg-white dark:bg-slate-900 text-orange-600 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400'
                     }`}
-                    title="Card / Grid View"
+                    title="Grid Card View"
                   >
-                    <LayoutGrid className="w-4 h-4" />
+                    <LayoutGrid className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Category Pills Strip */}
-            <div className="flex items-center space-x-1.5 overflow-x-auto text-xs font-bold pt-1 pb-0.5 scrollbar-thin">
-              <button
-                onClick={() => {
-                  setSelectedCategory('ALL');
-                  setSelectedSubCategory('ALL');
-                }}
-                className={`px-3 py-1.5 rounded-xl transition-all whitespace-nowrap ${
-                  selectedCategory === 'ALL'
-                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                All Products ({products.length})
-              </button>
-              {categories
-                .filter((c) => !c.parent_id)
-                .map((c) => {
-                  const catCount = products.filter(
-                    (p) =>
-                      p.category_id === c.id ||
-                      categories.filter((sub) => sub.parent_id === c.id).some((sub) => sub.id === p.category_id)
-                  ).length;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => {
-                        setSelectedCategory(c.id);
-                        setSelectedSubCategory('ALL');
-                      }}
-                      className={`px-3 py-1.5 rounded-xl transition-all whitespace-nowrap flex items-center space-x-1.5 ${
-                        selectedCategory === c.id
-                          ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <span>{c.name}</span>
-                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                        selectedCategory === c.id ? 'bg-white/20 text-white dark:bg-black/20 dark:text-black' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
-                      }`}>
-                        {catCount}
-                      </span>
-                    </button>
-                  );
-                })}
-            </div>
-
-            {/* Nested Sub-Categories Pills if available */}
-            {activeSubCategories.length > 0 && (
-              <div className="flex items-center space-x-1.5 overflow-x-auto text-[11px] font-semibold pt-1 border-t border-slate-100 dark:border-slate-800/80">
-                <span className="text-slate-400 pl-1">Subcategories:</span>
-                <button
-                  onClick={() => setSelectedSubCategory('ALL')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    selectedSubCategory === 'ALL'
-                      ? 'bg-brand-500 text-white font-bold'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                  }`}
-                >
-                  All Subcategories
-                </button>
-                {activeSubCategories.map((sub) => (
-                  <button
-                    key={sub.id}
-                    onClick={() => setSelectedSubCategory(sub.id)}
-                    className={`px-2.5 py-1 rounded-lg transition-all ${
-                      selectedSubCategory === sub.id
-                        ? 'bg-brand-500 text-white font-bold'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                    }`}
-                  >
-                    ↳ {sub.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* VIEW MODE 1: MODERN PRODUCTS DATA TABLE */}
-          {viewMode === 'TABLE' && (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+            {/* Main Content Area */}
+            {viewMode === 'TABLE' ? (
+              <div className="flex-1 overflow-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  {/* Sticky Header */}
+                  <thead className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-10 select-none divide-x divide-slate-200/80 dark:divide-slate-800">
                     <tr>
-                      <th className="px-4 py-3">Menu Item</th>
-                      <th className="px-4 py-3">Category & Subcategory</th>
-                      <th className="px-4 py-3">Station</th>
-                      <th className="px-4 py-3 text-right">Selling Price</th>
-                      <th className="px-4 py-3 text-right">Recipe Cost</th>
-                      <th className="px-4 py-3 text-right">Gross Profit</th>
-                      <th className="px-4 py-3 text-center">Margin %</th>
-                      <th className="px-4 py-3 text-center">Status</th>
-                      <th className="px-4 py-3 text-center">Addons</th>
-                      <th className="px-4 py-3 text-right">Action</th>
+                      <th className="px-2.5 py-2 w-24">SKU / Code</th>
+                      <th className="px-3 py-2 min-w-[180px]">Menu Item</th>
+                      <th className="px-2.5 py-2">Category</th>
+                      <th className="px-2.5 py-2 w-20 text-center">Station</th>
+                      <th className="px-3 py-2 text-right w-28">Selling Price</th>
+                      <th className="px-3 py-2 text-right w-28">Cost (COGS)</th>
+                      <th className="px-3 py-2 text-right w-28">Gross Profit</th>
+                      <th className="px-2.5 py-2 text-center w-24">Margin %</th>
+                      <th className="px-2.5 py-2 text-center w-28">POS Status</th>
+                      <th className="px-2.5 py-2 text-center w-24">Recipe</th>
+                      <th className="px-2.5 py-2 text-right w-16">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-200 font-medium">
+
+                  {/* Body with Dense Zebra Striping & Dividers */}
+                  <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800 text-slate-800 dark:text-slate-200 font-medium">
                     {loading ? (
                       <tr>
-                        <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
+                        <td colSpan={11} className="px-4 py-12 text-center text-slate-400 font-medium">
                           Loading menu products & recipe margins...
                         </td>
                       </tr>
                     ) : filteredProducts.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="px-4 py-12 text-center text-slate-400">
+                        <td colSpan={11} className="px-4 py-14 text-center text-slate-400">
                           <Utensils className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-                          <p className="font-bold text-slate-600 dark:text-slate-300">No products found matching filters</p>
+                          <p className="font-bold text-slate-600 dark:text-slate-300 text-sm">
+                            No menu products found matching filters
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">
+                            Adjust category or search filters, or create a new item.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleOpenCreateProduct}
+                            className="mt-3 px-3 py-1.5 bg-orange-600 text-white text-xs font-bold rounded-lg shadow-xs hover:bg-orange-700"
+                          >
+                            + Add New Product
+                          </button>
                         </td>
                       </tr>
                     ) : (
@@ -1064,111 +1179,127 @@ export const MenuCatalog: React.FC = () => {
                         const grossProfit = Math.max(0, basePrice - costPrice);
                         const marginPercent = basePrice > 0 ? Math.round((grossProfit / basePrice) * 100) : 0;
                         const hasRecipe = p.recipe && p.recipe.ingredients && p.recipe.ingredients.length > 0;
-                        const addonCount = p.modifierGroups ? p.modifierGroups.length : 0;
                         const isAvailable = p.is_available !== false;
 
                         return (
                           <tr
                             key={p.id}
-                            className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
-                              !isAvailable ? 'bg-slate-50/50 dark:bg-slate-900/40 opacity-75' : ''
+                            className={`divide-x divide-slate-200/60 dark:divide-slate-800/60 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-colors even:bg-slate-50/50 dark:even:bg-slate-900/30 ${
+                              !isAvailable ? 'opacity-70 bg-slate-100/40 dark:bg-slate-900/40' : ''
                             }`}
                           >
-                            {/* Menu Item details with avatar */}
-                            <td className="px-4 py-3">
-                              <div className="flex items-center space-x-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center font-black text-slate-700 dark:text-slate-300 text-xs shrink-0">
+                            {/* SKU */}
+                            <td className="px-2.5 py-1.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                              {p.sku || '—'}
+                            </td>
+
+                            {/* Menu Item Name & Details */}
+                            <td className="px-3 py-1.5">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded bg-slate-200 dark:bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-700 dark:text-slate-300 shrink-0">
                                   {p.name.charAt(0).toUpperCase()}
                                 </div>
-                                <div>
-                                  <div className="font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
-                                    <span>{p.name}</span>
-                                    
+                                <div className="min-w-0">
+                                  <div className="font-bold text-slate-900 dark:text-white truncate text-xs">
+                                    {p.name}
                                   </div>
-                                  <div className="flex items-center space-x-2 text-[10px] text-slate-400 font-mono">
-                                    <span>SKU: {p.sku}</span>
-                                    {p.barcode && <span>• Barcode: {p.barcode}</span>}
-                                  </div>
+                                  {p.name_urdu && (
+                                    <div className="text-[10px] text-slate-400 truncate font-urdu">
+                                      {p.name_urdu}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </td>
 
-                            {/* Category & Subcategory */}
-                            <td className="px-4 py-3">
-                              <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-semibold border border-slate-200 dark:border-slate-700 inline-block">
+                            {/* Category */}
+                            <td className="px-2.5 py-1.5 whitespace-nowrap">
+                              <span className="text-slate-700 dark:text-slate-300 font-semibold text-xs">
                                 {p.category_name || 'Unassigned'}
                               </span>
                             </td>
 
                             {/* Prep Station */}
-                            <td className="px-4 py-3">
-                              <span className="px-2 py-0.5 rounded bg-brand-500/10 text-brand-600 dark:text-brand-400 text-[10px] font-bold uppercase">
+                            <td className="px-2.5 py-1.5 text-center whitespace-nowrap">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold uppercase">
                                 {p.station || 'KITCHEN'}
                               </span>
                             </td>
 
                             {/* Selling Price */}
-                            <td className="px-4 py-3 text-right font-mono font-bold text-slate-900 dark:text-white text-sm">
-                              {currencySymbol} {basePrice.toLocaleString()}
+                            <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                              {formatPKR(basePrice)}
                             </td>
 
-                            {/* Recipe Cost */}
-                            <td className="px-4 py-3 text-right font-mono text-slate-600 dark:text-slate-400">
-                              {currencySymbol} {costPrice.toFixed(2)}
+                            {/* Cost Price */}
+                            <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                              {formatPKR(costPrice)}
                             </td>
 
                             {/* Gross Profit */}
-                            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                              {currencySymbol} {grossProfit.toFixed(2)}
+                            <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                              {formatPKR(grossProfit)}
                             </td>
 
-                            {/* Margin % */}
-                            <td className="px-4 py-3 text-center">
+                            {/* Margin % Badge */}
+                            <td className="px-2.5 py-1.5 text-center whitespace-nowrap">
                               <span
-                                className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                                  marginPercent >= 50
-                                    ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                                    : marginPercent >= 25
-                                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                                    : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                                className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                                  marginPercent >= 60
+                                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                    : marginPercent >= 40
+                                    ? 'bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                                    : 'bg-rose-50 text-rose-800 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
                                 }`}
                               >
                                 {marginPercent}%
                               </span>
                             </td>
 
-                            {/* Status Pill */}
-                            <td className="px-4 py-3 text-center">
-                              <span
-                                className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                            {/* POS Status Toggle (1-Click) */}
+                            <td className="px-2.5 py-1.5 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleAvailability(p)}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all border ${
                                   isAvailable
-                                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                    : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300'
                                 }`}
+                                title="Click to toggle availability"
                               >
                                 <span className={`w-1.5 h-1.5 rounded-full ${isAvailable ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                                <span>{isAvailable ? 'In Stock' : '86\'d'}</span>
-                              </span>
+                                <span>{isAvailable ? 'In Stock' : "86'd"}</span>
+                              </button>
                             </td>
 
-                            {/* Addons Count */}
-                            <td className="px-4 py-3 text-center">
-                              {addonCount > 0 ? (
-                                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-800">
-                                  <Sparkles className="w-3 h-3" />
-                                  <span>{addonCount} Addons</span>
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 text-[10px]">—</span>
-                              )}
+                            {/* Recipe Indicator */}
+                            <td className="px-2.5 py-1.5 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (hasRecipe) {
+                                    setViewingRecipeProduct(p);
+                                  } else {
+                                    handleOpenEditProduct(p);
+                                  }
+                                }}
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors ${
+                                  hasRecipe
+                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300'
+                                    : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                {hasRecipe ? `${p.recipe.ingredients.length} Ingred.` : '+ Recipe'}
+                              </button>
                             </td>
 
-                            {/* 3-DOTS ACTION MENU (ALL CRUD & PRINT OPTIONS) */}
-                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                            {/* Actions Menu */}
+                            <td className="px-2.5 py-1.5 text-right whitespace-nowrap">
                               <ActionMenu
                                 items={[
                                   {
-                                    label: 'Preview Details & Costing',
+                                    label: 'Preview Details',
                                     icon: Eye,
                                     onClick: () => setPreviewProduct(p),
                                   },
@@ -1189,7 +1320,7 @@ export const MenuCatalog: React.FC = () => {
                                     },
                                   },
                                   {
-                                    label: 'Print Barcode / Price Tag',
+                                    label: 'Print Barcode',
                                     icon: Barcode,
                                     divider: true,
                                     onClick: () => {
@@ -1198,18 +1329,13 @@ export const MenuCatalog: React.FC = () => {
                                     },
                                   },
                                   {
-                                    label: 'Print Recipe Spec Sheet',
-                                    icon: Printer,
-                                    onClick: () => setPrintingSpecProduct(p),
-                                  },
-                                  {
                                     label: 'Duplicate Item',
                                     icon: Copy,
                                     divider: true,
                                     onClick: () => handleDuplicateProduct(p),
                                   },
                                   {
-                                    label: isAvailable ? 'Mark Out of Stock (86\'d)' : 'Mark In Stock (Available)',
+                                    label: isAvailable ? "Mark Out of Stock (86'd)" : 'Mark In Stock',
                                     icon: Power,
                                     variant: isAvailable ? 'warning' : 'success',
                                     onClick: () => handleToggleAvailability(p),
@@ -1229,193 +1355,101 @@ export const MenuCatalog: React.FC = () => {
                       })
                     )}
                   </tbody>
+
+                  {/* Sticky Totals Footer */}
+                  {filteredProducts.length > 0 && (
+                    <tfoot className="bg-slate-100 dark:bg-slate-900 border-t-2 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-bold sticky bottom-0 z-10 select-none divide-x divide-slate-200/80 dark:divide-slate-800 text-xs">
+                      <tr>
+                        <td colSpan={4} className="px-3 py-2 text-slate-600 dark:text-slate-400 font-bold uppercase text-[11px]">
+                          Showing {filteredProducts.length} Items (Avg Margin: {avgFilteredMargin}%)
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-900 dark:text-white">
+                          {formatPKR(totalSellingSum / filteredProducts.length)} <span className="text-[10px] font-normal text-slate-400">avg</span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-600 dark:text-slate-400">
+                          {formatPKR(totalCostSum / filteredProducts.length)} <span className="text-[10px] font-normal text-slate-400">avg</span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+                          {formatPKR((totalSellingSum - totalCostSum) / filteredProducts.length)} <span className="text-[10px] font-normal text-slate-400">avg</span>
+                        </td>
+                        <td className="px-2.5 py-2 text-center font-mono font-bold text-slate-800 dark:text-slate-200">
+                          {avgFilteredMargin}%
+                        </td>
+                        <td colSpan={3} className="px-3 py-2 text-right text-[11px] text-slate-500">
+                          {filteredProducts.filter((p) => p.is_available !== false).length} in stock • {filteredProducts.filter((p) => p.is_available === false).length} 86'd
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
-            </div>
-          )}
+            ) : (
+              /* Grid View */
+              <div className="flex-1 overflow-auto p-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                  {filteredProducts.map((p) => {
+                    const costPrice = Number(p.cost_price || p.calculatedCost || 0);
+                    const basePrice = Number(p.base_price || 0);
+                    const grossProfit = Math.max(0, basePrice - costPrice);
+                    const marginPercent = basePrice > 0 ? Math.round((grossProfit / basePrice) * 100) : 0;
+                    const isAvailable = p.is_available !== false;
 
-          {/* VIEW MODE 2: VISUAL PRODUCT CARDS / GRID VIEW */}
-          {viewMode === 'GRID' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {loading ? (
-                <div className="col-span-full py-12 text-center text-slate-400">
-                  Loading menu cards...
-                </div>
-              ) : filteredProducts.length === 0 ? (
-                <div className="col-span-full py-12 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                  <Utensils className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-                  <p className="font-bold text-slate-600 dark:text-slate-300">No products found matching filters</p>
-                </div>
-              ) : (
-                filteredProducts.map((p) => {
-                  const costPrice = Number(p.cost_price || p.calculatedCost || 0);
-                  const basePrice = Number(p.base_price || 0);
-                  const grossProfit = Math.max(0, basePrice - costPrice);
-                  const marginPercent = basePrice > 0 ? Math.round((grossProfit / basePrice) * 100) : 0;
-                  const addonCount = p.modifierGroups ? p.modifierGroups.length : 0;
-                  const isAvailable = p.is_available !== false;
-
-                  return (
-                    <div
-                      key={p.id}
-                      className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between ${
-                        !isAvailable ? 'opacity-70 bg-slate-50/50 dark:bg-slate-900/40' : ''
-                      }`}
-                    >
-                      {/* Card Top: Badges and 3-Dots Action Menu */}
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2.5">
-                          <div className="flex items-center space-x-1.5 overflow-hidden">
-                            <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold truncate">
-                              {p.category_name || 'General'}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-lg bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 text-[9px] font-extrabold uppercase">
-                              {p.station || 'KITCHEN'}
+                    return (
+                      <div
+                        key={p.id}
+                        className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 flex flex-col justify-between shadow-xs hover:border-orange-300 transition-all ${
+                          !isAvailable ? 'opacity-70' : ''
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-1 mb-1">
+                            <span className="font-mono text-[10px] text-slate-400">{p.sku || 'PROD'}</span>
+                            <span
+                              className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold ${
+                                marginPercent >= 50
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : 'bg-amber-50 text-amber-700'
+                              }`}
+                            >
+                              {marginPercent}% margin
                             </span>
                           </div>
-
-                          {/* 3 VERTICAL DOTS ACTION MENU */}
-                          <ActionMenu
-                            items={[
-                              {
-                                label: 'Preview Details & Costing',
-                                icon: Eye,
-                                onClick: () => setPreviewProduct(p),
-                              },
-                              {
-                                label: 'Edit Product',
-                                icon: Edit2,
-                                onClick: () => handleOpenEditProduct(p),
-                              },
-                              {
-                                label: 'Recipe Ingredients',
-                                icon: ChefHat,
-                                onClick: () => {
-                                  if (p.recipe?.ingredients?.length > 0) {
-                                    setViewingRecipeProduct(p);
-                                  } else {
-                                    handleOpenEditProduct(p);
-                                  }
-                                },
-                              },
-                              {
-                                label: 'Print Barcode / Price Tag',
-                                icon: Barcode,
-                                divider: true,
-                                onClick: () => {
-                                  setPrintingBarcodeProduct(p);
-                                  setLabelCopies(1);
-                                },
-                              },
-                              {
-                                label: 'Print Recipe Spec Sheet',
-                                icon: Printer,
-                                onClick: () => setPrintingSpecProduct(p),
-                              },
-                              {
-                                label: 'Duplicate Item',
-                                icon: Copy,
-                                divider: true,
-                                onClick: () => handleDuplicateProduct(p),
-                              },
-                              {
-                                label: isAvailable ? 'Mark Out of Stock (86\'d)' : 'Mark In Stock (Available)',
-                                icon: Power,
-                                variant: isAvailable ? 'warning' : 'success',
-                                onClick: () => handleToggleAvailability(p),
-                              },
-                              {
-                                label: 'Delete Product',
-                                icon: Trash2,
-                                variant: 'danger',
-                                divider: true,
-                                onClick: () => handleDeleteProduct(p.id),
-                              },
-                            ]}
-                          />
-                        </div>
-
-                        {/* Product Title and Urdu Name */}
-                        <div className="flex items-start space-x-3 mb-3">
-                          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-50 to-amber-50 dark:from-slate-800 dark:to-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center font-black text-brand-600 dark:text-brand-400 text-sm shrink-0">
-                            {p.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
-                              {p.name}
-                            </h3>
-                            
-                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">SKU: {p.sku}</p>
-                          </div>
-                        </div>
-
-                        {/* Availability Pill */}
-                        <div className="mb-3">
-                          <span
-                            className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                              isAvailable
-                                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                            }`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${isAvailable ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                            <span>{isAvailable ? 'In Stock (Available)' : 'Out of Stock (86\'d)'}</span>
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Financials & Margin Bar */}
-                      <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80">
-                        <div className="flex items-baseline justify-between mb-1.5">
-                          <span className="text-[11px] font-bold text-slate-500">Retail Price</span>
-                          <span className="text-base font-black text-slate-900 dark:text-white font-mono">
-                            {currencySymbol} {basePrice.toLocaleString()}
+                          <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                            {p.name}
+                          </h4>
+                          <span className="text-[10px] text-slate-500 block truncate">
+                            {p.category_name || 'General'}
                           </span>
                         </div>
 
-                        <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-2">
-                          <span>Cost: <span className="font-mono font-bold">{currencySymbol} {costPrice.toFixed(0)}</span></span>
-                          <span>Profit: <span className="font-mono font-bold text-emerald-600">{currencySymbol} {grossProfit.toFixed(0)}</span></span>
-                          <span className={`font-black ${marginPercent >= 50 ? 'text-emerald-600' : marginPercent >= 25 ? 'text-amber-600' : 'text-rose-600'}`}>
-                            {marginPercent}% Margin
-                          </span>
-                        </div>
-
-                        {/* Visual Margin Bar */}
-                        <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all ${
-                              marginPercent >= 50 ? 'bg-emerald-500' : marginPercent >= 25 ? 'bg-amber-500' : 'bg-rose-500'
-                            }`}
-                            style={{ width: `${Math.min(100, Math.max(5, marginPercent))}%` }}
-                          />
-                        </div>
-
-                        {/* Footer Badges */}
-                        <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t border-slate-100 dark:border-slate-800/60 text-[10px]">
-                          {addonCount > 0 ? (
-                            <span className="inline-flex items-center space-x-1 text-amber-600 dark:text-amber-400 font-bold">
-                              <Sparkles className="w-3 h-3" />
-                              <span>{addonCount} Addon Options</span>
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">No Addons</span>
-                          )}
-
+                        <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                          <div>
+                            <div className="text-xs font-mono font-bold text-slate-900 dark:text-white">
+                              {formatPKR(basePrice)}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              Cost: {formatPKR(costPrice)}
+                            </div>
+                          </div>
                           <button
-                            onClick={() => setPreviewProduct(p)}
-                            className="font-bold text-brand-600 dark:text-brand-400 hover:underline"
+                            type="button"
+                            onClick={() => handleToggleAvailability(p)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                              isAvailable
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                            }`}
                           >
-                            Inspect details &rarr;
+                            {isAvailable ? 'In Stock' : "86'd"}
                           </button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1423,7 +1457,7 @@ export const MenuCatalog: React.FC = () => {
       {/* TAB 2: MENU CATEGORIES & SUB-CATEGORIES */}
       {/* ======================================================== */}
       {activeTab === 'CATEGORIES' && (
-        <div className="space-y-4">
+        <div className="flex-1 overflow-auto p-3">
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div>
@@ -1537,7 +1571,7 @@ export const MenuCatalog: React.FC = () => {
       {/* TAB 3: ADDONS & MODIFIERS (Extra Sauces, Cheese, Sides) */}
       {/* ======================================================== */}
       {activeTab === 'MODIFIERS' && (
-        <div className="space-y-4">
+        <div className="flex-1 overflow-auto p-3">
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div>

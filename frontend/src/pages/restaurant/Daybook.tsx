@@ -11,6 +11,9 @@ import {
   exportShiftZReportPdf,
 } from '../../utils/pdfExport.js';
 import { executeThermalPrint } from '../../utils/receiptPrinter.js';
+import { formatPKR } from '../../utils/formatPKR.js';
+import { ErpPageHeader } from '../../components/common/ErpPageHeader.js';
+import { ErpMetricRibbon } from '../../components/common/ErpMetricRibbon.js';
 import {
   Calendar,
   CalendarDays,

@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
 import { executeThermalPrint } from '../../utils/receiptPrinter.js';
+import { formatPKR } from '../../utils/formatPKR.js';
 import { Modal } from '../../components/common/Modal.js';
 import {
   Search,
@@ -75,7 +76,9 @@ export const PosTerminal: React.FC = () => {
   const [itemCustomNotes, setItemCustomNotes] = useState<string>('');
   const [customQuantity, setCustomQuantity] = useState<number>(1);
   const [search, setSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
+
 
   // Active Register Shift
   const [currentShift, setCurrentShift] = useState<any | null>(null);
@@ -99,7 +102,7 @@ export const PosTerminal: React.FC = () => {
   const [orderNotes, setOrderNotes] = useState('');
   const [isSubmittingKitchen, setIsSubmittingKitchen] = useState(false);
   const [itemViewMode, setItemViewMode] = useState<'list' | 'grid'>('grid');
-  const [showCategorySidebar, setShowCategorySidebar] = useState<boolean>(false);
+  const [showCategorySidebar, setShowCategorySidebar] = useState<boolean>(true);
 
   // Customer & Rider Dropdown State
   const [customersList, setCustomersList] = useState<Array<{ id: string; name: string; phone: string; address?: string }>>([]);
@@ -1100,7 +1103,7 @@ export const PosTerminal: React.FC = () => {
             </button>
 
             {/* TOP-LEVEL CATEGORIES & ACCORDION SUBCATEGORIES */}
-            {rootCategories.map((cat) => {
+            {rootCategories.map((cat, idx) => {
               const isCatSelected = selectedCategory === cat.id;
               const subcats = subCategoriesByParent[cat.id] || [];
               const hasSubcats = subcats.length > 0;
@@ -2293,22 +2296,22 @@ export const PosTerminal: React.FC = () => {
             <div className="space-y-1">
               <div className="flex justify-between text-slate-500 dark:text-slate-400">
                 <span>Subtotal</span>
-                <span>{currencySymbol} {cartSubtotal.toLocaleString()}</span>
+                <span className="font-mono font-semibold tabular-nums">{formatPKR(cartSubtotal)}</span>
               </div>
               {effectiveBillDiscount > 0 && (
                 <div className="flex justify-between text-rose-600">
                   <span>Discount</span>
-                  <span>-{currencySymbol} {effectiveBillDiscount.toLocaleString()}</span>
+                  <span className="font-mono font-semibold tabular-nums">-{formatPKR(effectiveBillDiscount)}</span>
                 </div>
               )}
               <div className="flex justify-between text-slate-500 dark:text-slate-400">
                 <span>Sales Tax ({taxRate}%{isTaxInclusive ? ' incl.' : ''})</span>
-                <span>{currencySymbol} {Math.round(calculatedTax).toLocaleString()}</span>
+                <span className="font-mono font-semibold tabular-nums">{formatPKR(Math.round(calculatedTax))}</span>
               </div>
               {calculatedServiceCharge > 0 && (
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>Service Charge ({serviceChargeRate}%)</span>
-                  <span>{currencySymbol} {Math.round(calculatedServiceCharge).toLocaleString()}</span>
+                  <span className="font-mono font-semibold tabular-nums">{formatPKR(Math.round(calculatedServiceCharge))}</span>
                 </div>
               )}
               {orderType === OrderType.DELIVERY && deliveryFee > 0 && (
@@ -2316,12 +2319,12 @@ export const PosTerminal: React.FC = () => {
                   <span className="flex items-center gap-1">
                     <Truck className="w-3.5 h-3.5" /> Delivery Fee
                   </span>
-                  <span>+{currencySymbol} {Number(deliveryFee).toLocaleString()}</span>
+                  <span className="font-mono font-semibold tabular-nums">+{formatPKR(Number(deliveryFee))}</span>
                 </div>
               )}
               <div className="flex justify-between font-black text-slate-900 dark:text-white text-base pt-1 border-t border-slate-200 dark:border-slate-700">
                 <span>Total Bill</span>
-                <span className="text-brand-600 dark:text-brand-400">{currencySymbol} {grandTotal.toLocaleString()}</span>
+                <span className="font-mono font-black text-lg text-emerald-600 dark:text-emerald-400 tabular-nums">{formatPKR(grandTotal)}</span>
               </div>
             </div>
 

@@ -5,6 +5,9 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
+import { ErpPageHeader } from '../../components/common/ErpPageHeader.js';
+import { ErpMetricRibbon } from '../../components/common/ErpMetricRibbon.js';
+import { formatPKR } from '../../utils/formatPKR.js';
 import {
   Truck,
   Edit2,
@@ -66,6 +69,8 @@ export const PurchaseManagement: React.FC = () => {
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>('ALL');
+  const [supplierSearch, setSupplierSearch] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'DRAFT' | 'RECEIVED'>('ALL');
   const [branchFilter, setBranchFilter] = useState<string>(currentBranchId || 'ALL');
 
@@ -553,14 +558,30 @@ export const PurchaseManagement: React.FC = () => {
   };
 
   // Filtered Purchases
-  const filteredPurchases = purchases.filter((p) => {
+    const filteredPurchases = purchases.filter((p) => {
     const matchesSearch =
       p.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.supplier_name.toLowerCase().includes(searchTerm.toLowerCase());
+      (p.supplier_name && p.supplier_name.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesStatus = statusFilter === 'ALL' || p.status === statusFilter;
     const matchesBranch = branchFilter === 'ALL' || p.branch_id === branchFilter;
-    return matchesSearch && matchesStatus && matchesBranch;
+    const matchesSupplier =
+      selectedSupplierId === 'ALL' ||
+      p.supplier_id === selectedSupplierId ||
+      p.supplierId === selectedSupplierId;
+    return matchesSearch && matchesStatus && matchesBranch && matchesSupplier;
   });
+
+  const totalPaidAmount = purchases.reduce((acc, p) => acc + Number(p.paid_amount || 0), 0);
+  const totalDueAmount = purchases.reduce(
+    (acc, p) => acc + Math.max(0, Number(p.total_amount || 0) - Number(p.paid_amount || 0)),
+    0
+  );
+  const filteredPurchasesSum = filteredPurchases.reduce((acc, p) => acc + Number(p.total_amount || 0), 0);
+  const filteredPaidSum = filteredPurchases.reduce((acc, p) => acc + Number(p.paid_amount || 0), 0);
+  const filteredDueSum = filteredPurchases.reduce(
+    (acc, p) => acc + Math.max(0, Number(p.total_amount || 0) - Number(p.paid_amount || 0)),
+    0
+  );
 
   // Filtered Suppliers
   const filteredSuppliers = suppliers.filter(
@@ -577,325 +598,453 @@ export const PurchaseManagement: React.FC = () => {
   const draftInvoicesCount = purchases.filter((p) => p.status === 'DRAFT').length;
 
   return (
-    <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
-              <Truck className="w-5 h-5" />
-            </div>
-            <span>Purchases & Vendor Invoices</span>
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Manage incoming raw material shipments, supplier ledger, and generate automated FIFO inventory lots.
-          </p>
-        </div>
-
-        {/* Tab Switcher & Quick Actions */}
-        <div className="flex items-center space-x-3">
-          <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-            <button
-              onClick={() => setActiveTab('INVOICES')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                activeTab === 'INVOICES'
-                  ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Inward Invoices ({purchases.length})</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('SUPPLIERS')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                activeTab === 'SUPPLIERS'
-                  ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>Suppliers ({suppliers.length})</span>
-            </button>
-          </div>
-
-          {activeTab === 'INVOICES' ? (
-            <div className="flex items-center space-x-2">
+    <div className="h-[calc(100vh-48px)] flex flex-col overflow-hidden font-sans select-none bg-slate-50 dark:bg-slate-950">
+      {/* 1. Zero-Bloat ERP Page Header */}
+      <ErpPageHeader
+        title="Purchases & Inward Bills"
+        subtitle="Vendor Procurement & Invoices"
+        badge={`${purchases.length} Invoices`}
+        actions={
+          <div className="flex items-center gap-1.5">
+            <div className="flex p-0.5 bg-slate-200/80 dark:bg-slate-800 rounded-lg text-xs font-semibold mr-1">
               <button
-                onClick={handleReconcilePurchases}
-                disabled={reconciling}
-                className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all disabled:opacity-50"
-                title="Sync and post unposted historical purchases to stock ledger and FIFO lots"
+                type="button"
+                onClick={() => setActiveTab('INVOICES')}
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  activeTab === 'INVOICES'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${reconciling ? 'animate-spin text-brand-500' : ''}`} />
-                <span>{reconciling ? 'Reconciling...' : 'Reconcile Stock'}</span>
+                Invoices ({purchases.length})
               </button>
               <button
-                onClick={() => {
-                  setNewCategoryName('');
-                  setIsQuickAddCategoryOpen(true);
-                }}
-                className="flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all"
-                title="Create a new inventory category"
+                type="button"
+                onClick={() => setActiveTab('SUPPLIERS')}
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  activeTab === 'SUPPLIERS'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
               >
-                <FolderPlus className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
-                <span>+ Category</span>
-              </button>
-              <button
-                onClick={() => setIsCreateInvoiceOpen(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-xl shadow-md transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                <span>New Purchase</span>
+                Suppliers ({suppliers.length})
               </button>
             </div>
-          ) : (
+
             <button
+              type="button"
+              onClick={handleReconcilePurchases}
+              disabled={reconciling}
+              className="flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold"
+              title="Sync purchases to FIFO lots"
+            >
+              <RefreshCw className={`w-3 h-3 ${reconciling ? 'animate-spin text-indigo-600' : ''}`} />
+              <span className="hidden sm:inline">Reconcile</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setNewCategoryName('');
+                setIsQuickAddCategoryOpen(true);
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold"
+            >
+              <FolderPlus className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden sm:inline">+ Category</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsAddSupplierOpen(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-xl shadow-md transition-all"
+              className="flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold"
             >
-              <Plus className="w-4 h-4" />
-              <span>Add Supplier</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Supplier</span>
             </button>
-          )}
-        </div>
-      </div>
 
-      {/* KPI Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Total Purchases</span>
-            <div className="w-6 h-6 rounded-lg bg-brand-50 dark:bg-brand-950/50 text-brand-600 dark:text-brand-400 flex items-center justify-center">
-              <DollarSign className="w-3.5 h-3.5" />
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsCreateInvoiceOpen(true)}
+              className="flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs shrink-0"
+              title="Record Purchase Bill (Alt+P)"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Purchase Bill (Alt+P)</span>
+            </button>
           </div>
-          <p className="text-lg font-black text-slate-900 dark:text-white font-mono">
-            {currencySymbol} {totalPurchasesAmount.toLocaleString()}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5 truncate">{purchases.length} total purchase shipments</p>
-        </div>
+        }
+      />
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Received Into Stock</span>
-            <div className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-            </div>
+      {/* 2. Compact Vyapar Summary Ribbon (44px) */}
+      <ErpMetricRibbon
+        metrics={[
+          {
+            label: 'Total Purchases',
+            value: formatPKR(totalPurchasesAmount),
+            variant: 'slate',
+          },
+          {
+            label: 'Paid Amount',
+            value: formatPKR(totalPaidAmount),
+            variant: 'emerald',
+          },
+          {
+            label: 'Payable Due',
+            value: formatPKR(totalDueAmount),
+            variant: 'rose',
+          },
+          {
+            label: 'Received Inward',
+            value: receivedInvoicesCount,
+            variant: 'indigo',
+          },
+          {
+            label: 'Draft / In-Transit',
+            value: draftInvoicesCount,
+            variant: 'amber',
+            onClick: () => setStatusFilter(statusFilter === 'DRAFT' ? 'ALL' : 'DRAFT'),
+          },
+        ]}
+        actions={
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-slate-400 text-[11px] hidden sm:inline">Supplier:</span>
+            <span className="font-semibold text-slate-700 dark:text-slate-200">
+              {selectedSupplierId === 'ALL'
+                ? 'All Suppliers'
+                : suppliers.find((s) => s.id === selectedSupplierId)?.name || 'Selected'}
+            </span>
+            {selectedSupplierId !== 'ALL' && (
+              <button
+                type="button"
+                onClick={() => setSelectedSupplierId('ALL')}
+                className="text-xs text-rose-500 hover:text-rose-700 font-bold ml-1"
+              >
+                Clear
+              </button>
+            )}
           </div>
-          <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
-            {receivedInvoicesCount}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5 truncate">Active FIFO lots created</p>
-        </div>
+        }
+      />
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Draft / In Transit</span>
-            <div className="w-6 h-6 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <Clock className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <p className="text-lg font-black text-amber-600 dark:text-amber-400 font-mono">
-            {draftInvoicesCount}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5 truncate">Awaiting physical receiving</p>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Vendor Debt Payable</span>
-            <div className="w-6 h-6 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
-              <AlertCircle className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <p className="text-lg font-black text-rose-600 dark:text-rose-400 font-mono">
-            {currencySymbol} {totalBalancePayable.toLocaleString()}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5 truncate">Outstanding vendor balance</p>
-        </div>
-      </div>
-
-      {/* Main Content Area */}
+      {/* 3. Main Workspace Area */}
       {activeTab === 'INVOICES' ? (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-          {/* Controls Bar */}
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/30">
-            <div className="flex items-center space-x-2.5 flex-1 max-w-md">
+        <div className="flex-1 flex overflow-hidden">
+          {/* ========================================================= */}
+          {/* LEFT MASTER PANE: Supplier Ledger List (w-64 / w-72)      */}
+          {/* ========================================================= */}
+          <div className="w-60 xl:w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0">
+            {/* Supplier Search Bar */}
+            <div className="p-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-1.5 shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
               <div className="relative flex-1">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search by invoice # or supplier..."
+                  placeholder="Filter suppliers..."
+                  value={supplierSearch}
+                  onChange={(e) => setSupplierSearch(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md pl-7 pr-2 py-1 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddSupplierOpen(true)}
+                className="p-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 border border-indigo-200 dark:border-indigo-800 shrink-0"
+                title="Add New Supplier"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Scrollable Supplier List */}
+            <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+              {/* All Purchases Button */}
+              <button
+                type="button"
+                onClick={() => setSelectedSupplierId('ALL')}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                  selectedSupplierId === 'ALL'
+                    ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium'
+                }`}
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <Truck className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                  <span className="truncate">All Invoices</span>
+                </div>
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                    selectedSupplierId === 'ALL'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {purchases.length}
+                </span>
+              </button>
+
+              <div className="pt-1 pb-1">
+                <div className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Suppliers ({suppliers.length})
+                </div>
+              </div>
+
+              {suppliers
+                .filter((s) => !supplierSearch || s.name.toLowerCase().includes(supplierSearch.toLowerCase()))
+                .map((s) => {
+                  const isSelected = selectedSupplierId === s.id;
+                  const supplierInvoices = purchases.filter(
+                    (p) => p.supplier_id === s.id || p.supplierId === s.id
+                  );
+                  const balPayable = Number(s.balance_payable || 0);
+
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => setSelectedSupplierId(s.id)}
+                      className={`group w-full flex items-center justify-between px-2 py-1.5 rounded-md text-xs cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className="min-w-0 pr-1">
+                        <div className="font-semibold truncate">{s.name}</div>
+                        {balPayable > 0 && (
+                          <div
+                            className={`font-mono text-[10px] font-bold ${
+                              isSelected ? 'text-white/90' : 'text-rose-600 dark:text-rose-400'
+                            }`}
+                          >
+                            Due: {formatPKR(balPayable)}
+                          </div>
+                        )}
+                      </div>
+                      <span
+                        className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold shrink-0 ${
+                          isSelected
+                            ? 'bg-white/25 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {supplierInvoices.length}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* ========================================================= */}
+          {/* RIGHT DETAIL PANE: Spreadsheet Invoices Table             */}
+          {/* ========================================================= */}
+          <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-950">
+            {/* Filter Strip (36px) */}
+            <div className="h-9 min-h-[36px] bg-slate-50 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between gap-2 shrink-0">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search invoice # or vendor..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 text-slate-900 dark:text-white"
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md pl-8 pr-3 py-1 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
 
-              {/* Status Filter */}
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-brand-500"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="DRAFT">Draft / In Transit</option>
-                <option value="RECEIVED">Received into Stock</option>
-              </select>
-
-              {/* Branch Filter */}
-              {branches.length > 1 && (
+              <div className="flex items-center gap-1.5">
                 <select
-                  value={branchFilter}
-                  onChange={(e) => setBranchFilter(e.target.value)}
-                  className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-brand-500"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-md px-2 py-1 focus:outline-none"
                 >
-                  <option value="ALL">All Branches</option>
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
+                  <option value="ALL">All Statuses</option>
+                  <option value="DRAFT">Draft / In Transit</option>
+                  <option value="RECEIVED">Received into Stock</option>
                 </select>
-              )}
+
+                {branches.length > 1 && (
+                  <select
+                    value={branchFilter}
+                    onChange={(e) => setBranchFilter(e.target.value)}
+                    className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-md px-2 py-1 focus:outline-none"
+                  >
+                    <option value="ALL">All Outlets</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                <button
+                  type="button"
+                  onClick={fetchData}
+                  className="p-1 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  title="Refresh Purchases"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
-            <button
-              onClick={fetchData}
-              className="p-2 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-              title="Refresh Purchases"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Invoices Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                <tr>
-                  <th className="px-4 py-3">Invoice #</th>
-                  <th className="px-4 py-3">Supplier</th>
-                  <th className="px-4 py-3">Branch</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3 text-right">Subtotal</th>
-                  <th className="px-4 py-3 text-right">Tax</th>
-                  <th className="px-4 py-3 text-right">Grand Total</th>
-                  <th className="px-4 py-3 text-right">Balance Due</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-slate-700 dark:text-slate-200 font-medium">
-                {loading ? (
+            {/* Invoices Table Container */}
+            <div className="flex-1 overflow-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-10 select-none divide-x divide-slate-200/80 dark:divide-slate-800">
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
-                      Loading purchase records...
-                    </td>
+                    <th className="px-3 py-2 w-32">Invoice #</th>
+                    <th className="px-3 py-2 w-28">Date</th>
+                    <th className="px-3 py-2 min-w-[160px]">Supplier</th>
+                    <th className="px-3 py-2 w-28">Outlet</th>
+                    <th className="px-3 py-2 text-right w-28">Total Amount</th>
+                    <th className="px-3 py-2 text-right w-28">Paid</th>
+                    <th className="px-3 py-2 text-right w-28">Balance Due</th>
+                    <th className="px-2.5 py-2 text-center w-28">Receiving</th>
+                    <th className="px-2.5 py-2 text-right w-16">Action</th>
                   </tr>
-                ) : filteredPurchases.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-slate-400">
-                      <Truck className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-                      <p className="font-bold text-slate-600 dark:text-slate-300">No purchase invoices found</p>
-                      <p className="text-[11px] text-slate-400 mt-1">
-                        Record a purchase invoice to receive ingredients from your suppliers into inventory.
-                      </p>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredPurchases.map((p) => {
-                    const isDraft = p.status === 'DRAFT';
-                    const balance = Number(p.balance_payable || 0);
+                </thead>
 
-                    return (
-                      <tr key={p.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                        <td className="px-4 py-3 font-mono font-bold text-brand-600 dark:text-brand-400">
-                          {p.invoice_number}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
-                          {p.supplier_name}
-                        </td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
-                          {p.branch_name}
-                        </td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
-                          {new Date(p.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono">
-                          {currencySymbol} {Number(p.subtotal).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-slate-500">
-                          {currencySymbol} {Number(p.tax_amount || 0).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-slate-900 dark:text-white">
-                          {currencySymbol} {Number(p.total_amount).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold">
-                          {balance > 0 ? (
-                            <span className="text-rose-500">{currencySymbol} {balance.toLocaleString()}</span>
-                          ) : (
-                            <span className="text-emerald-500">Paid in Full</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                              isDraft
-                                ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800'
-                                : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-                            }`}
-                          >
-                            {isDraft ? 'Draft / In Transit' : 'Received into Stock'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <ActionMenu
-                            items={[
-                              {
-                                label: 'Preview Invoice Details',
-                                icon: Eye,
-                                onClick: () => handleViewInvoiceDetails(p),
-                              },
-                              isDraft && {
-                                label: receivingInvoiceId === p.id ? 'Receiving...' : 'Receive Stock into FIFO',
-                                icon: CheckCircle2,
-                                variant: 'success',
-                                disabled: receivingInvoiceId === p.id,
-                                onClick: () => handleReceiveStock(p.id),
-                              },
-                              {
-                                label: 'Download A4 Invoice (PDF)',
-                                icon: Download,
-                                onClick: () => handleDownloadInvoicePdf(p),
-                              },
-                              {
-                                label: 'Print A4 Invoice',
-                                icon: Printer,
-                                onClick: () => handlePrintInvoicePdf(p),
-                              },
-                              isDraft && {
-                                label: 'Cancel & Delete Invoice',
-                                icon: Trash2,
-                                variant: 'danger',
-                                divider: true,
-                                onClick: () => handleDeletePurchase(p.id, p.invoice_number),
-                              },
-                            ]}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })
+                <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800 text-slate-800 dark:text-slate-200 font-medium">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
+                        Loading inward purchase invoices...
+                      </td>
+                    </tr>
+                  ) : filteredPurchases.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-14 text-center text-slate-400">
+                        <Truck className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                        <p className="font-bold text-slate-600 dark:text-slate-300 text-sm">
+                          No purchase bills found
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Record an incoming vendor shipment to track raw material costs and FIFO lots.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setIsCreateInvoiceOpen(true)}
+                          className="mt-3 px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg shadow-xs hover:bg-indigo-700"
+                        >
+                          + Record Purchase Bill (Alt+P)
+                        </button>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPurchases.map((p) => {
+                      const isDraft = p.status === 'DRAFT';
+                      const totalAmt = Number(p.total_amount || 0);
+                      const paidAmt = Number(p.paid_amount || 0);
+                      const dueAmt = Math.max(0, totalAmt - paidAmt);
+
+                      return (
+                        <tr
+                          key={p.id}
+                          className="divide-x divide-slate-200/60 dark:divide-slate-800/60 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition-colors even:bg-slate-50/50 dark:even:bg-slate-900/30"
+                        >
+                          <td className="px-3 py-1.5 font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-400 whitespace-nowrap">
+                            #{p.invoice_number}
+                          </td>
+                          <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                            {p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}
+                          </td>
+                          <td className="px-3 py-1.5 font-semibold text-slate-900 dark:text-white truncate">
+                            {p.supplier_name || 'Generic Vendor'}
+                          </td>
+                          <td className="px-3 py-1.5 text-slate-600 dark:text-slate-300 truncate">
+                            {p.branch_name || 'Main Outlet'}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                            {formatPKR(totalAmt)}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-emerald-600 dark:text-emerald-400 font-semibold whitespace-nowrap">
+                            {formatPKR(paidAmt)}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                            {formatPKR(dueAmt)}
+                          </td>
+                          <td className="px-2.5 py-1.5 text-center whitespace-nowrap">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                isDraft
+                                  ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300'
+                                  : 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300'
+                              }`}
+                            >
+                              {isDraft ? 'In Transit / Draft' : 'Received into Stock'}
+                            </span>
+                          </td>
+                          <td className="px-2.5 py-1.5 text-right whitespace-nowrap">
+                            <ActionMenu
+                              items={[
+                                {
+                                  label: 'Preview Invoice Details',
+                                  icon: Eye,
+                                  onClick: () => handleViewInvoiceDetails(p),
+                                },
+                                isDraft && {
+                                  label: receivingInvoiceId === p.id ? 'Receiving...' : 'Receive Stock into FIFO',
+                                  icon: CheckCircle2,
+                                  variant: 'success',
+                                  disabled: receivingInvoiceId === p.id,
+                                  onClick: () => handleReceiveStock(p.id),
+                                },
+                                {
+                                  label: 'Download A4 Invoice (PDF)',
+                                  icon: Download,
+                                  onClick: () => handleDownloadInvoicePdf(p),
+                                },
+                                {
+                                  label: 'Print A4 Invoice',
+                                  icon: Printer,
+                                  onClick: () => handlePrintInvoicePdf(p),
+                                },
+                                isDraft && {
+                                  label: 'Cancel & Delete Invoice',
+                                  icon: Trash2,
+                                  variant: 'danger',
+                                  divider: true,
+                                  onClick: () => handleDeletePurchase(p.id, p.invoice_number),
+                                },
+                              ]}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+
+                {filteredPurchases.length > 0 && (
+                  <tfoot className="bg-slate-100 dark:bg-slate-900 border-t-2 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-bold sticky bottom-0 z-10 select-none divide-x divide-slate-200/80 dark:divide-slate-800 text-xs">
+                    <tr>
+                      <td colSpan={4} className="px-3 py-2 text-slate-600 dark:text-slate-400 font-bold uppercase text-[11px]">
+                        Showing {filteredPurchases.length} Inward Invoices
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-900 dark:text-white">
+                        {formatPKR(filteredPurchasesSum)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+                        {formatPKR(filteredPaidSum)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-rose-600 dark:text-rose-400">
+                        {formatPKR(filteredDueSum)}
+                      </td>
+                      <td colSpan={2} className="px-3 py-2 text-right text-[11px] text-slate-500">
+                        {filteredPurchases.filter((p) => p.status === 'RECEIVED').length} posted to FIFO
+                      </td>
+                    </tr>
+                  </tfoot>
                 )}
-              </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         </div>
       ) : (
-        /* Suppliers View */
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+        <div className="flex-1 overflow-auto p-3">
+<div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/30">
             <div className="relative flex-1 max-w-md">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1042,6 +1191,7 @@ export const PurchaseManagement: React.FC = () => {
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {/* Modal 1: Create Purchase Invoice */}

@@ -5,6 +5,9 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
+import { ErpPageHeader } from '../../components/common/ErpPageHeader.js';
+import { ErpMetricRibbon } from '../../components/common/ErpMetricRibbon.js';
+import { formatPKR } from '../../utils/formatPKR.js';
 import { IngredientUsageModal } from '../../components/restaurant/IngredientUsageModal.js';
 import { InventoryItemCard } from '../../components/restaurant/InventoryItemCard.js';
 import { InventoryDetailsModal } from '../../components/restaurant/InventoryDetailsModal.js';
@@ -100,6 +103,9 @@ export const InventoryManagement: React.FC = () => {
   const [loadingValuation, setLoadingValuation] = useState(false);
   const [expandedIngBatches, setExpandedIngBatches] = useState<Record<string, boolean>>({});
 
+  const [selectedIngredientId, setSelectedIngredientId] = useState<string | null>(null);
+  const [detailSubTab, setDetailSubTab] = useState<'LOTS' | 'MOVEMENTS' | 'RECIPES'>('LOTS');
+  const [stockLayoutMode, setStockLayoutMode] = useState<'split' | 'table' | 'grid'>('split');
   const [activeTab, setActiveTab] = useState<'overview' | 'STOCK' | 'VALUATION' | 'ORDER_USAGE' | 'movements' | 'wastage' | 'low_stock' | 'BATCHES' | 'RECIPES' | 'TRANSFERS'>(initialTab);
 
   useEffect(() => {
@@ -727,6 +733,44 @@ export const InventoryManagement: React.FC = () => {
   const totalValuation = ingredients.reduce((sum, ing) => sum + (Number(ing.current_stock || 0) * Number(ing.cost_per_unit || 0)), 0);
 
   // Filtered & Sorted Ingredients for Grid View & Table View
+    const activeIngredient = useMemo(() => {
+    if (selectedIngredientId) {
+      const found = ingredients.find((i) => i.id === selectedIngredientId);
+      if (found) return found;
+    }
+    return ingredients[0] || null;
+  }, [selectedIngredientId, ingredients]);
+
+  const activeIngredientLots = useMemo(() => {
+    if (!activeIngredient) return [];
+    return batches.filter((b) => b.ingredient_id === activeIngredient.id || b.ingredientId === activeIngredient.id);
+  }, [activeIngredient, batches]);
+
+  const activeIngredientMovements = useMemo(() => {
+    if (!activeIngredient) return [];
+    return movements.filter((m) => m.ingredient_id === activeIngredient.id || m.ingredientId === activeIngredient.id);
+  }, [activeIngredient, movements]);
+
+  const activeIngredientRecipes = useMemo(() => {
+    if (!activeIngredient) return [];
+    return recipes
+      .filter((r) => r.ingredients?.some((ri: any) => ri.ingredientId === activeIngredient.id || ri.ingredient_id === activeIngredient.id))
+      .map((r) => {
+        const prod = products.find((p) => p.id === r.productId || p.id === r.product_id);
+        const ri = r.ingredients.find((it: any) => it.ingredientId === activeIngredient.id || it.ingredient_id === activeIngredient.id);
+        return {
+          id: r.id,
+          productId: prod?.id,
+          productName: prod?.name || 'Recipe Item',
+          productSku: prod?.sku || '—',
+          station: prod?.station || 'KITCHEN',
+          quantity: ri?.quantity || ri?.enteredQuantity || 1,
+          unit: ri?.unit || ri?.recipeUnit || activeIngredient.unit,
+          sellingPrice: prod?.base_price || 0,
+        };
+      });
+  }, [activeIngredient, recipes, products]);
+
   const processedIngredients = useMemo(() => {
     const q = stockSearchTerm.toLowerCase().trim();
 
@@ -785,141 +829,172 @@ export const InventoryManagement: React.FC = () => {
   }
 
   return (
-    <div className="p-6 sm:p-8 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center space-x-2.5">
-            <Boxes className="w-7 h-7 text-brand-500" />
-            <span>Ingredients & Inventory Hub</span>
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Batch-tracked First-In, First-Out costing, dual-unit conversion, stock ledger & reorder alerts
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={handleReconcilePurchases}
-            disabled={reconciling}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
-            title="Sync unposted purchases into stock ledger and FIFO lots"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${reconciling ? 'animate-spin text-brand-500' : ''}`} />
-            <span>{reconciling ? 'Reconciling...' : 'Reconcile Stock'}</span>
-          </button>
-
-          <button
-            onClick={() => handleOpenWastage()}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition-all shadow-xs"
-            title="Record kitchen wastage, expired stock, spoiled items or spillage"
-          >
-            <Trash2 className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-            <span>+ Log Wastage</span>
-          </button>
-
-          <button
-            onClick={() => setIsAdjustmentOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-          >
-            <Scale className="w-4 h-4 text-amber-500" />
-            <span>Audit / Physical Count</span>
-          </button>
-
-          <Link
-            to="/app/purchases"
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-          >
-            <Truck className="w-4 h-4 text-emerald-500" />
-            <span>Purchases</span>
-          </Link>
-
-          {branches.length > 1 && (
-            <button
-              onClick={() => setIsAddTransferOpen(true)}
-              className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-            >
-              <ArrowRightLeft className="w-4 h-4 text-blue-500" />
-              <span>Stock Transfer</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => setIsAddRecipeOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-          >
-            <UtensilsCrossed className="w-4 h-4 text-indigo-500" />
-            <span>Menu Recipes</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setEditingCategory(null);
-              setCategoryForm({ name: '', description: '' });
-              setIsCategoryModalOpen(true);
-            }}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-            title="Create and organize custom inventory categories"
-          >
-            <FolderTree className="w-4 h-4 text-brand-500" />
-            <span>Categories</span>
-          </button>
-
-          <button
-            onClick={() => setIsAddIngredientOpen(true)}
-            className="flex items-center space-x-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-md transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Ingredient</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex space-x-1.5 border-b border-slate-200 dark:border-slate-800 pb-3 text-xs font-bold overflow-x-auto">
-        {[
-          { id: 'STOCK', label: 'Inventory Overview & Stock', icon: Boxes, count: ingredients.length },
-          { id: 'wastage', label: 'Wastage Log', icon: Trash2 },
-          { id: 'ORDER_USAGE', label: 'Recipe Deductions', icon: ShoppingBag, count: orderConsumptions.length },
-          { id: 'movements', label: 'Stock Movements / Ledger', icon: History },
-          { id: 'low_stock', label: 'Low Stock Alerts', icon: AlertTriangle, count: lowStockItems.length, alert: lowStockItems.length > 0 },
-          { id: 'RECIPES', label: 'Menu Recipes', icon: Scale, count: recipes.length },
-          { id: 'BATCHES', label: 'FIFO Batches & Lots', icon: Layers, count: batches.length },
-          { id: 'VALUATION', label: 'FIFO Valuation Report', icon: DollarSign },
-          ...(branches.length > 1 ? [{ id: 'TRANSFERS', label: 'Stock Transfers', icon: Truck, count: transfers.length }] : []),
-          { id: 'overview', label: 'Dashboard Summary', icon: LayoutDashboard },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl transition-all shrink-0 ${
-                isActive
-                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-            >
-              <Icon className={`w-3.5 h-3.5 ${tab.alert ? 'text-amber-500' : ''}`} />
-              <span>{tab.label}</span>
-              {tab.count !== undefined && (
-                <span
-                  className={`px-1.5 py-0.2 text-[10px] rounded-full font-black ${
-                    tab.alert
-                      ? 'bg-amber-500 text-white animate-pulse'
-                      : isActive
-                      ? 'bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900'
-                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+    <div className="h-[calc(100vh-48px)] flex flex-col overflow-hidden font-sans select-none bg-slate-50 dark:bg-slate-950">
+      {/* 1. Zero-Bloat ERP Page Header */}
+      <ErpPageHeader
+        title="Inventory Hub"
+        subtitle="FIFO Stock Ledger & Batches"
+        badge={`${ingredients.length} Items`}
+        actions={
+          <div className="flex items-center gap-1.5">
+            {/* 5-Segment Switcher inside Header Bar */}
+            <div className="flex p-0.5 bg-slate-200/80 dark:bg-slate-800 rounded-lg text-xs font-semibold mr-1">
+              <button
+                type="button"
+                onClick={() => handleTabChange('STOCK')}
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  activeTab === 'STOCK'
+                    ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                Stock Register ({ingredients.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('wastage')}
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  activeTab === 'wastage'
+                    ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                Wastage & Audit
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('BATCHES')}
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  activeTab === 'BATCHES' || activeTab === 'VALUATION'
+                    ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                FIFO Lots ({batches.length})
+              </button>
+              {branches.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => handleTabChange('TRANSFERS')}
+                  className={`px-2.5 py-1 rounded-md transition-all ${
+                    activeTab === 'TRANSFERS'
+                      ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 font-bold shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                   }`}
                 >
-                  {tab.count}
-                </span>
+                  Transfers ({transfers.length})
+                </button>
               )}
+              <button
+                type="button"
+                onClick={() => handleTabChange('low_stock')}
+                className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                  activeTab === 'low_stock'
+                    ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                <span>Alerts</span>
+                {lowStockItems.length > 0 && (
+                  <span className="px-1 rounded-full bg-amber-500 text-white text-[9px] font-mono font-bold">
+                    {lowStockItems.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleReconcilePurchases}
+              disabled={reconciling}
+              className="flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold"
+              title="Sync unposted purchases into FIFO lots"
+            >
+              <RefreshCw className={`w-3 h-3 ${reconciling ? 'animate-spin text-orange-600' : ''}`} />
+              <span className="hidden sm:inline">Reconcile</span>
             </button>
-          );
-        })}
-      </div>
+
+            <button
+              type="button"
+              onClick={() => handleOpenWastage()}
+              className="flex items-center gap-1 px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-lg text-xs font-semibold"
+            >
+              <Trash2 className="w-3 h-3 text-rose-600" />
+              <span className="hidden sm:inline">Log Waste</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsAdjustmentOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold"
+            >
+              <Scale className="w-3 h-3 text-amber-500" />
+              <span className="hidden sm:inline">Physical Audit</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsAddIngredientOpen(true)}
+              className="flex items-center gap-1 px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-xs shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Add Item</span>
+            </button>
+          </div>
+        }
+      />
+
+      {/* 2. Compact Vyapar Summary Ribbon (44px) */}
+      <ErpMetricRibbon
+        metrics={[
+          {
+            label: 'Raw Materials',
+            value: ingredients.length,
+            variant: 'slate',
+          },
+          {
+            label: 'Total Valuation',
+            value: formatPKR(totalValuation),
+            variant: 'emerald',
+          },
+          {
+            label: 'Low Stock Items',
+            value: lowStockItems.length,
+            variant: 'amber',
+            onClick: () => handleTabChange('low_stock'),
+          },
+          {
+            label: 'Out of Stock',
+            value: outOfStockItems.length,
+            variant: 'rose',
+            onClick: () => setStockStatusFilter('OUT_OF_STOCK'),
+          },
+          {
+            label: 'Active FIFO Lots',
+            value: batches.filter((b) => Number(b.remaining_quantity) > 0).length,
+            variant: 'indigo',
+            onClick: () => handleTabChange('BATCHES'),
+          },
+        ]}
+        actions={
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-slate-400 text-[11px] hidden sm:inline">Category:</span>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-md px-2 py-0.5"
+            >
+              <option value="ALL">All Categories ({ingredients.length})</option>
+              {categoriesList.map((c) => (
+                <option key={c.id || c.name} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        }
+      />
+
 
       {/* Tab: Overview Dashboard */}
       {activeTab === 'overview' && (
@@ -1080,607 +1155,443 @@ export const InventoryManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Tab: Stock List & Grid View */}
+      {/* ========================================================= */}
+      {/* Tab: Stock Register (Master-Detail Split View)            */}
+      {/* ========================================================= */}
       {activeTab === 'STOCK' && (
-        <div className="space-y-4">
-          {/* Top Summary Cards (Section 3 Requirement) */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xs flex items-center space-x-3.5">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                <Boxes className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Total Inventory Items</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white truncate">{ingredients.length}</p>
-                <span className="text-[10px] text-slate-400">Tracked raw materials</span>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xs flex items-center space-x-3.5">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Total Stock Value</p>
-                <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 truncate">
-                  {currencySymbol} {Math.round(totalValuation).toLocaleString()}
-                </p>
-                <span className="text-[10px] text-slate-400">FIFO Batch Valuation</span>
-              </div>
-            </div>
-
-            <div
-              onClick={() => setStockStatusFilter((prev) => (prev === 'LOW_STOCK' ? 'ALL' : 'LOW_STOCK'))}
-              className={`bg-white dark:bg-slate-900 border rounded-2xl p-4 shadow-2xs flex items-center space-x-3.5 cursor-pointer transition-all ${
-                stockStatusFilter === 'LOW_STOCK'
-                  ? 'border-amber-500 ring-2 ring-amber-500/20'
-                  : 'border-slate-200 dark:border-slate-800 hover:border-amber-300'
-              }`}
-              title="Click to filter low stock items"
-            >
-              <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Low Stock Items</p>
-                <p className={`text-xl font-black truncate ${lowStockItems.length > 0 ? 'text-amber-600' : 'text-slate-900 dark:text-white'}`}>
-                  {lowStockItems.length}
-                </p>
-                <span className="text-[10px] text-slate-400">
-                  {stockStatusFilter === 'LOW_STOCK' ? 'Filter Active' : 'Below min safety level'}
-                </span>
-              </div>
-            </div>
-
-            <div
-              onClick={() => setStockStatusFilter((prev) => (prev === 'OUT_OF_STOCK' ? 'ALL' : 'OUT_OF_STOCK'))}
-              className={`bg-white dark:bg-slate-900 border rounded-2xl p-4 shadow-2xs flex items-center space-x-3.5 cursor-pointer transition-all ${
-                stockStatusFilter === 'OUT_OF_STOCK'
-                  ? 'border-rose-500 ring-2 ring-rose-500/20'
-                  : 'border-slate-200 dark:border-slate-800 hover:border-rose-300'
-              }`}
-              title="Click to filter out of stock items"
-            >
-              <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
-                <TrendingDown className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Out of Stock Items</p>
-                <p className={`text-xl font-black truncate ${outOfStockItems.length > 0 ? 'text-rose-600' : 'text-slate-900 dark:text-white'}`}>
-                  {outOfStockItems.length}
-                </p>
-                <span className="text-[10px] text-slate-400">
-                  {stockStatusFilter === 'OUT_OF_STOCK' ? 'Filter Active' : 'Zero balance'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Search, Filters, Sorting & View Toggle Bar */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
-            <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
-              {/* Search by name or SKU */}
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={stockSearchTerm}
-                  onChange={(e) => setStockSearchTerm(e.target.value)}
-                  placeholder="Search item name, SKU, or category..."
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-
-              {/* Status Filter, Sort By & View Toggle */}
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                {/* Stock Status Filter */}
-                <div className="flex items-center space-x-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-1 rounded-xl">
-                  {[
-                    { id: 'ALL', label: 'All' },
-                    { id: 'IN_STOCK', label: 'In Stock' },
-                    { id: 'LOW_STOCK', label: 'Low Stock' },
-                    { id: 'OUT_OF_STOCK', label: 'Out of Stock' },
-                  ].map((st) => (
-                    <button
-                      key={st.id}
-                      type="button"
-                      onClick={() => setStockStatusFilter(st.id as any)}
-                      className={`px-2.5 py-1 rounded-lg font-bold transition-all text-xs ${
-                        stockStatusFilter === st.id
-                          ? 'bg-brand-500 text-white shadow-2xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      {st.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Sort By Dropdown */}
-                <div className="flex items-center space-x-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-xl font-semibold text-slate-700 dark:text-slate-300">
-                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-[11px] text-slate-400">Sort:</span>
+        <div className="flex-1 flex overflow-hidden">
+          {stockLayoutMode === 'split' ? (
+            <>
+              {/* ========================================================= */}
+              {/* LEFT MASTER PANE: Item List with Stock Indicators (w-80)  */}
+              {/* ========================================================= */}
+              <div className="w-72 xl:w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0">
+                {/* Search & Status Filter in Left Header */}
+                <div className="p-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-1.5 shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search items, SKU..."
+                      value={stockSearchTerm}
+                      onChange={(e) => setStockSearchTerm(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md pl-7 pr-2 py-1 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                    />
+                  </div>
                   <select
-                    value={`${stockSortField}_${stockSortOrder}`}
-                    onChange={(e) => {
-                      const [field, order] = e.target.value.split('_') as [any, any];
-                      setStockSortField(field);
-                      setStockSortOrder(order);
-                    }}
-                    className="bg-transparent border-none text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                    value={stockStatusFilter}
+                    onChange={(e) => setStockStatusFilter(e.target.value as any)}
+                    className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-md px-1.5 py-1"
                   >
-                    <option value="name_asc">Name (A → Z)</option>
-                    <option value="name_desc">Name (Z → A)</option>
-                    <option value="stock_desc">Available Stock (High → Low)</option>
-                    <option value="stock_asc">Available Stock (Low → High)</option>
-                    <option value="value_desc">Stock Value (High → Low)</option>
-                    <option value="value_asc">Stock Value (Low → High)</option>
+                    <option value="ALL">All</option>
+                    <option value="IN_STOCK">In Stock</option>
+                    <option value="LOW_STOCK">Low Stock</option>
+                    <option value="OUT_OF_STOCK">Depleted</option>
                   </select>
                 </div>
 
-                {/* View Switcher: Grid vs Table (Grid is default) */}
-                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/70 dark:border-slate-700/60">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleViewMode('grid')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      viewMode === 'grid'
-                        ? 'bg-brand-500 text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                    title="Grid View (Visual Cards)"
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                    <span>Grid</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleViewMode('table')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      viewMode === 'table'
-                        ? 'bg-brand-500 text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                    title="Table View (Data List)"
-                  >
-                    <List className="w-3.5 h-3.5" />
-                    <span>Table</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Category Pills & Category Management Action */}
-            <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
-              <div className="flex items-center space-x-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCategory('ALL')}
-                  className={`px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all ${
-                    selectedCategory === 'ALL'
-                      ? 'bg-brand-500 text-white shadow-sm'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  All Categories ({ingredients.length})
-                </button>
-                {categoriesList.map((cat) => (
-                  <button
-                    key={cat.id || cat.name}
-                    type="button"
-                    onClick={() => setSelectedCategory(cat.name)}
-                    className={`px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all flex items-center space-x-1 ${
-                      selectedCategory === cat.name
-                        ? 'bg-brand-500 text-white shadow-sm'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    <span>{cat.name}</span>
-                    {cat.itemCount !== undefined && (
-                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                        selectedCategory === cat.name
-                          ? 'bg-brand-600 text-white'
-                          : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                      }`}>
-                        {cat.itemCount}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center space-x-2 shrink-0">
-                <span className="text-[11px] font-bold text-slate-500">
-                  Showing {processedIngredients.length} of {ingredients.length} items
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingCategory(null);
-                    setCategoryForm({ name: '', description: '' });
-                    setIsCategoryModalOpen(true);
-                  }}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-brand-50 dark:bg-brand-950/60 hover:bg-brand-100 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400 font-bold border border-brand-200 dark:border-brand-800 transition-all text-xs"
-                  title="Create or manage inventory categories"
-                >
-                  <FolderPlus className="w-3.5 h-3.5" />
-                  <span>Manage Categories</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Main Content Area: Grid View vs Table View */}
-          {processedIngredients.length === 0 ? (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center space-y-3">
-              <Boxes className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
-              <p className="text-sm font-bold text-slate-800 dark:text-slate-200">No inventory items match your criteria</p>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Try clearing your search query, switching stock status filter to "All", or register a new ingredient.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setStockSearchTerm('');
-                  setSelectedCategory('ALL');
-                  setStockStatusFilter('ALL');
-                }}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors inline-block"
-              >
-                Reset All Filters
-              </button>
-            </div>
-          ) : viewMode === 'grid' ? (
-            /* ==================== 1. MODERN INVENTORY GRID VIEW ==================== */
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-              {processedIngredients.map((ing) => (
-                <InventoryItemCard
-                  key={ing.id}
-                  item={ing}
-                  currencySymbol={currencySymbol}
-                  onViewDetails={handleOpenDetails}
-                  onEdit={(item) => {
-                    setEditIngForm({
-                      id: item.id,
-                      name: item.name,
-                      nameUrdu: item.name_urdu || '',
-                      category: item.category || 'General',
-                      sku: item.sku,
-                      unit: item.unit || item.base_unit || 'KG',
-                      costPerUnit: Number(item.cost_per_unit || item.purchase_cost || 0),
-                      minStockAlert: Number(item.min_stock_alert || 5),
-                    });
-                    setIsEditIngredientOpen(true);
-                  }}
-                  onLogWastage={(item) => handleOpenWastage(item.id)}
-                  onAdjust={(item) => {
-                    setAdjForm((prev) => ({
-                      ...prev,
-                      ingredientId: item.id,
-                    }));
-                    setIsAdjustmentOpen(true);
-                  }}
-                  onWhereUsed={handleOpenUsage}
-                  onViewBatches={(item) => {
-                    setBatchIngredientFilter(item.id);
-                    setActiveTab('BATCHES');
-                  }}
-                  onViewLedger={(item) => {
-                    setMovementIngredientFilter(item.id);
-                    setActiveTab('movements');
-                  }}
-                  onDelete={(item) => handleDeleteIngredient(item.id, item.name)}
-                />
-              ))}
-            </div>
-          ) : (
-            /* ==================== 2. DATA TABLE VIEW ==================== */
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase font-semibold">
-                    <tr>
-                      <th className="px-5 py-3.5">Item Name & SKU</th>
-                      <th className="px-4 py-3.5">Category</th>
-                      <th className="px-4 py-3.5 text-right">Available Stock</th>
-                      <th className="px-3 py-3.5 text-center">Unit</th>
-                      <th className="px-4 py-3.5 text-right">Purchase Price</th>
-                      <th className="px-4 py-3.5 text-right">Stock Value</th>
-                      <th className="px-4 py-3.5 text-center">Last Purchase</th>
-                      <th className="px-4 py-3.5 text-center">Stock Status</th>
-                      <th className="px-4 py-3.5 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {processedIngredients.map((ing) => {
+                {/* Scrollable Master Items List */}
+                <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
+                  {processedIngredients.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400 text-xs">
+                      No inventory items match filter.
+                    </div>
+                  ) : (
+                    processedIngredients.map((ing) => {
+                      const isSelected = activeIngredient?.id === ing.id;
                       const stock = Number(ing.current_stock || 0);
                       const alertThreshold = Number(ing.min_stock_alert || 0);
                       const isLow = stock <= alertThreshold && stock > 0;
                       const isOut = stock <= 0;
-                      const itemUnit = ing.unit || ing.base_unit || 'UNIT';
-                      const activeBatchesList = Array.isArray(ing.active_batches) ? ing.active_batches : [];
-                      const activeBatchCount = ing.active_batches_count ?? activeBatchesList.length;
-                      const latestPrice = Number(ing.latest_purchase_price ?? ing.purchase_cost ?? ing.cost_per_unit ?? 0);
-                      const stockValue = Number(ing.total_stock_value ?? (stock * latestPrice));
-                      const isExpanded = !!expandedIngBatches[ing.id];
+                      const unit = ing.unit || ing.base_unit || 'KG';
+                      const cost = Number(ing.cost_per_unit || ing.purchase_cost || 0);
+                      const itemVal = stock * cost;
 
                       return (
-                        <React.Fragment key={ing.id}>
-                          <tr className={`hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors ${isExpanded ? 'bg-brand-50/20 dark:bg-brand-950/20' : ''}`}>
-                            <td className="px-5 py-3.5 cursor-pointer" onClick={() => handleOpenDetails(ing)}>
-                              <div className="flex items-center space-x-2">
-                                <div>
-                                  <span className="font-bold text-slate-900 dark:text-white block text-sm hover:text-brand-600 transition-colors">
-                                    {ing.name}
-                                  </span>
-                                  <div className="flex items-center space-x-1.5 mt-0.5" onClick={(e) => e.stopPropagation()}>
-                                    {ing.sku ? (
-                                      <span className="font-mono text-[10px] text-slate-400">
-                                        SKU: {ing.sku}
-                                      </span>
-                                    ) : (
-                                      <span className="font-mono text-[10px] text-slate-400">No SKU</span>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleOpenUsage(ing);
-                                      }}
-                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 bg-brand-50 dark:bg-brand-950/60 hover:bg-brand-100 dark:hover:bg-brand-900/60 px-2 py-0.5 rounded transition-colors"
-                                      title="Where Used: View which recipes and POS orders consume this ingredient"
-                                    >
-                                      <UtensilsCrossed className="w-2.5 h-2.5" />
-                                      <span>Where Used</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-
-                            <td className="px-4 py-3.5">
-                              <span className="px-2 py-1 rounded text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                                {ing.category || 'General'}
-                              </span>
-                            </td>
-
-                            <td className="px-4 py-3.5 text-right font-mono font-black text-sm text-slate-900 dark:text-white">
-                              <div>{stock.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-                              {activeBatchesList.length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setExpandedIngBatches((prev) => ({
-                                      ...prev,
-                                      [ing.id]: !prev[ing.id],
-                                    }))
-                                  }
-                                  className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center space-x-0.5 mt-0.5"
-                                  title="Click to view remaining FIFO lots"
-                                >
-                                  <span>{activeBatchCount} lot(s)</span>
-                                  {isExpanded ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
-                                </button>
-                              )}
-                            </td>
-
-                            <td className="px-3 py-3.5 text-center">
-                              <span className="px-2 py-0.5 rounded font-extrabold text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                {itemUnit}
-                              </span>
-                            </td>
-
-                            <td className="px-4 py-3.5 text-right font-mono text-slate-700 dark:text-slate-300">
-                              <div className="font-bold">
-                                {currencySymbol} {latestPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </div>
-                              <div className="text-[10px] text-slate-400">per {itemUnit}</div>
-                            </td>
-
-                            <td className="px-4 py-3.5 text-right font-mono font-extrabold text-sm text-emerald-600 dark:text-emerald-400">
-                              {currencySymbol} {stockValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-
-                            <td className="px-4 py-3.5 text-center font-mono text-xs text-slate-600 dark:text-slate-400">
-                              {ing.last_purchase_date ? (
-                                <div className="space-y-0.5">
-                                  <span className="font-bold text-slate-800 dark:text-slate-200 block text-[11px]">
-                                    {new Date(ing.last_purchase_date).toLocaleDateString()}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 block">
-                                    {new Date(ing.last_purchase_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="text-slate-400 text-[11px] italic">No purchases yet</span>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3.5 text-center">
+                        <div
+                          key={ing.id}
+                          onClick={() => setSelectedIngredientId(ing.id)}
+                          className={`p-2 rounded-lg cursor-pointer transition-all border text-xs ${
+                            isSelected
+                              ? 'bg-orange-50 dark:bg-orange-950/40 border-orange-300 dark:border-orange-800 shadow-xs'
+                              : 'bg-white dark:bg-slate-900 border-slate-200/70 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-1 mb-1">
+                            <div className="flex items-center gap-1.5 truncate">
                               <span
-                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                                  isOut
-                                    ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-800'
-                                    : isLow
-                                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900'
-                                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
+                                className={`w-2 h-2 rounded-full shrink-0 ${
+                                  isOut ? 'bg-rose-500' : isLow ? 'bg-amber-500' : 'bg-emerald-500'
                                 }`}
-                              >
-                                {isOut ? 'Out of Stock' : isLow ? 'Low Stock Alert' : 'In Stock'}
-                              </span>
-                            </td>
-
-                            <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                              <ActionMenu
-                                items={[
-                                  {
-                                    label: 'View Full Details & History',
-                                    icon: Eye,
-                                    onClick: () => handleOpenDetails(ing),
-                                  },
-                                  {
-                                    label: 'Log Wastage',
-                                    icon: Trash2,
-                                    onClick: () => handleOpenWastage(ing.id),
-                                  },
-                                  {
-                                    label: 'Where Used / Recipe Mapping',
-                                    icon: UtensilsCrossed,
-                                    onClick: () => handleOpenUsage(ing),
-                                  },
-                                  {
-                                    label: 'View FIFO Batches',
-                                    icon: Layers,
-                                    onClick: () => {
-                                      setBatchIngredientFilter(ing.id);
-                                      setActiveTab('BATCHES');
-                                    },
-                                  },
-                                  {
-                                    label: 'View Stock Ledger / History',
-                                    icon: History,
-                                    onClick: () => {
-                                      setMovementIngredientFilter(ing.id);
-                                      setActiveTab('movements');
-                                    },
-                                  },
-                                  {
-                                    label: 'Adjust Stock / Write-off',
-                                    icon: Scale,
-                                    onClick: () => {
-                                      setAdjForm((prev) => ({
-                                        ...prev,
-                                        ingredientId: ing.id,
-                                      }));
-                                      setIsAdjustmentOpen(true);
-                                    },
-                                  },
-                                  {
-                                    label: 'Edit Ingredient',
-                                    icon: Edit2,
-                                    onClick: () => {
-                                      setEditIngForm({
-                                        id: ing.id,
-                                        name: ing.name,
-                                        nameUrdu: ing.name_urdu || '',
-                                        category: ing.category || 'General',
-                                        sku: ing.sku,
-                                        unit: ing.unit || ing.base_unit || 'KG',
-                                        costPerUnit: Number(ing.cost_per_unit || ing.purchase_cost || 0),
-                                        minStockAlert: Number(ing.min_stock_alert || 5),
-                                      });
-                                      setIsEditIngredientOpen(true);
-                                    },
-                                  },
-                                  {
-                                    label: 'Delete Ingredient',
-                                    icon: Trash2,
-                                    variant: 'danger',
-                                    divider: true,
-                                    onClick: () => handleDeleteIngredient(ing.id, ing.name),
-                                  },
-                                ]}
                               />
-                            </td>
+                              <span className="font-bold text-slate-900 dark:text-white truncate">
+                                {ing.name}
+                              </span>
+                            </div>
+                            <span className="font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                              {formatPKR(itemVal)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] text-slate-500">
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 truncate max-w-[110px]">
+                              {ing.category || 'General'}
+                            </span>
+                            <span
+                              className={`font-mono font-semibold ${
+                                isOut ? 'text-rose-600 font-bold' : isLow ? 'text-amber-600 font-bold' : 'text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              {formatDisplayStock(stock, unit)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* ========================================================= */}
+              {/* RIGHT DETAIL PANE: Active Item Workspace & Ledger         */}
+              {/* ========================================================= */}
+              {activeIngredient ? (
+                <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-950">
+                  {/* Selected Item Top Summary Strip (48px) */}
+                  <div className="h-12 min-h-[48px] bg-slate-50 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2 truncate">
+                      <div className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 flex items-center justify-center font-bold text-xs shrink-0">
+                        {activeIngredient.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h2 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
+                            {activeIngredient.name}
+                          </h2>
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                            SKU: {activeIngredient.sku || '—'}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                            {activeIngredient.category}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold block leading-tight">
+                          Current Stock
+                        </span>
+                        <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                          {formatDisplayStock(activeIngredient.current_stock, activeIngredient.unit || 'KG')}
+                        </span>
+                      </div>
+                      <div className="h-6 w-px bg-slate-200 dark:border-slate-800" />
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold block leading-tight">
+                          Avg Purchase Cost
+                        </span>
+                        <span className="font-mono font-bold text-xs text-slate-700 dark:text-slate-300">
+                          {formatPKR(activeIngredient.cost_per_unit || 0)} / {activeIngredient.unit || 'KG'}
+                        </span>
+                      </div>
+                      <div className="h-6 w-px bg-slate-200 dark:border-slate-800" />
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold block leading-tight">
+                          Total Value
+                        </span>
+                        <span className="font-mono font-black text-sm text-emerald-600 dark:text-emerald-400">
+                          {formatPKR(Number(activeIngredient.current_stock || 0) * Number(activeIngredient.cost_per_unit || 0))}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sub-Tabs & Instant Actions Strip (36px) */}
+                  <div className="h-9 min-h-[36px] bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between shrink-0 gap-2">
+                    {/* Sub-tabs */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setDetailSubTab('LOTS')}
+                        className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
+                          detailSubTab === 'LOTS'
+                            ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-bold'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        Active FIFO Lots ({activeIngredientLots.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDetailSubTab('MOVEMENTS')}
+                        className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
+                          detailSubTab === 'MOVEMENTS'
+                            ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-bold'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        Movement Ledger ({activeIngredientMovements.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDetailSubTab('RECIPES')}
+                        className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
+                          detailSubTab === 'RECIPES'
+                            ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-bold'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        Used in Recipes ({activeIngredientRecipes.length})
+                      </button>
+                    </div>
+
+                    {/* Instant Action Buttons for Active Item */}
+                    <div className="flex items-center gap-1.5">
+                      <Link
+                        to="/app/purchases?action=new-bill"
+                        className="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300"
+                        title="Add Purchase Invoice"
+                      >
+                        + Stock In
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWastageForm((prev) => ({ ...prev, ingredientId: activeIngredient.id }));
+                          setIsWastageModalOpen(true);
+                        }}
+                        className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300"
+                      >
+                        - Log Waste
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdjForm((prev) => ({ ...prev, ingredientId: activeIngredient.id }));
+                          setIsAdjustmentOpen(true);
+                        }}
+                        className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300"
+                      >
+                        Audit Count
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditIngForm({
+                            id: activeIngredient.id,
+                            name: activeIngredient.name,
+                            nameUrdu: activeIngredient.name_urdu || '',
+                            category: activeIngredient.category || 'General',
+                            sku: activeIngredient.sku,
+                            unit: activeIngredient.unit || activeIngredient.base_unit || 'KG',
+                            costPerUnit: Number(activeIngredient.cost_per_unit || activeIngredient.purchase_cost || 0),
+                            minStockAlert: Number(activeIngredient.min_stock_alert || 5),
+                          });
+                          setIsEditIngredientOpen(true);
+                        }}
+                        className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                      >
+                        Edit Item
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Detail Content Area */}
+                  <div className="flex-1 overflow-auto">
+                    {detailSubTab === 'LOTS' && (
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-10 select-none divide-x divide-slate-200/80 dark:divide-slate-800">
+                          <tr>
+                            <th className="px-3 py-2 w-28">Lot / Batch #</th>
+                            <th className="px-3 py-2">Received Date</th>
+                            <th className="px-3 py-2">Supplier</th>
+                            <th className="px-3 py-2 text-right">Unit Cost</th>
+                            <th className="px-3 py-2 text-right">Remaining Qty</th>
+                            <th className="px-3 py-2 text-right">Original Qty</th>
+                            <th className="px-3 py-2 text-right">Batch Value</th>
+                            <th className="px-3 py-2 text-center">Status</th>
                           </tr>
-
-                          {/* Expanded FIFO Lots Sub-table */}
-                          {isExpanded && activeBatchesList.length > 0 && (
-                            <tr className="bg-slate-50/80 dark:bg-slate-900/80 border-y border-brand-200 dark:border-brand-900/50">
-                              <td colSpan={9} className="p-4 pl-8">
-                                <div className="space-y-2">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center space-x-2">
-                                      <Layers className="w-4 h-4 text-brand-500" />
-                                      <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
-                                        Active FIFO Stock Lots for {ing.name} (Consumed in First-In, First-Out order)
-                                      </span>
-                                    </div>
-                                    <span className="text-[11px] text-slate-500 font-medium">
-                                      Total Active: {activeBatchesList.length} lot(s) | Valued at{' '}
-                                      <strong className="text-emerald-600 dark:text-emerald-400">
-                                        {currencySymbol}{' '}
-                                        {activeBatchesList
-                                          .reduce((sum: number, b: any) => sum + Number(b.quantity_remaining || 0) * Number(b.unit_cost || 0), 0)
-                                          .toFixed(2)}
-                                      </strong>
-                                    </span>
-                                  </div>
-
-                                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
-                                    <table className="w-full text-left text-[11px]">
-                                      <thead className="bg-slate-100/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 uppercase tracking-wider font-semibold">
-                                        <tr>
-                                          <th className="px-3 py-2">FIFO Queue</th>
-                                          <th className="px-3 py-2">Lot # / Ref</th>
-                                          <th className="px-3 py-2">Received Date</th>
-                                          <th className="px-3 py-2 text-right">Remaining Qty</th>
-                                          <th className="px-3 py-2 text-right">Initial Qty</th>
-                                          <th className="px-3 py-2 text-right">Unit Cost</th>
-                                          <th className="px-3 py-2 text-right">Remaining Value</th>
-                                          <th className="px-3 py-2">Supplier</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                        {activeBatchesList.map((batch: any, bIdx: number) => {
-                                          const remQty = Number(batch.quantity_remaining || 0);
-                                          const origQty = Number(batch.quantity_received || 0);
-                                          const uCost = Number(batch.unit_cost || 0);
-                                          const remVal = remQty * uCost;
-                                          return (
-                                            <tr key={batch.id || bIdx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                                              <td className="px-3 py-2">
-                                                {bIdx === 0 ? (
-                                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                                    1st In (Next Out)
-                                                  </span>
-                                                ) : (
-                                                  <span className="text-slate-400 font-mono text-[10px]">
-                                                    Queue #{bIdx + 1}
-                                                  </span>
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-2 font-mono font-bold text-slate-700 dark:text-slate-300">
-                                                #{String(batch.id || '').slice(-8)}
-                                              </td>
-                                              <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
-                                                {batch.received_at ? new Date(batch.received_at).toLocaleDateString() : '-'}
-                                              </td>
-                                              <td className="px-3 py-2 text-right font-mono font-black text-slate-900 dark:text-white">
-                                                {remQty.toLocaleString(undefined, { maximumFractionDigits: 2 })} {batch.unit || itemUnit}
-                                              </td>
-                                              <td className="px-3 py-2 text-right font-mono text-slate-400">
-                                                {origQty.toLocaleString(undefined, { maximumFractionDigits: 2 })} {batch.unit || itemUnit}
-                                              </td>
-                                              <td className="px-3 py-2 text-right font-mono text-slate-700 dark:text-slate-300">
-                                                {currencySymbol} {uCost.toFixed(2)}
-                                              </td>
-                                              <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                                {currencySymbol} {remVal.toFixed(2)}
-                                              </td>
-                                              <td className="px-3 py-2 text-slate-600 dark:text-slate-400">
-                                                {batch.supplier_name || 'Standard Inward'}
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800 text-slate-800 dark:text-slate-200 font-medium">
+                          {activeIngredientLots.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
+                                No active FIFO batches recorded for this item. Add a purchase invoice to record lots.
                               </td>
                             </tr>
+                          ) : (
+                            activeIngredientLots.map((b) => {
+                              const remQty = Number(b.remaining_quantity || b.remainingQuantity || 0);
+                              const origQty = Number(b.quantity || b.original_quantity || 0);
+                              const uCost = Number(b.cost_per_unit || b.unit_cost || activeIngredient.cost_per_unit || 0);
+                              const val = remQty * uCost;
+
+                              return (
+                                <tr
+                                  key={b.id}
+                                  className="divide-x divide-slate-200/60 dark:divide-slate-800/60 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 even:bg-slate-50/50 dark:even:bg-slate-900/30"
+                                >
+                                  <td className="px-3 py-1.5 font-mono text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                                    #{String(b.id || '').slice(-8)}
+                                  </td>
+                                  <td className="px-3 py-1.5 whitespace-nowrap text-slate-600 dark:text-slate-400">
+                                    {b.received_at ? new Date(b.received_at).toLocaleDateString() : '—'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300 font-semibold truncate max-w-xs">
+                                    {b.supplier_name || 'Standard Inward'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 dark:text-slate-400">
+                                    {formatPKR(uCost)}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-900 dark:text-white">
+                                    {remQty.toLocaleString(undefined, { maximumFractionDigits: 2 })} {activeIngredient.unit || 'KG'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-400">
+                                    {origQty.toLocaleString(undefined, { maximumFractionDigits: 2 })} {activeIngredient.unit || 'KG'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
+                                    {formatPKR(val)}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-center whitespace-nowrap">
+                                    <span
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                        remQty > 0
+                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                          : 'bg-slate-100 text-slate-500'
+                                      }`}
+                                    >
+                                      {remQty > 0 ? 'Active (FIFO)' : 'Exhausted'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })
                           )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                        </tbody>
+                      </table>
+                    )}
+
+                    {detailSubTab === 'MOVEMENTS' && (
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-10 select-none divide-x divide-slate-200/80 dark:divide-slate-800">
+                          <tr>
+                            <th className="px-3 py-2 w-36">Timestamp</th>
+                            <th className="px-3 py-2 w-32">Movement Type</th>
+                            <th className="px-3 py-2 text-right w-24">Qty Change</th>
+                            <th className="px-3 py-2 text-right w-28">Balance After</th>
+                            <th className="px-3 py-2">Reference / Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800 text-slate-800 dark:text-slate-200 font-medium">
+                          {activeIngredientMovements.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                                No stock movements recorded yet for this item.
+                              </td>
+                            </tr>
+                          ) : (
+                            activeIngredientMovements.map((m) => {
+                              const qty = Number(m.quantity || 0);
+                              const isPositive = qty > 0;
+                              return (
+                                <tr
+                                  key={m.id}
+                                  className="divide-x divide-slate-200/60 dark:divide-slate-800/60 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 even:bg-slate-50/50 dark:even:bg-slate-900/30"
+                                >
+                                  <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                                    {m.created_at ? new Date(m.created_at).toLocaleString() : '—'}
+                                  </td>
+                                  <td className="px-3 py-1.5 whitespace-nowrap">
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                      {m.movement_type || 'ADJUSTMENT'}
+                                    </span>
+                                  </td>
+                                  <td
+                                    className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold ${
+                                      isPositive ? 'text-emerald-600' : 'text-rose-600'
+                                    }`}
+                                  >
+                                    {isPositive ? `+${qty}` : qty} {activeIngredient.unit || 'KG'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-900 dark:text-white">
+                                    {Number(m.balance_after || 0).toLocaleString()} {activeIngredient.unit || 'KG'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-slate-600 dark:text-slate-400 truncate max-w-sm">
+                                    {m.notes || m.reference_id || 'System ledger update'}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    )}
+
+                    {detailSubTab === 'RECIPES' && (
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-10 select-none divide-x divide-slate-200/80 dark:divide-slate-800">
+                          <tr>
+                            <th className="px-3 py-2">Menu Product Name</th>
+                            <th className="px-3 py-2 w-28">SKU</th>
+                            <th className="px-3 py-2 w-24 text-center">Prep Station</th>
+                            <th className="px-3 py-2 text-right w-32">Portion Needed</th>
+                            <th className="px-3 py-2 text-right w-32">Retail Price</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800 text-slate-800 dark:text-slate-200 font-medium">
+                          {activeIngredientRecipes.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                                This raw ingredient is not currently used in any active menu recipes.
+                              </td>
+                            </tr>
+                          ) : (
+                            activeIngredientRecipes.map((r, idx) => (
+                              <tr
+                                key={r.id || idx}
+                                className="divide-x divide-slate-200/60 dark:divide-slate-800/60 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 even:bg-slate-50/50 dark:even:bg-slate-900/30"
+                              >
+                                <td className="px-3 py-1.5 font-bold text-slate-900 dark:text-white truncate">
+                                  {r.productName}
+                                </td>
+                                <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500">
+                                  {r.productSku}
+                                </td>
+                                <td className="px-3 py-1.5 text-center">
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 text-[10px] font-bold uppercase">
+                                    {r.station}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-mono font-bold text-orange-600 dark:text-orange-400">
+                                  {r.quantity} {r.unit}
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-900 dark:text-white">
+                                  {formatPKR(r.sellingPrice)}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-slate-400 text-xs">
+                  Select an item from the left pane to view details.
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex-1 p-4 overflow-auto">
+              {/* Full-width view if toggled */}
             </div>
           )}
         </div>
       )}
+
 
       {/* Tab: Dedicated Wastage Management */}
       {activeTab === 'wastage' && (
