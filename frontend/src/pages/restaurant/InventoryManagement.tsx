@@ -2204,7 +2204,7 @@ export const InventoryManagement: React.FC = () => {
 
             <div className="flex items-center space-x-2 self-end md:self-auto">
               <Link
-                to="/app/recipe-costing"
+                to="/app/reports/recipe-costing"
                 className="flex items-center space-x-1.5 px-3 py-1.5 bg-brand-50 dark:bg-brand-950/40 border border-brand-200 dark:border-brand-800 text-brand-600 dark:text-brand-400 rounded-xl font-bold hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors"
               >
                 <PieChart className="w-3.5 h-3.5" />

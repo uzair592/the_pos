@@ -473,50 +473,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Scrollable Navigation Body (Independent internal scrolling) */}
       <div className="flex-1 overflow-y-auto px-2.5 py-3 space-y-3 custom-scrollbar">
-        {/* Billz POS Quick Add Sale Button */}
-        {!isSuperAdmin && (
-          collapsed ? (
-            <div className="pt-1 pb-1 flex justify-center relative group">
-              <NavLink
-                to="/pos"
-                className="w-10 h-10 flex items-center justify-center bg-gradient-to-r from-brand-500 to-amber-500 hover:from-brand-600 hover:to-amber-600 text-white rounded-xl shadow-md shadow-brand-500/20 hover:shadow-lg transition-all transform active:scale-95"
-                aria-label="Launch POS Terminal (Alt+S)"
-              >
-                <Plus className="w-5 h-5" />
-              </NavLink>
-              {/* Floating Tooltip */}
-              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center z-50 pointer-events-none">
-                <div className="bg-slate-950 text-white border border-slate-700/90 text-xs font-bold py-1.5 px-3 rounded-lg shadow-2xl whitespace-nowrap flex items-center space-x-2">
-                  <span className="text-amber-400 font-extrabold">+ BILL</span>
-                  <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded font-mono text-slate-300">
-                    Alt+S
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="pt-1 pb-1">
-              <NavLink
-                to="/pos"
-                onClick={isMobileDrawer ? onCloseMobile : undefined}
-                className="w-full flex items-center justify-between py-2.5 px-3.5 bg-gradient-to-r from-brand-500 to-amber-500 hover:from-brand-600 hover:to-amber-600 text-white rounded-xl font-black text-xs shadow-md shadow-brand-500/20 hover:shadow-lg transition-all transform active:scale-[0.98] group"
-                title="Launch POS Terminal (Alt+S)"
-              >
-                <div className="flex items-center space-x-2">
-                  <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-                    <Plus className="w-3.5 h-3.5 group-hover:rotate-90 transition-transform duration-200" />
-                  </div>
-                  <span className="tracking-wide uppercase font-extrabold">+ BILL</span>
-                </div>
-                <span className="text-[10px] bg-black/25 px-1.5 py-0.5 rounded font-mono font-bold tracking-wider">
-                  Alt+S
-                </span>
-              </NavLink>
-            </div>
-          )
-        )}
-
-        {/* Billz POS Accordion Navigation */}
+        {/* Navigation Sections */}
         {sections.map((section, sIdx) => {
             // Filter items by feature and permissions
             const visibleItems = section.items.filter((item) => {

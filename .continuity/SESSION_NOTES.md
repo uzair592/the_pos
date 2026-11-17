@@ -1,6 +1,38 @@
 # Session Notes
 
 ## Goals
+- Remove redundant "+ BILL" button from the sidebar, keeping the top navigation bar POS Terminal button as the single primary billing entrypoint.
+- Resolve Floor & Table Management creation issues and duplicate unique constraint errors (`uq_branch_table_number`).
+- Eliminate contradictory error toasts (e.g. Floor created successfully + Not Found + duplicate key error) when creating tables.
+- Consolidate Recipe Costing strictly into Reports suite (`/app/reports/recipe-costing`), removing standalone costing links.
+- Verify entire flow and laptop responsiveness (1366x768) with Playwright.
+
+## Blockers
+- None. Dev servers operational, frontend build passes with zero errors, database migrations verified, and Playwright automated tests passed cleanly.
+
+## Key Decisions
+- Decision 73: Consolidated POS Billing Button:
+  - Removed duplicate `+ BILL` button from `Sidebar.tsx`.
+  - Retained the prominent yellow/orange highlighted `[POS]` terminal button in top navbar (`Navbar.tsx`) as the single primary billing entrypoint.
+- Decision 74: Floor & Table Management Unique Constraint & Popups Fix:
+  - Added migration `021_floors_timestamps_and_table_unique.sql` adding `created_at` and `updated_at` to `floors` table.
+  - In `backend/src/routes/restaurant.routes.ts`:
+    - Updated `POST /api/restaurant/tables`: if an inactive table exists with the same number, it reactivates and updates it instead of violating `uq_branch_table_number`.
+    - Updated `DELETE /api/restaurant/tables/:id`: appends `_deleted_<id>` suffix upon soft deletion so the table number is immediately freed.
+    - Added friendly error handling and suggestion when table number already exists.
+  - In `frontend/src/components/restaurant/FloorTableManagement.tsx`:
+    - Added `silent: true` mode for inline floor creation so floor creation does not produce separate conflicting toasts during table creation.
+    - Defaulted floor selection when floors exist, and pre-filled inline floor creation to 'Main Hall' when empty.
+    - Updated `handleSaveTable` to await `fetchData()` cleanly.
+- Decision 75: Recipe Costing & Profitability Consolidated Under Reports:
+  - Redirected `/app/recipe-costing` to `/app/reports/recipe-costing` in `App.tsx`.
+  - Updated links in `AddMoreMenu.tsx` and `InventoryManagement.tsx` to route strictly to `/app/reports/recipe-costing`.
+  - Ensured Reports sidebar navigation item remains active when viewing recipe costing.
+- Playwright Automated Verification:
+  - Verified login, sidebar without `+ BILL`, top navbar with `[POS]`, table creation of `T-777`, modal close, and display on floor grid with zero conflicting popups.
+  - Verified recipe costing under `/app/reports/recipe-costing`.
+
+
 - Transform Sales, Purchases, and Expenses into full-screen Vyapar ERP workspaces.
 - Eliminate cramped floating modal dialogs for bill and voucher creation.
 - Modernize the Expenses Register (/app/expenses) with compact ErpPageHeader, ErpMetricRibbon, and full-viewport table.

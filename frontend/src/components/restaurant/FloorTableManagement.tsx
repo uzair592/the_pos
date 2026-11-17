@@ -180,10 +180,10 @@ export const FloorTableManagement: React.FC = () => {
   };
 
   // Quick Inline Floor Creation
-  const handleQuickCreateFloor = async (nameToCreate?: string) => {
+  const handleQuickCreateFloor = async (nameToCreate?: string, silent: boolean = false) => {
     const name = (nameToCreate || inlineFloorName).trim();
     if (!name) {
-      error('Floor / Dining Section name cannot be empty');
+      if (!silent) error('Floor / Dining Section name cannot be empty');
       return null;
     }
 
@@ -206,7 +206,7 @@ export const FloorTableManagement: React.FC = () => {
         sortOrder: floors.length + 1,
       });
       const newFloor = res.floor;
-      success(`Floor "${newFloor.name}" ready!`);
+      if (!silent) success(`Floor "${newFloor.name}" created successfully!`);
       await fetchData();
       setTableForm((prev) => ({ ...prev, floorId: newFloor.id }));
       setSelectedFloorId(newFloor.id);
@@ -214,7 +214,7 @@ export const FloorTableManagement: React.FC = () => {
       setInlineFloorName('');
       return newFloor;
     } catch (err: any) {
-      error(err.message || 'Failed to create floor');
+      if (!silent) error(err.message || 'Failed to create floor');
       return null;
     } finally {
       setCreatingFloorLoading(false);
@@ -245,15 +245,15 @@ export const FloorTableManagement: React.FC = () => {
     const bId = branchFilter || currentBranchId || branches[0]?.id || undefined;
     let effectiveFloorId = tableForm.floorId;
 
-    // 1. If user typed a new floor name inline, resolve it
+    // 1. If user typed a new floor name inline, resolve it silently
     if (inlineFloorName.trim()) {
-      const created = await handleQuickCreateFloor(inlineFloorName.trim());
+      const created = await handleQuickCreateFloor(inlineFloorName.trim(), true);
       if (created) effectiveFloorId = created.id;
     }
 
-    // 2. If still no floor and no floors exist in system, auto-create default 'Main Dining Area'
+    // 2. If still no floor and no floors exist in system, auto-create default 'Main Dining Area' silently
     if (!effectiveFloorId && floors.length === 0) {
-      const created = await handleQuickCreateFloor('Main Dining Area');
+      const created = await handleQuickCreateFloor('Main Dining Area', true);
       if (created) effectiveFloorId = created.id;
     } else if (!effectiveFloorId && floors.length > 0) {
       // Default to first floor
@@ -290,7 +290,7 @@ export const FloorTableManagement: React.FC = () => {
       setIsEditTableOpen(false);
       setIsCreatingFloorInline(false);
       setInlineFloorName('');
-      fetchData();
+      await fetchData();
     } catch (err: any) {
       error(err.message || 'Failed to save table');
     }
@@ -457,9 +457,11 @@ export const FloorTableManagement: React.FC = () => {
             onClick={() => {
               const bId = branchFilter || currentBranchId || branches[0]?.id;
               const nextNumber = getNextAvailableTableNumber(tables);
+              const defaultFloorId = (selectedFloorId && selectedFloorId !== 'ALL') ? selectedFloorId : (floors[0]?.id || '');
+              const needsInlineFloor = floors.length === 0;
               setTableForm({
                 id: '',
-                floorId: selectedFloorId !== 'ALL' ? selectedFloorId : (floors[0]?.id || ''),
+                floorId: defaultFloorId,
                 branchId: bId,
                 tableNumber: nextNumber,
                 capacity: 4,
@@ -470,8 +472,8 @@ export const FloorTableManagement: React.FC = () => {
                 posX: 0,
                 posY: 0,
               });
-              setIsCreatingFloorInline(false);
-              setInlineFloorName('');
+              setIsCreatingFloorInline(needsInlineFloor);
+              setInlineFloorName(needsInlineFloor ? 'Main Hall' : '');
               setIsAddTableOpen(true);
             }}
             className="flex items-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold rounded-xl shadow-md transition-all"

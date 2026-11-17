@@ -188,7 +188,7 @@ export const AddMoreMenu: React.FC<AddMoreMenuProps> = ({ isOpen, onClose, onTri
           icon: Calculator,
           color: 'text-emerald-500',
           permission: Permission.MENU_MANAGE,
-          action: () => runAndClose(() => navigate('/app/recipe-costing')),
+          action: () => runAndClose(() => navigate('/app/reports/recipe-costing')),
         },
         {
           id: 'wastage_mgmt',
@@ -271,7 +271,7 @@ export const AddMoreMenu: React.FC<AddMoreMenuProps> = ({ isOpen, onClose, onTri
           icon: Sparkles,
           color: 'text-amber-500',
           permission: Permission.REPORTS_FINANCIAL,
-          action: () => runAndClose(() => navigate('/app/recipe-costing')),
+          action: () => runAndClose(() => navigate('/app/reports/recipe-costing')),
         },
       ],
     },

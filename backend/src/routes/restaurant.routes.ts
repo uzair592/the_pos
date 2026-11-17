@@ -687,17 +687,44 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
 
     const cleanTableNumber = tableNumber.trim();
 
-    // Check if table number already exists in this branch
+    // Check if table number already exists in this branch (active or soft-deleted)
     const existingTable = await query(
-      'SELECT id, table_number FROM restaurant_tables WHERE tenant_id = $1 AND branch_id = $2 AND LOWER(TRIM(table_number)) = LOWER(TRIM($3)) AND is_active = true',
+      'SELECT id, table_number, is_active FROM restaurant_tables WHERE tenant_id = $1 AND branch_id = $2 AND LOWER(TRIM(table_number)) = LOWER(TRIM($3))',
       [tenantId, branchId, cleanTableNumber],
       { tenantId }
     );
     if (existingTable.rows.length > 0) {
-      return reply.status(400).send({
-        error: `Table "${cleanTableNumber}" already exists in this branch. Please choose a different table number.`,
-        code: 'DUPLICATE_TABLE_NUMBER',
-      });
+      const match = existingTable.rows[0];
+      if (match.is_active) {
+        return reply.status(400).send({
+          error: `Table "${cleanTableNumber}" already exists in this branch. Please choose a different table number.`,
+          code: 'DUPLICATE_TABLE_NUMBER',
+        });
+      }
+
+      // Reactivate and reuse soft-deleted record so unique constraint is satisfied
+      const { rows } = await query(
+        `UPDATE restaurant_tables
+         SET floor_id = $1, table_number = $2, capacity = $3, shape = $4,
+             pos_x = $5, pos_y = $6, assigned_waiter_id = $7, assigned_waiter_name = $8,
+             status = 'AVAILABLE', is_active = true, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $9 AND tenant_id = $10
+         RETURNING *`,
+        [
+          resolvedFloorId,
+          cleanTableNumber,
+          capacity,
+          shape || 'RECTANGLE',
+          posX || 0,
+          posY || 0,
+          assignedWaiterId || null,
+          assignedWaiterName || null,
+          match.id,
+          tenantId,
+        ],
+        { tenantId }
+      );
+      return reply.status(201).send({ table: rows[0], reactivated: true });
     }
 
     try {
@@ -727,7 +754,7 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
       );
       return reply.status(201).send({ table: rows[0] });
     } catch (err: any) {
-      if (err.code === '23505' || err.message?.includes('uq_branch_table_number')) {
+      if (err.code === '23505' || err.message?.includes('uq_branch_table_number') || err.message?.includes('duplicate key')) {
         return reply.status(400).send({
           error: `Table "${cleanTableNumber}" already exists in this branch. Please choose a different table number.`,
           code: 'DUPLICATE_TABLE_NUMBER',
@@ -846,7 +873,11 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
     }
 
     await query(
-      'UPDATE restaurant_tables SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2',
+      `UPDATE restaurant_tables
+       SET is_active = false,
+           table_number = table_number || '_deleted_' || SUBSTRING(id::text, 1, 8),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND tenant_id = $2`,
       [id, tenantId],
       { tenantId }
     );

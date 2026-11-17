@@ -385,7 +385,7 @@ export const App: React.FC = () => {
                 <Route path="expenses" element={<ExpenseManagement />} />
                 <Route path="orders" element={<OrdersHub />} />
                 <Route path="menu" element={<MenuCatalog />} />
-                <Route path="recipe-costing" element={<RecipeCostingDashboard />} />
+                <Route path="recipe-costing" element={<Navigate to="/app/reports/recipe-costing" replace />} />
                 <Route path="inventory" element={<InventoryManagement />} />
                 <Route path="purchases" element={<PurchaseManagement />} />
                 <Route path="shifts" element={<ShiftManagement />} />
