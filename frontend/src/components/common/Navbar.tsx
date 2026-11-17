@@ -6,7 +6,6 @@ import { api } from '../../api/client.js';
 import {
   UtensilsCrossed,
   Monitor,
-  ShoppingBag,
   ChefHat,
   PlusCircle,
   ChevronDown,
@@ -16,21 +15,12 @@ import {
   Sun,
   Moon,
   Menu,
-  Search,
-  Keyboard,
   Building,
   Check,
-  Receipt,
-  Truck,
-  Wallet,
-  CircleDot,
 } from 'lucide-react';
 import { FeatureKey } from '@pos/shared';
-import { Breadcrumbs } from './Breadcrumbs.js';
+import { HeaderSearch } from './HeaderSearch.js';
 import { AddMoreMenu } from './AddMoreMenu.js';
-import { GlobalSearchModal } from './GlobalSearchModal.js';
-import { KeyboardShortcutsModal } from './KeyboardShortcutsModal.js';
-import { NotificationCenter } from './NotificationCenter.js';
 import { QuickActionModals, QuickActionType } from './QuickActionModals.js';
 
 export interface NavbarProps {
@@ -44,10 +34,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // State for menus & modals
+  // State for menus & quick action modals
   const [isAddMoreOpen, setIsAddMoreOpen] = useState(false);
-  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
-  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [activeQuickModal, setActiveQuickModal] = useState<QuickActionType>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -80,17 +68,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
     return () => clearInterval(interval);
   }, [currentBranchId, isSuperAdmin]);
 
-  // Global Keyboard Shortcuts (Alt+S, Alt+F, Alt+I, Alt+R, Alt+M, Alt+D, Alt+P, Alt+G, Alt+L, Alt+O, Ctrl+K)
+  // Global Keyboard Shortcuts (Alt+S for POS, Alt+P for Purchases, Alt+E for Expenses)
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
-      // Ctrl + K or Cmd + K: Global Search
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault();
-        setIsGlobalSearchOpen(true);
-        return;
-      }
-
-      // Check if user is actively typing in an input, textarea, or contentEditable element
       const activeElement = document.activeElement;
       const isInputActive =
         activeElement instanceof HTMLInputElement ||
@@ -107,45 +87,13 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
             e.preventDefault();
             navigate('/pos');
             break;
-          case 'f': // Alt + F: Sale Order / Advance Order
+          case 'p': // Alt + P: Add Purchase
             e.preventDefault();
-            setActiveQuickModal('ADVANCE_ORDER');
-            break;
-          case 'i': // Alt + I: Payment-In
-            e.preventDefault();
-            setActiveQuickModal('PAYMENT_IN');
-            break;
-          case 'r': // Alt + R: Sale Return / Refund
-            e.preventDefault();
-            setActiveQuickModal('SALE_RETURN');
-            break;
-          case 'm': // Alt + M: Estimate / Quotation
-            e.preventDefault();
-            setActiveQuickModal('ESTIMATE_QUOTATION');
-            break;
-          case 'd': // Alt + D: Delivery Challan
-            e.preventDefault();
-            setActiveQuickModal('DELIVERY_CHALLAN');
+            navigate('/app/purchases?action=new-bill');
             break;
           case 'e': // Alt + E: Record Expense
             e.preventDefault();
             setActiveQuickModal('RECORD_EXPENSE');
-            break;
-          case 'p': // Alt + P: Add Purchase / Purchase Bill
-            e.preventDefault();
-            navigate('/app/purchases?action=new-bill');
-            break;
-          case 'g': // Alt + G: Purchase Order
-            e.preventDefault();
-            navigate('/app/purchases');
-            break;
-          case 'l': // Alt + L: Purchase Return
-            e.preventDefault();
-            setActiveQuickModal('PURCHASE_RETURN');
-            break;
-          case 'o': // Alt + O: Payment-Out
-            e.preventDefault();
-            setActiveQuickModal('PAYMENT_OUT');
             break;
           default:
             break;
@@ -179,15 +127,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
     branches?.find((b) => b.id === (currentBranchId || user?.branchId))?.name || 'Main Branch';
 
   const isPosActive = location.pathname === '/pos';
-  const isOrdersActive = location.pathname.startsWith('/app/orders');
   const isKdsActive = location.pathname === '/kds';
 
   return (
     <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 h-12 min-h-[48px] max-h-[48px] shrink-0 transition-colors z-30 sticky top-0">
-      <div className="px-2.5 sm:px-4 h-full">
+      <div className="px-2.5 sm:px-3 lg:px-4 h-full">
         <div className="flex items-center justify-between h-full space-x-2 sm:space-x-3">
           {/* ========================================================= */}
-          {/* LEFT: Mobile Toggle + Brand & Compact Context Area        */}
+          {/* 1. LEFT: Mobile Toggle + Restaurant & Branch Identity    */}
           {/* ========================================================= */}
           <div className="flex items-center space-x-2 shrink-0">
             {/* Mobile hamburger menu toggle */}
@@ -200,256 +147,162 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
               <Menu className="w-4 h-4" />
             </button>
 
-            {/* Mobile Brand Link (< md) */}
-            <div className="flex items-center space-x-1.5 md:hidden">
-              <Link to={isSuperAdmin ? '/platform-admin' : '/app'} className="flex items-center space-x-1.5">
-                <div className="w-7 h-7 rounded-lg bg-orange-600 flex items-center justify-center text-white shadow-sm">
-                  <UtensilsCrossed className="w-3.5 h-3.5" />
-                </div>
-              </Link>
-            </div>
-
-            {/* Desktop Navigation Breadcrumbs & Shift Status */}
-            <div className="hidden md:flex items-center space-x-2.5">
-              {isSuperAdmin ? (
-                <>
-                  <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold border border-blue-500/20 shrink-0">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Platform Super Admin</span>
-                  </div>
-                  <div className="h-4 w-px bg-slate-200 dark:bg-slate-800" />
-                </>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Open Shift</span>
-                  </div>
-                  <div className="h-3.5 w-px bg-slate-200 dark:bg-slate-800 hidden lg:block" />
-                </div>
-              )}
-              <Breadcrumbs />
-            </div>
+            {/* Restaurant Brand & Branch Info */}
+            <Link
+              to={isSuperAdmin ? '/platform-admin' : '/app'}
+              className="flex items-center space-x-2 shrink-0 group"
+              title={tenant?.name || 'Restaurant POS'}
+            >
+              <div className="w-7 h-7 rounded-lg bg-orange-600 flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-105 transition-transform">
+                <UtensilsCrossed className="w-3.5 h-3.5" />
+              </div>
+              <div className="hidden sm:flex flex-col text-left leading-tight">
+                <span className="font-black text-xs text-slate-900 dark:text-white truncate max-w-[110px] md:max-w-[140px] lg:max-w-[170px]">
+                  {isSuperAdmin ? 'Platform Admin' : tenant?.name || 'Restaurant POS'}
+                </span>
+                {!isSuperAdmin ? (
+                  <span className="text-[10px] text-slate-400 font-semibold truncate max-w-[110px] md:max-w-[140px] lg:max-w-[170px] flex items-center gap-0.5">
+                    <Building className="w-2.5 h-2.5 shrink-0" />
+                    <span className="truncate">{activeBranchName}</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">Super Admin</span>
+                )}
+              </div>
+            </Link>
           </div>
 
           {/* ========================================================= */}
-          {/* CENTER: Vyapar Quick-Entry Action Pills                   */}
+          {/* 2. CENTER-LEFT: Small Global Search Bar                   */}
           {/* ========================================================= */}
           {!isSuperAdmin && (
-            <div className="flex items-center space-x-1.5 overflow-x-auto py-0.5 scrollbar-none">
-              {/* 1. + POS Bill (Alt + S) */}
-              <Link
-                to="/pos"
-                className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold shadow-sm transition-all whitespace-nowrap ${
-                  isPosActive
-                    ? 'bg-orange-600 text-white ring-2 ring-orange-500/40'
-                    : 'bg-orange-600 hover:bg-orange-700 text-white'
-                }`}
-                title="POS Billing Terminal (Alt+S)"
-              >
-                <Monitor className="w-3.5 h-3.5 shrink-0" />
-                <span>+ POS Bill</span>
-                <span className="hidden xl:inline-block px-1 py-0.2 rounded bg-black/25 text-[9px] font-mono">
-                  Alt+S
-                </span>
-              </Link>
-
-              {/* 2. + Purchase Bill (Alt + P) */}
-              <Link
-                to="/app/purchases?action=new-bill"
-                className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all whitespace-nowrap"
-                title="Record Purchase Invoice (Alt+P)"
-              >
-                <Truck className="w-3.5 h-3.5 shrink-0" />
-                <span>+ Purchase Bill</span>
-                <span className="hidden xl:inline-block px-1 py-0.2 rounded bg-black/25 text-[9px] font-mono">
-                  Alt+P
-                </span>
-              </Link>
-
-              {/* 3. + Expense (Alt + E) */}
-              <button
-                type="button"
-                onClick={() => setActiveQuickModal('RECORD_EXPENSE')}
-                className="hidden sm:flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white shadow-sm transition-all whitespace-nowrap"
-                title="Record Expense (Alt+E)"
-              >
-                <Wallet className="w-3.5 h-3.5 shrink-0" />
-                <span>+ Expense</span>
-                <span className="hidden xl:inline-block px-1 py-0.2 rounded bg-black/25 text-[9px] font-mono">
-                  Alt+E
-                </span>
-              </button>
-
-              {/* 4. Orders */}
-              <Link
-                to="/app/orders"
-                className={`flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${
-                  isOrdersActive
-                    ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900'
-                    : 'bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
-                }`}
-                title="Live Orders"
-              >
-                <ShoppingBag className="w-3.5 h-3.5 shrink-0 text-blue-500" />
-                <span>Orders</span>
-                {badges.activeOrders > 0 && (
-                  <span className="ml-0.5 px-1 rounded-full bg-blue-500 text-[9px] font-bold text-white leading-none py-0.5">
-                    {badges.activeOrders}
-                  </span>
-                )}
-              </Link>
-
-              {/* 5. Kitchen KDS */}
-              {hasFeature(FeatureKey.KDS) && (
-                <Link
-                  to="/kds"
-                  className={`hidden md:flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${
-                    isKdsActive
-                      ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900'
-                      : 'bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
-                  }`}
-                  title="Kitchen Display System"
-                >
-                  <ChefHat className="w-3.5 h-3.5 shrink-0 text-orange-500" />
-                  <span>KDS</span>
-                  {badges.pendingKitchen > 0 && (
-                    <span className="ml-0.5 px-1 rounded-full bg-orange-500 text-[9px] font-bold text-white leading-none py-0.5">
-                      {badges.pendingKitchen}
-                    </span>
-                  )}
-                </Link>
-              )}
-
-              {/* 6. Add More Dropdown */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIsAddMoreOpen(!isAddMoreOpen)}
-                  className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium border transition-all ${
-                    isAddMoreOpen
-                      ? 'bg-orange-50 dark:bg-orange-950/40 text-orange-600 border-orange-300'
-                      : 'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
-                  }`}
-                  title="More ERP Operations"
-                >
-                  <PlusCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  <span className="hidden lg:inline text-[11px]">More</span>
-                  <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isAddMoreOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                <AddMoreMenu
-                  isOpen={isAddMoreOpen}
-                  onClose={() => setIsAddMoreOpen(false)}
-                  onTriggerModal={(modalType) => setActiveQuickModal(modalType)}
-                />
-              </div>
+            <div className="flex-1 max-w-[180px] sm:max-w-[220px] md:max-w-[260px] lg:max-w-[280px]">
+              <HeaderSearch />
             </div>
           )}
 
           {/* ========================================================= */}
-          {/* RIGHT: Utility Actions Toolbar                            */}
+          {/* 3. RIGHT: POS Terminal, KDS, Add More, User/Profile       */}
           {/* ========================================================= */}
-          <div className="flex items-center space-x-1.5 sm:space-x-2.5 shrink-0">
-            {/* Global Search Button */}
+          <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0 ml-auto">
             {!isSuperAdmin && (
-              <button
-                type="button"
-                onClick={() => setIsGlobalSearchOpen(true)}
-                className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-medium border border-slate-200/80 dark:border-slate-700/60 transition-colors"
-                title="Global Search (Ctrl + K)"
-              >
-                <Search className="w-3.5 h-3.5" />
-                <span className="text-slate-500 dark:text-slate-400">Search...</span>
-                <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono text-[9px] font-bold text-slate-500">
-                  Ctrl+K
-                </kbd>
-              </button>
+              <>
+                {/* POS Terminal Shortcut Button */}
+                <Link
+                  to="/pos"
+                  className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm shrink-0 ${
+                    isPosActive
+                      ? 'bg-orange-600 text-white ring-2 ring-orange-400/50'
+                      : 'bg-orange-600 hover:bg-orange-700 text-white'
+                  }`}
+                  title="Launch POS Billing Terminal"
+                >
+                  <Monitor className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden xs:inline">POS Terminal</span>
+                  <span className="xs:hidden">POS</span>
+                </Link>
+
+                {/* Kitchen Display (KDS) Button */}
+                {hasFeature(FeatureKey.KDS) && (
+                  <Link
+                    to="/kds"
+                    className={`flex items-center space-x-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all shrink-0 ${
+                      isKdsActive
+                        ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900'
+                        : 'bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                    }`}
+                    title="Kitchen Display System"
+                  >
+                    <ChefHat className="w-3.5 h-3.5 shrink-0 text-orange-500" />
+                    <span>KDS</span>
+                    {badges.pendingKitchen > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-orange-500 text-[10px] font-bold text-white leading-tight">
+                        {badges.pendingKitchen}
+                      </span>
+                    )}
+                  </Link>
+                )}
+
+                {/* Add More Dropdown (Vyapar Quick-Entry Action Menu) */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddMoreOpen(!isAddMoreOpen)}
+                    className={`flex items-center space-x-1 sm:space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 shadow-sm ${
+                      isAddMoreOpen
+                        ? 'bg-emerald-700 text-white ring-2 ring-emerald-400/50'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    }`}
+                    title="Vyapar Quick-Entry Actions Menu"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Add More</span>
+                    <span className="sm:hidden">More</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${isAddMoreOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  <AddMoreMenu
+                    isOpen={isAddMoreOpen}
+                    onClose={() => setIsAddMoreOpen(false)}
+                    onTriggerModal={(modalType) => setActiveQuickModal(modalType)}
+                  />
+                </div>
+              </>
             )}
 
-            {/* Mobile/Compact Search Icon */}
-            {!isSuperAdmin && (
-              <button
-                type="button"
-                onClick={() => setIsGlobalSearchOpen(true)}
-                className="lg:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                title="Global Search (Ctrl + K)"
-              >
-                <Search className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* Notification Center */}
-            {!isSuperAdmin && (
-              <NotificationCenter badges={badges} onRefresh={fetchBadges} />
-            )}
-
-            {/* Keyboard Shortcut Help */}
-            {!isSuperAdmin && (
-              <button
-                type="button"
-                onClick={() => setIsShortcutsOpen(true)}
-                className="hidden sm:flex p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                title="Keyboard Shortcuts Cheat Sheet"
-                aria-label="View shortcuts"
-              >
-                <Keyboard className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* Dark / Light Mode Toggle */}
+            {/* Dark / Light Theme Toggle */}
             <button
               type="button"
               onClick={toggleTheme}
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-              className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
               aria-label="Toggle color theme"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
             </button>
 
             {/* User Profile Dropdown */}
-            <div className="relative" ref={profileMenuRef}>
+            <div className="relative shrink-0" ref={profileMenuRef}>
               <button
                 type="button"
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
-                className="flex items-center space-x-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                className="flex items-center space-x-1.5 p-1 sm:px-2 sm:py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
                 aria-label="User profile options"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 font-black text-xs">
-                  {user?.fullName?.charAt(0).toUpperCase() || <User className="w-4 h-4" />}
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 font-black text-xs">
+                  {user?.fullName?.charAt(0).toUpperCase() || <User className="w-3.5 h-3.5" />}
                 </div>
-                <div className="hidden xl:block text-left">
-                  <span className="text-xs font-black text-slate-900 dark:text-white block leading-tight truncate max-w-[110px]">
+                <div className="hidden xl:block text-left leading-tight">
+                  <span className="text-xs font-black text-slate-900 dark:text-white block truncate max-w-[100px]">
                     {user?.fullName || 'User'}
                   </span>
-                  <span className="text-[10px] text-slate-400 font-semibold capitalize block leading-none mt-0.5">
+                  <span className="text-[10px] text-slate-400 font-semibold capitalize block truncate max-w-[100px]">
                     {user?.role?.replace('_', ' ').toLowerCase() || 'Staff'}
                   </span>
                 </div>
-                <ChevronDown className={`hidden xl:block w-3.5 h-3.5 text-slate-400 transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`hidden sm:block w-3 h-3 text-slate-400 transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {/* Profile Menu Popover */}
               {isProfileOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
-                    <p className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
+                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
+                    <p className="font-extrabold text-xs text-slate-900 dark:text-white truncate">
                       {user?.fullName || 'User'}
                     </p>
                     <p className="text-[11px] text-slate-400 font-mono truncate">{user?.email}</p>
-                    <div className="mt-2 flex items-center space-x-1.5">
+                    <div className="mt-1.5 flex items-center space-x-1.5">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800">
                         {user?.role?.replace('_', ' ').toLowerCase() || 'Staff'}
                       </span>
-                      <span className="text-[10px] text-slate-400 font-semibold">• {activeBranchName}</span>
+                      <span className="text-[10px] text-slate-400 font-semibold truncate">• {activeBranchName}</span>
                     </div>
                   </div>
 
                   {/* Multi-Branch Switcher */}
                   {branches && branches.length > 1 && switchBranch && (
                     <div className="p-2 border-b border-slate-100 dark:border-slate-800">
-                      <span className="px-3 py-1 block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      <span className="px-2 py-1 block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                         Switch Outlet Branch
                       </span>
                       <div className="space-y-0.5">
@@ -462,7 +315,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
                                 switchBranch(b.id);
                                 setIsProfileOpen(false);
                               }}
-                              className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                                 isCurrent
                                   ? 'bg-slate-100 dark:bg-slate-800 text-brand-600 dark:text-brand-400 font-bold'
                                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'
@@ -481,17 +334,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
                   )}
 
                   {/* Actions */}
-                  <div className="p-2">
-                    <button
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        setIsShortcutsOpen(true);
-                      }}
-                      className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                    >
-                      <Keyboard className="w-4 h-4 text-slate-400" />
-                      <span>Keyboard Shortcuts</span>
-                    </button>
+                  <div className="p-1.5">
                     <button
                       onClick={handleLogout}
                       className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
@@ -508,8 +351,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
       </div>
 
       {/* Global Modals Mounted at Root */}
-      <GlobalSearchModal isOpen={isGlobalSearchOpen} onClose={() => setIsGlobalSearchOpen(false)} />
-      <KeyboardShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
       <QuickActionModals
         activeModal={activeQuickModal}
         onClose={() => setActiveQuickModal(null)}

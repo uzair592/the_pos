@@ -1,36 +1,30 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext.js';
 import {
   Monitor,
-  CalendarClock,
-  ArrowDownLeft,
-  RotateCcw,
-  FileText,
-  Truck,
-  PlusCircle,
-  FolderPlus,
-  Sparkles,
-  Layers,
-  ToggleRight,
-  Receipt,
-  ClipboardList,
-  Undo2,
-  ArrowUpRight,
-  UserPlus,
-  PackagePlus,
-  Sliders,
-  ArrowLeftRight,
-  AlertTriangle,
-  Coins,
-  BookOpen,
-  UserCheck,
-  CalendarCheck,
+  ShoppingBag,
   Users,
+  Truck,
+  Receipt,
+  Building,
+  Boxes,
+  Utensils,
+  Calculator,
+  AlertTriangle,
+  FileText,
+  Landmark,
+  ArrowDownLeft,
+  BarChart3,
+  Layers,
+  DollarSign,
+  Sparkles,
   LayoutGrid,
-  Search,
+  Clock,
   X,
-  ChevronDown,
+  PlusCircle,
 } from 'lucide-react';
+import { FeatureKey, Permission } from '@pos/shared';
 import { QuickActionType } from './QuickActionModals.js';
 
 interface AddMoreMenuProps {
@@ -41,11 +35,12 @@ interface AddMoreMenuProps {
 
 interface ActionItem {
   id: string;
-  name: string;
-  shortcut?: string;
+  label: string;
   icon: React.ComponentType<{ className?: string }>;
   color: string;
   action: () => void;
+  permission?: Permission;
+  feature?: FeatureKey;
 }
 
 interface ActionCategory {
@@ -55,7 +50,7 @@ interface ActionCategory {
 
 export const AddMoreMenu: React.FC<AddMoreMenuProps> = ({ isOpen, onClose, onTriggerModal }) => {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
+  const { user, isSuperAdmin, hasPermission, hasFeature } = useAuth();
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -89,342 +84,290 @@ export const AddMoreMenu: React.FC<AddMoreMenuProps> = ({ isOpen, onClose, onTri
     fn();
   };
 
+  const isItemAllowed = (item: ActionItem) => {
+    if (isSuperAdmin) return true;
+    const roleStr = String(user?.role || '').toUpperCase();
+    if (
+      roleStr === 'RESTAURANT_OWNER' ||
+      roleStr === 'OWNER' ||
+      roleStr === 'BRANCH_MANAGER' ||
+      roleStr === 'MANAGER'
+    ) {
+      return true;
+    }
+    if (item.feature && !hasFeature(item.feature)) return false;
+    if (item.permission && !hasPermission(item.permission)) return false;
+    return true;
+  };
+
   const categories: ActionCategory[] = [
     {
-      title: 'A. Sales & Order Operations',
+      title: 'Sales & Orders',
       items: [
         {
-          id: 'pos',
-          name: 'New Sale / POS Terminal',
-          shortcut: 'Alt + S',
+          id: 'pos_sale',
+          label: 'New Sale / POS Billing',
           icon: Monitor,
-          color: 'text-brand-500 bg-brand-50 dark:bg-brand-950/40',
+          color: 'text-orange-500',
+          permission: Permission.ORDERS_CREATE,
           action: () => runAndClose(() => navigate('/pos')),
         },
         {
-          id: 'advance_order',
-          name: 'Sale Order / Advance Order',
-          shortcut: 'Alt + F',
-          icon: CalendarClock,
-          color: 'text-blue-500 bg-blue-50 dark:bg-blue-950/40',
-          action: () => runAndClose(() => onTriggerModal('ADVANCE_ORDER')),
+          id: 'orders_list',
+          label: 'Orders',
+          icon: ShoppingBag,
+          color: 'text-blue-500',
+          permission: Permission.ORDERS_VIEW,
+          action: () => runAndClose(() => navigate('/app/orders')),
         },
         {
-          id: 'payment_in',
-          name: 'Payment-In (Customer Receipt)',
-          shortcut: 'Alt + I',
-          icon: ArrowDownLeft,
-          color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40',
-          action: () => runAndClose(() => onTriggerModal('PAYMENT_IN')),
-        },
-        {
-          id: 'sale_return',
-          name: 'Sale Return / Refund',
-          shortcut: 'Alt + R',
-          icon: RotateCcw,
-          color: 'text-rose-500 bg-rose-50 dark:bg-rose-950/40',
-          action: () => runAndClose(() => onTriggerModal('SALE_RETURN')),
-        },
-        {
-          id: 'estimate',
-          name: 'Estimate / Quotation',
-          shortcut: 'Alt + M',
-          icon: FileText,
-          color: 'text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40',
-          action: () => runAndClose(() => onTriggerModal('ESTIMATE_QUOTATION')),
-        },
-        {
-          id: 'delivery_challan',
-          name: 'Delivery Challan Slip',
-          shortcut: 'Alt + D',
-          icon: Truck,
-          color: 'text-cyan-500 bg-cyan-50 dark:bg-cyan-950/40',
-          action: () => runAndClose(() => onTriggerModal('DELIVERY_CHALLAN')),
+          id: 'customers',
+          label: 'Customers',
+          icon: Users,
+          color: 'text-teal-500',
+          permission: Permission.ORDERS_VIEW,
+          action: () => runAndClose(() => onTriggerModal('ADD_CUSTOMER')),
         },
       ],
     },
     {
-      title: 'B. Menu & Product Management',
+      title: 'Purchases',
       items: [
         {
-          id: 'create_product',
-          name: 'Create Menu Item',
-          icon: PlusCircle,
-          color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/40',
-          action: () => runAndClose(() => navigate('/app/menu?action=new-product')),
-        },
-        {
-          id: 'create_category',
-          name: 'Create Menu Category',
-          icon: FolderPlus,
-          color: 'text-orange-500 bg-orange-50 dark:bg-orange-950/40',
-          action: () => runAndClose(() => navigate('/app/menu?action=new-category')),
-        },
-        {
-          id: 'create_deal',
-          name: 'Create Deal / Combo Meal',
-          icon: Sparkles,
-          color: 'text-yellow-500 bg-yellow-50 dark:bg-yellow-950/40',
-          action: () => runAndClose(() => onTriggerModal('CREATE_DEAL')),
-        },
-        {
-          id: 'create_addon',
-          name: 'Create Modifier / Add-on',
-          icon: Layers,
-          color: 'text-teal-500 bg-teal-50 dark:bg-teal-950/40',
-          action: () => runAndClose(() => navigate('/app/menu?action=new-modifier')),
-        },
-        {
-          id: 'menu_availability',
-          name: 'Manage Menu Availability',
-          icon: ToggleRight,
-          color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40',
-          action: () => runAndClose(() => onTriggerModal('MENU_AVAILABILITY')),
-        },
-      ],
-    },
-    {
-      title: 'C. Purchase & Supplier Operations',
-      items: [
-        {
-          id: 'add_purchase',
-          name: 'Add Purchase / Purchase Bill',
-          shortcut: 'Alt + P',
+          id: 'new_purchase',
+          label: 'New Purchase',
           icon: Receipt,
-          color: 'text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40',
+          color: 'text-indigo-500',
+          feature: FeatureKey.INVENTORY,
+          permission: Permission.INVENTORY_MANAGE,
           action: () => runAndClose(() => navigate('/app/purchases?action=new-bill')),
         },
         {
-          id: 'purchase_order',
-          name: 'Create Purchase Order',
-          shortcut: 'Alt + G',
-          icon: ClipboardList,
-          color: 'text-blue-500 bg-blue-50 dark:bg-blue-950/40',
+          id: 'purchase_history',
+          label: 'Purchase History',
+          icon: Truck,
+          color: 'text-sky-500',
+          feature: FeatureKey.INVENTORY,
+          permission: Permission.INVENTORY_MANAGE,
           action: () => runAndClose(() => navigate('/app/purchases')),
         },
         {
-          id: 'purchase_return',
-          name: 'Purchase Return to Supplier',
-          shortcut: 'Alt + L',
-          icon: Undo2,
-          color: 'text-rose-500 bg-rose-50 dark:bg-rose-950/40',
-          action: () => runAndClose(() => onTriggerModal('PURCHASE_RETURN')),
-        },
-        {
-          id: 'payment_out',
-          name: 'Payment-Out (Supplier Payment)',
-          shortcut: 'Alt + O',
-          icon: ArrowUpRight,
-          color: 'text-purple-500 bg-purple-50 dark:bg-purple-950/40',
-          action: () => runAndClose(() => onTriggerModal('PAYMENT_OUT')),
-        },
-        {
-          id: 'add_supplier',
-          name: 'Add Supplier Profile',
-          icon: UserPlus,
-          color: 'text-sky-500 bg-sky-50 dark:bg-sky-950/40',
+          id: 'suppliers',
+          label: 'Suppliers',
+          icon: Building,
+          color: 'text-cyan-500',
+          feature: FeatureKey.INVENTORY,
+          permission: Permission.INVENTORY_MANAGE,
           action: () => runAndClose(() => onTriggerModal('ADD_SUPPLIER')),
         },
       ],
     },
     {
-      title: 'D. Inventory Operations',
+      title: 'Inventory',
       items: [
         {
-          id: 'add_ingredient',
-          name: 'Add Raw Ingredient',
-          icon: PackagePlus,
-          color: 'text-purple-500 bg-purple-50 dark:bg-purple-950/40',
-          action: () => runAndClose(() => navigate('/app/inventory?tab=STOCK&action=new-ingredient')),
+          id: 'inventory_mgmt',
+          label: 'Inventory Management',
+          icon: Boxes,
+          color: 'text-purple-500',
+          feature: FeatureKey.INVENTORY,
+          permission: Permission.INVENTORY_VIEW,
+          action: () => runAndClose(() => navigate('/app/inventory')),
         },
         {
-          id: 'stock_adjustment',
-          name: 'Stock Adjustment (Shortage / Wastage)',
-          icon: Sliders,
-          color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/40',
-          action: () => runAndClose(() => navigate('/app/inventory?tab=adjustments&action=new')),
+          id: 'menu_items',
+          label: 'Menu Items',
+          icon: Utensils,
+          color: 'text-amber-500',
+          permission: Permission.MENU_VIEW,
+          action: () => runAndClose(() => navigate('/app/menu')),
         },
         {
-          id: 'stock_transfer',
-          name: 'Branch Stock Transfer',
-          icon: ArrowLeftRight,
-          color: 'text-cyan-500 bg-cyan-50 dark:bg-cyan-950/40',
-          action: () => runAndClose(() => navigate('/app/inventory?tab=TRANSFERS&action=new')),
+          id: 'recipes',
+          label: 'Recipes',
+          icon: Calculator,
+          color: 'text-emerald-500',
+          permission: Permission.MENU_MANAGE,
+          action: () => runAndClose(() => navigate('/app/recipe-costing')),
         },
         {
-          id: 'view_low_stock',
-          name: 'View Low Stock & Reorder',
+          id: 'wastage_mgmt',
+          label: 'Wastage Management',
           icon: AlertTriangle,
-          color: 'text-rose-500 bg-rose-50 dark:bg-rose-950/40',
-          action: () => runAndClose(() => navigate('/app/inventory?tab=low_stock')),
+          color: 'text-rose-500',
+          feature: FeatureKey.INVENTORY,
+          permission: Permission.INVENTORY_MANAGE,
+          action: () => runAndClose(() => navigate('/app/inventory?tab=wastage')),
         },
       ],
     },
     {
-      title: 'E. Finance & Expense Operations',
+      title: 'Finance',
       items: [
         {
-          id: 'expense_management',
-          name: 'Expense Management (Ledger & Audit)',
-          icon: Receipt,
-          color: 'text-rose-600 bg-rose-50 dark:bg-rose-950/40',
-          action: () => runAndClose(() => navigate('/app/expenses')),
-        },
-        {
-          id: 'record_expense',
-          name: 'Record Operating Expense',
-          icon: Receipt,
-          color: 'text-rose-500 bg-rose-50 dark:bg-rose-950/40',
+          id: 'add_expense',
+          label: 'Add Expense',
+          icon: FileText,
+          color: 'text-rose-500',
+          permission: Permission.EXPENSES_VIEW,
           action: () => runAndClose(() => onTriggerModal('RECORD_EXPENSE')),
         },
         {
-          id: 'cash_movement',
-          name: 'Cash In / Cash Out (Drawer)',
-          icon: Coins,
-          color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40',
-          action: () => runAndClose(() => onTriggerModal('CASH_MOVEMENT')),
+          id: 'cash_bank',
+          label: 'Cash & Bank',
+          icon: Landmark,
+          color: 'text-emerald-500',
+          permission: Permission.REPORTS_FINANCIAL,
+          action: () => runAndClose(() => navigate('/app/cash-and-bank')),
         },
         {
-          id: 'daybook',
-          name: 'Daybook & Register Shifts',
-          icon: BookOpen,
-          color: 'text-blue-500 bg-blue-50 dark:bg-blue-950/40',
-          action: () => runAndClose(() => navigate('/app/daybook')),
+          id: 'record_payment',
+          label: 'Record Payment',
+          icon: ArrowDownLeft,
+          color: 'text-blue-500',
+          permission: Permission.ORDERS_CREATE,
+          action: () => runAndClose(() => onTriggerModal('PAYMENT_IN')),
         },
       ],
     },
     {
-      title: 'F. Customers & Restaurant Operations',
+      title: 'Reports',
       items: [
         {
-          id: 'add_customer',
-          name: 'Add Customer Profile',
-          icon: UserCheck,
-          color: 'text-teal-500 bg-teal-50 dark:bg-teal-950/40',
-          action: () => runAndClose(() => onTriggerModal('ADD_CUSTOMER')),
+          id: 'sales_reports',
+          label: 'Sales Reports',
+          icon: BarChart3,
+          color: 'text-orange-500',
+          permission: Permission.REPORTS_FINANCIAL,
+          action: () => runAndClose(() => navigate('/app/reports?tab=sales')),
         },
         {
-          id: 'reservation',
-          name: 'Table Reservation',
-          icon: CalendarCheck,
-          color: 'text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40',
-          action: () => runAndClose(() => navigate('/app/orders?tab=reservations&action=new')),
+          id: 'purchase_reports',
+          label: 'Purchase Reports',
+          icon: FileText,
+          color: 'text-indigo-500',
+          permission: Permission.REPORTS_FINANCIAL,
+          action: () => runAndClose(() => navigate('/app/reports?tab=purchases')),
         },
         {
-          id: 'waitlist',
-          name: 'Waitlist Queue Entry',
-          icon: Users,
-          color: 'text-purple-500 bg-purple-50 dark:bg-purple-950/40',
-          action: () => runAndClose(() => navigate('/app/orders?tab=waitlist&action=new')),
+          id: 'inventory_reports',
+          label: 'Inventory Reports',
+          icon: Layers,
+          color: 'text-purple-500',
+          permission: Permission.REPORTS_FINANCIAL,
+          action: () => runAndClose(() => navigate('/app/reports?tab=inventory')),
         },
         {
-          id: 'manage_tables',
-          name: 'Manage Dining Tables & Floors',
+          id: 'profit_loss',
+          label: 'Profit & Loss',
+          icon: DollarSign,
+          color: 'text-emerald-500',
+          permission: Permission.REPORTS_FINANCIAL,
+          action: () => runAndClose(() => navigate('/app/reports/bill-profit-loss')),
+        },
+        {
+          id: 'costing_profitability',
+          label: 'Costing & Profitability',
+          icon: Sparkles,
+          color: 'text-amber-500',
+          permission: Permission.REPORTS_FINANCIAL,
+          action: () => runAndClose(() => navigate('/app/recipe-costing')),
+        },
+      ],
+    },
+    {
+      title: 'Restaurant Operations',
+      items: [
+        {
+          id: 'tables_floors',
+          label: 'Floor & Table Management',
           icon: LayoutGrid,
-          color: 'text-slate-600 bg-slate-100 dark:bg-slate-800',
+          color: 'text-slate-600 dark:text-slate-300',
+          permission: Permission.SETTINGS_MANAGE,
           action: () => runAndClose(() => navigate('/app/settings?tab=tables')),
+        },
+        {
+          id: 'shifts',
+          label: 'Shift Management',
+          icon: Clock,
+          color: 'text-blue-500',
+          permission: Permission.SHIFTS_VIEW,
+          action: () => runAndClose(() => navigate('/app/shifts')),
         },
       ],
     },
   ];
 
-  // Filter categories and items based on search input
-  const filteredCategories = categories
+  // Filter categories by permissions
+  const authorizedCategories = categories
     .map((cat) => ({
       ...cat,
-      items: cat.items.filter(
-        (it) =>
-          it.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (it.shortcut && it.shortcut.toLowerCase().includes(searchQuery.toLowerCase()))
-      ),
+      items: cat.items.filter(isItemAllowed),
     }))
     .filter((cat) => cat.items.length > 0);
 
   return (
     <div
       ref={menuRef}
-      className="absolute left-0 sm:left-auto top-full mt-2 w-full sm:w-[680px] lg:w-[860px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+      className="absolute right-0 top-full mt-2 w-[92vw] sm:w-[580px] md:w-[680px] lg:w-[720px] max-w-[740px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100"
       onClick={(e) => e.stopPropagation()}
     >
-      {/* In-Dropdown Search Header */}
-      <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex items-center justify-between">
-        <div className="relative flex-1 mr-3">
-          <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search restaurant operation or shortcut (e.g. Alt+P, Return, Expense, Deal)..."
-            autoFocus
-            className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+      {/* Header */}
+      <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <PlusCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+            Quick Actions Menu
+          </span>
+          <span className="hidden sm:inline text-[10px] text-slate-400 font-medium font-sans">
+            (Vyapar Desktop ERP)
+          </span>
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+          className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
           title="Close (ESC)"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Categorized Actions Grid */}
-      <div className="max-h-[70vh] overflow-y-auto p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredCategories.length === 0 ? (
-          <div className="col-span-full py-10 text-center text-slate-400">
-            <p className="font-semibold text-xs">No restaurant operations match "{searchQuery}"</p>
-          </div>
-        ) : (
-          filteredCategories.map((cat, idx) => (
-            <div key={idx} className="space-y-2">
-              <h4 className="font-extrabold text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 px-1">
-                {cat.title}
-              </h4>
-              <div className="space-y-1">
-                {cat.items.map((it) => {
-                  const Icon = it.icon;
-                  return (
-                    <button
-                      key={it.id}
-                      onClick={it.action}
-                      className="w-full flex items-center justify-between p-2 rounded-xl text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all group"
-                    >
-                      <div className="flex items-center space-x-2.5 min-w-0">
-                        <div className={`p-1.5 rounded-lg shrink-0 ${it.color} transition-transform group-hover:scale-105`}>
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <span className="font-bold text-xs text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white truncate">
-                          {it.name}
-                        </span>
-                      </div>
-                      {it.shortcut && (
-                        <kbd className="hidden sm:inline-block ml-2 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-[9px] font-black text-slate-500 dark:text-slate-400 shrink-0">
-                          {it.shortcut}
-                        </kbd>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+      {/* Categorized Quick Actions Grid (3 columns on desktop, 2 on tablet, 1 on mobile) */}
+      <div className="max-h-[min(500px,calc(100vh-80px))] overflow-y-auto p-3.5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {authorizedCategories.map((cat, idx) => (
+          <div
+            key={idx}
+            className="p-2.5 rounded-xl bg-slate-50/60 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/60 space-y-1.5"
+          >
+            <h4 className="font-black text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 px-1 border-b border-slate-200/50 dark:border-slate-700/50 pb-1">
+              {cat.title}
+            </h4>
+            <div className="space-y-0.5">
+              {cat.items.map((it) => {
+                const Icon = it.icon;
+                return (
+                  <button
+                    key={it.id}
+                    onClick={it.action}
+                    className="w-full flex items-center space-x-2 px-2 py-1.5 rounded-lg text-left hover:bg-white dark:hover:bg-slate-700/70 hover:shadow-xs transition-all group"
+                  >
+                    <Icon className={`w-3.5 h-3.5 shrink-0 ${it.color} transition-transform group-hover:scale-110`} />
+                    <span className="font-bold text-xs text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white truncate">
+                      {it.label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          ))
-        )}
+          </div>
+        ))}
       </div>
 
-      {/* Footer Info */}
-      <div className="px-5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-        <span>Press <strong>ESC</strong> to dismiss menu</span>
-        <span>Keyboard shortcuts are active platform-wide</span>
+      {/* Footer */}
+      <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+        <span>Click any action to launch page or entry form</span>
+        <span>Press <strong>ESC</strong> to dismiss</span>
       </div>
     </div>
   );
 };
-

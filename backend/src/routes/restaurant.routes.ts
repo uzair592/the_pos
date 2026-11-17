@@ -966,14 +966,14 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
         `SELECT p.id, p.name, p.sku, p.base_price, c.name as category_name
          FROM products p
          LEFT JOIN categories c ON c.id = p.category_id
-         WHERE p.tenant_id = $1 AND p.is_active = true AND (p.name ILIKE $2 OR p.sku ILIKE $2)
+         WHERE p.tenant_id = $1 AND (p.is_available = true OR p.is_available IS NULL) AND (p.name ILIKE $2 OR p.sku ILIKE $2)
          ORDER BY p.name ASC LIMIT 5`,
         [tenantId, searchTerm],
         { tenantId }
       ),
       // 3. Ingredients & Stock
       query(
-        `SELECT i.id, i.name, i.sku, i.base_unit, i.purchase_unit, i.purchase_cost,
+        `SELECT i.id, i.name, i.sku, i.unit, i.cost_per_unit,
                 COALESCE(bs.current_stock, 0) as current_stock
          FROM ingredients i
          LEFT JOIN branch_stocks bs ON bs.ingredient_id = i.id ${branchId ? 'AND bs.branch_id = $3' : ''}
