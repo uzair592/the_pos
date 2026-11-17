@@ -285,14 +285,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'SALES',
       items: [
         {
-          to: '/pos',
-          label: 'Bill',
-          icon: Monitor,
-          badge: 'SALE',
-          badgeColor: 'bg-emerald-500 text-white',
-          shortcut: 'Alt+S',
-        },
-        {
           to: '/app/orders',
           label: 'Orders',
           icon: ShoppingBag,
@@ -335,13 +327,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           permission: Permission.INVENTORY_VIEW,
           badge: badges.lowStock > 0 ? String(badges.lowStock) : undefined,
           badgeColor: 'bg-rose-500 text-white',
-        },
-        {
-          to: '/app/recipe-costing',
-          label: 'Costing',
-          icon: Calculator,
-          feature: FeatureKey.INVENTORY,
-          permissions: [Permission.INVENTORY_VIEW, Permission.REPORTS_FINANCIAL, Permission.MENU_VIEW],
         },
       ],
     },
@@ -403,11 +388,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Check if a link is currently active
   const isUrlActive = (targetUrl?: string, exact: boolean = false) => {
     if (!targetUrl) return false;
-    if (targetUrl === '/app/recipe-costing' || targetUrl === '/app/reports/recipe-costing') {
-      return location.pathname === '/app/recipe-costing' || location.pathname === '/app/reports/recipe-costing';
-    }
     if (targetUrl === '/app/reports') {
-      return location.pathname === '/app/reports' && !location.pathname.includes('recipe-costing');
+      return location.pathname.startsWith('/app/reports') || location.pathname === '/app/recipe-costing';
     }
     if (targetUrl.includes('?')) {
       const [path, query] = targetUrl.split('?');

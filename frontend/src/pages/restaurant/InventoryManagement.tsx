@@ -1,11 +1,13 @@
 import { Link, useSearchParams } from 'react-router-dom';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
 import { ActionMenu } from '../../components/common/ActionMenu.js';
 import { IngredientUsageModal } from '../../components/restaurant/IngredientUsageModal.js';
+import { InventoryItemCard } from '../../components/restaurant/InventoryItemCard.js';
+import { InventoryDetailsModal } from '../../components/restaurant/InventoryDetailsModal.js';
 import {
   Boxes,
   Edit2,
@@ -41,6 +43,10 @@ import {
   Tag,
   FolderPlus,
   FolderTree,
+  LayoutGrid,
+  List,
+  ArrowUpDown,
+  Filter,
 } from 'lucide-react';
 import {
   StockUnit,
@@ -58,7 +64,7 @@ export const InventoryManagement: React.FC = () => {
   const { success, error } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryTab = searchParams.get('tab');
-  const initialTab = queryTab === 'adjustments' ? 'BATCHES' : (queryTab as any) || 'overview';
+  const initialTab = queryTab === 'adjustments' ? 'BATCHES' : (queryTab as any) || 'STOCK';
 
   const [ingredients, setIngredients] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -70,6 +76,15 @@ export const InventoryManagement: React.FC = () => {
   const [movementTypeFilter, setMovementTypeFilter] = useState('');
   const [movementIngredientFilter, setMovementIngredientFilter] = useState('');
   const [reconciling, setReconciling] = useState(false);
+
+  // Dedicated Wastage Management State
+  const [isWastageModalOpen, setIsWastageModalOpen] = useState(false);
+  const [wastageForm, setWastageForm] = useState({
+    ingredientId: '',
+    quantity: 1,
+    reasonCategory: 'SPOILED',
+    description: '',
+  });
 
   // Order Inventory Usage state
   const [orderConsumptions, setOrderConsumptions] = useState<any[]>([]);
@@ -85,7 +100,7 @@ export const InventoryManagement: React.FC = () => {
   const [loadingValuation, setLoadingValuation] = useState(false);
   const [expandedIngBatches, setExpandedIngBatches] = useState<Record<string, boolean>>({});
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'STOCK' | 'VALUATION' | 'ORDER_USAGE' | 'movements' | 'low_stock' | 'BATCHES' | 'RECIPES' | 'TRANSFERS'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'overview' | 'STOCK' | 'VALUATION' | 'ORDER_USAGE' | 'movements' | 'wastage' | 'low_stock' | 'BATCHES' | 'RECIPES' | 'TRANSFERS'>(initialTab);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -101,7 +116,9 @@ export const InventoryManagement: React.FC = () => {
 
     if (tabParam === 'adjustments') {
       setActiveTab('BATCHES');
-    } else if (tabParam && ['overview', 'STOCK', 'VALUATION', 'ORDER_USAGE', 'movements', 'low_stock', 'BATCHES', 'RECIPES', 'TRANSFERS'].includes(tabParam)) {
+    } else if (tabParam === 'wastage') {
+      setActiveTab('wastage');
+    } else if (tabParam && ['overview', 'STOCK', 'VALUATION', 'ORDER_USAGE', 'movements', 'wastage', 'low_stock', 'BATCHES', 'RECIPES', 'TRANSFERS'].includes(tabParam)) {
       setActiveTab(tabParam as any);
     }
   }, [searchParams]);
@@ -144,9 +161,36 @@ export const InventoryManagement: React.FC = () => {
     setUsageModalOpen(true);
   };
 
-  // Stock filters
+  // Stock filters & View Mode (Default: Grid View)
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
+    try {
+      const saved = localStorage.getItem('pos_inventory_view_mode');
+      if (saved === 'grid' || saved === 'table') return saved;
+    } catch {}
+    return 'grid'; // Grid View is the primary default
+  });
+
+  const handleToggleViewMode = (mode: 'grid' | 'table') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('pos_inventory_view_mode', mode);
+    } catch {}
+  };
+
   const [stockSearchTerm, setStockSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [stockStatusFilter, setStockStatusFilter] = useState<'ALL' | 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK'>('ALL');
+  const [stockSortField, setStockSortField] = useState<'name' | 'stock' | 'value'>('name');
+  const [stockSortOrder, setStockSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // Detailed Item View Modal
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [detailsIngredientId, setDetailsIngredientId] = useState<string | null>(null);
+
+  const handleOpenDetails = (item: any) => {
+    setDetailsIngredientId(item.id);
+    setDetailsModalOpen(true);
+  };
 
   // Edit Ingredient Form
   const [editIngForm, setEditIngForm] = useState({
@@ -335,7 +379,7 @@ export const InventoryManagement: React.FC = () => {
   }, [currentBranchId]);
 
   useEffect(() => {
-    if (activeTab === 'movements') {
+    if (activeTab === 'movements' || activeTab === 'wastage') {
       fetchMovements();
     }
   }, [activeTab, currentBranchId, movementTypeFilter, movementIngredientFilter]);
@@ -362,7 +406,7 @@ export const InventoryManagement: React.FC = () => {
         name: ingForm.name,
         nameUrdu: ingForm.nameUrdu || undefined,
         category: ingForm.category || 'General',
-        sku: ingForm.sku,
+        sku: ingForm.sku?.trim() || undefined,
         unit: selectedUnit,
         baseUnit: selectedUnit,
         purchaseUnit: selectedUnit,
@@ -388,6 +432,66 @@ export const InventoryManagement: React.FC = () => {
       fetchData();
     } catch (err: any) {
       error(err.message || 'Failed to create ingredient');
+    }
+  };
+
+  const handleOpenWastage = (ingredientId?: string) => {
+    setWastageForm({
+      ingredientId: ingredientId || (ingredients[0]?.id || ''),
+      quantity: 1,
+      reasonCategory: 'SPOILED',
+      description: '',
+    });
+    setIsWastageModalOpen(true);
+  };
+
+  const handleSaveWastage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wastageForm.ingredientId) {
+      error('Please select an ingredient');
+      return;
+    }
+    if (wastageForm.quantity <= 0) {
+      error('Wasted quantity must be greater than 0');
+      return;
+    }
+
+    try {
+      const selectedIng = ingredients.find((i) => i.id === wastageForm.ingredientId);
+      let movementType = StockMovementType.WASTAGE;
+      if (wastageForm.reasonCategory === 'EXPIRED') movementType = StockMovementType.EXPIRED;
+      else if (wastageForm.reasonCategory === 'DAMAGED') movementType = StockMovementType.DAMAGED;
+
+      const reasonLabels: Record<string, string> = {
+        SPOILED: 'Spoiled / Bad Quality',
+        EXPIRED: 'Expired past shelf life',
+        DAMAGED: 'Damaged Packaging / Storage',
+        DROPPED_SPILLED: 'Dropped / Spilled in Kitchen',
+        COOKING_MISTAKE: 'Cooking / Preparation Mistake',
+        OTHER: 'Other Wastage',
+      };
+
+      const reasonText = [
+        reasonLabels[wastageForm.reasonCategory] || wastageForm.reasonCategory,
+        wastageForm.description.trim(),
+      ]
+        .filter(Boolean)
+        .join(' - ');
+
+      await api.post('/inventory/adjustments', {
+        branchId: currentBranchId || (branches[0]?.id || ''),
+        ingredientId: wastageForm.ingredientId,
+        movementType,
+        quantity: Number(wastageForm.quantity),
+        reason: reasonText,
+      });
+
+      success(`Wastage logged: ${wastageForm.quantity} ${selectedIng?.unit || selectedIng?.base_unit || ''} of ${selectedIng?.name || 'item'} deducted from available stock.`);
+      setIsWastageModalOpen(false);
+      fetchData();
+      fetchMovements();
+    } catch (err: any) {
+      error(err.message || 'Failed to record wastage');
     }
   };
 
@@ -622,6 +726,56 @@ export const InventoryManagement: React.FC = () => {
   const outOfStockItems = ingredients.filter((ing) => Number(ing.current_stock || 0) <= 0);
   const totalValuation = ingredients.reduce((sum, ing) => sum + (Number(ing.current_stock || 0) * Number(ing.cost_per_unit || 0)), 0);
 
+  // Filtered & Sorted Ingredients for Grid View & Table View
+  const processedIngredients = useMemo(() => {
+    const q = stockSearchTerm.toLowerCase().trim();
+
+    return ingredients
+      .filter((ing) => {
+        const matchesSearch =
+          !q ||
+          ing.name?.toLowerCase().includes(q) ||
+          ing.sku?.toLowerCase().includes(q) ||
+          ing.category?.toLowerCase().includes(q);
+
+        const matchesCat =
+          selectedCategory === 'ALL' || (ing.category || 'General') === selectedCategory;
+
+        const stock = Number(ing.current_stock || 0);
+        const alertThreshold = Number(ing.min_stock_alert || 0);
+        const isOut = stock <= 0;
+        const isLow = stock > 0 && alertThreshold > 0 && stock <= alertThreshold;
+
+        let matchesStatus = true;
+        if (stockStatusFilter === 'IN_STOCK') {
+          matchesStatus = !isOut && !isLow;
+        } else if (stockStatusFilter === 'LOW_STOCK') {
+          matchesStatus = isLow;
+        } else if (stockStatusFilter === 'OUT_OF_STOCK') {
+          matchesStatus = isOut;
+        }
+
+        return matchesSearch && matchesCat && matchesStatus;
+      })
+      .sort((a, b) => {
+        if (stockSortField === 'name') {
+          const comp = (a.name || '').localeCompare(b.name || '');
+          return stockSortOrder === 'asc' ? comp : -comp;
+        } else if (stockSortField === 'stock') {
+          const aStock = Number(a.current_stock || 0);
+          const bStock = Number(b.current_stock || 0);
+          return stockSortOrder === 'asc' ? aStock - bStock : bStock - aStock;
+        } else if (stockSortField === 'value') {
+          const aPrice = Number(a.latest_purchase_price ?? a.purchase_cost ?? a.cost_per_unit ?? 0);
+          const bPrice = Number(b.latest_purchase_price ?? b.purchase_cost ?? b.cost_per_unit ?? 0);
+          const aVal = Number(a.total_stock_value ?? (Number(a.current_stock || 0) * aPrice));
+          const bVal = Number(b.total_stock_value ?? (Number(b.current_stock || 0) * bPrice));
+          return stockSortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+        return 0;
+      });
+  }, [ingredients, stockSearchTerm, selectedCategory, stockStatusFilter, stockSortField, stockSortOrder]);
+
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-[400px]">
@@ -656,11 +810,20 @@ export const InventoryManagement: React.FC = () => {
           </button>
 
           <button
+            onClick={() => handleOpenWastage()}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition-all shadow-xs"
+            title="Record kitchen wastage, expired stock, spoiled items or spillage"
+          >
+            <Trash2 className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+            <span>+ Log Wastage</span>
+          </button>
+
+          <button
             onClick={() => setIsAdjustmentOpen(true)}
             className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
           >
-            <TrendingDown className="w-4 h-4 text-rose-500" />
-            <span>Wastage / Adjustment</span>
+            <Scale className="w-4 h-4 text-amber-500" />
+            <span>Audit / Physical Count</span>
           </button>
 
           <Link
@@ -668,7 +831,7 @@ export const InventoryManagement: React.FC = () => {
             className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
           >
             <Truck className="w-4 h-4 text-emerald-500" />
-            <span>Purchases & Inward Stock</span>
+            <span>Purchases</span>
           </Link>
 
           {branches.length > 1 && (
@@ -677,7 +840,7 @@ export const InventoryManagement: React.FC = () => {
               className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
               <ArrowRightLeft className="w-4 h-4 text-blue-500" />
-              <span>New Stock Transfer</span>
+              <span>Stock Transfer</span>
             </button>
           )}
 
@@ -685,8 +848,8 @@ export const InventoryManagement: React.FC = () => {
             onClick={() => setIsAddRecipeOpen(true)}
             className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
           >
-            <Scale className="w-4 h-4 text-amber-500" />
-            <span>Create Recipe</span>
+            <UtensilsCrossed className="w-4 h-4 text-indigo-500" />
+            <span>Menu Recipes</span>
           </button>
 
           <button
@@ -715,15 +878,16 @@ export const InventoryManagement: React.FC = () => {
       {/* Tabs */}
       <div className="flex space-x-1.5 border-b border-slate-200 dark:border-slate-800 pb-3 text-xs font-bold overflow-x-auto">
         {[
-          { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-          { id: 'STOCK', label: 'Ingredients & Stock', icon: Boxes, count: ingredients.length },
-          { id: 'VALUATION', label: 'FIFO Valuation Report', icon: DollarSign },
-          { id: 'ORDER_USAGE', label: 'Order Usage & Deductions', icon: ShoppingBag, count: orderConsumptions.length },
+          { id: 'STOCK', label: 'Inventory Overview & Stock', icon: Boxes, count: ingredients.length },
+          { id: 'wastage', label: 'Wastage Log', icon: Trash2 },
+          { id: 'ORDER_USAGE', label: 'Recipe Deductions', icon: ShoppingBag, count: orderConsumptions.length },
           { id: 'movements', label: 'Stock Movements / Ledger', icon: History },
-          { id: 'low_stock', label: 'Low Stock & Reorder', icon: AlertTriangle, count: lowStockItems.length, alert: lowStockItems.length > 0 },
-          { id: 'BATCHES', label: 'Stock Adjustments & Lots', icon: Layers, count: batches.length },
-          ...(branches.length > 1 ? [{ id: 'TRANSFERS', label: 'Stock Transfers', icon: Truck, count: transfers.length }] : []),
+          { id: 'low_stock', label: 'Low Stock Alerts', icon: AlertTriangle, count: lowStockItems.length, alert: lowStockItems.length > 0 },
           { id: 'RECIPES', label: 'Menu Recipes', icon: Scale, count: recipes.length },
+          { id: 'BATCHES', label: 'FIFO Batches & Lots', icon: Layers, count: batches.length },
+          { id: 'VALUATION', label: 'FIFO Valuation Report', icon: DollarSign },
+          ...(branches.length > 1 ? [{ id: 'TRANSFERS', label: 'Stock Transfers', icon: Truck, count: transfers.length }] : []),
+          { id: 'overview', label: 'Dashboard Summary', icon: LayoutDashboard },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -916,43 +1080,178 @@ export const InventoryManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Tab: Stock List */}
+      {/* Tab: Stock List & Grid View */}
       {activeTab === 'STOCK' && (
         <div className="space-y-4">
-          {/* Search & Category Filter Bar */}
+          {/* Top Summary Cards (Section 3 Requirement) */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xs flex items-center space-x-3.5">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Boxes className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Total Inventory Items</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white truncate">{ingredients.length}</p>
+                <span className="text-[10px] text-slate-400">Tracked raw materials</span>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xs flex items-center space-x-3.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Total Stock Value</p>
+                <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 truncate">
+                  {currencySymbol} {Math.round(totalValuation).toLocaleString()}
+                </p>
+                <span className="text-[10px] text-slate-400">FIFO Batch Valuation</span>
+              </div>
+            </div>
+
+            <div
+              onClick={() => setStockStatusFilter((prev) => (prev === 'LOW_STOCK' ? 'ALL' : 'LOW_STOCK'))}
+              className={`bg-white dark:bg-slate-900 border rounded-2xl p-4 shadow-2xs flex items-center space-x-3.5 cursor-pointer transition-all ${
+                stockStatusFilter === 'LOW_STOCK'
+                  ? 'border-amber-500 ring-2 ring-amber-500/20'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-amber-300'
+              }`}
+              title="Click to filter low stock items"
+            >
+              <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Low Stock Items</p>
+                <p className={`text-xl font-black truncate ${lowStockItems.length > 0 ? 'text-amber-600' : 'text-slate-900 dark:text-white'}`}>
+                  {lowStockItems.length}
+                </p>
+                <span className="text-[10px] text-slate-400">
+                  {stockStatusFilter === 'LOW_STOCK' ? 'Filter Active' : 'Below min safety level'}
+                </span>
+              </div>
+            </div>
+
+            <div
+              onClick={() => setStockStatusFilter((prev) => (prev === 'OUT_OF_STOCK' ? 'ALL' : 'OUT_OF_STOCK'))}
+              className={`bg-white dark:bg-slate-900 border rounded-2xl p-4 shadow-2xs flex items-center space-x-3.5 cursor-pointer transition-all ${
+                stockStatusFilter === 'OUT_OF_STOCK'
+                  ? 'border-rose-500 ring-2 ring-rose-500/20'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-rose-300'
+              }`}
+              title="Click to filter out of stock items"
+            >
+              <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <TrendingDown className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Out of Stock Items</p>
+                <p className={`text-xl font-black truncate ${outOfStockItems.length > 0 ? 'text-rose-600' : 'text-slate-900 dark:text-white'}`}>
+                  {outOfStockItems.length}
+                </p>
+                <span className="text-[10px] text-slate-400">
+                  {stockStatusFilter === 'OUT_OF_STOCK' ? 'Filter Active' : 'Zero balance'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Search, Filters, Sorting & View Toggle Bar */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
-            <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
-              <div className="relative w-full md:w-96">
+            <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+              {/* Search by name or SKU */}
+              <div className="relative flex-1 max-w-md">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={stockSearchTerm}
                   onChange={(e) => setStockSearchTerm(e.target.value)}
-                  placeholder="Search raw ingredient name, SKU, or category..."
+                  placeholder="Search item name, SKU, or category..."
                   className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
 
-              <div className="flex items-center space-x-2 text-xs font-semibold text-slate-500">
-                <span>Total Items:</span>
-                <span className="font-bold text-slate-900 dark:text-white">
-                  {ingredients.filter((ing) => {
-                    const q = stockSearchTerm.toLowerCase().trim();
-                    const matchesSearch =
-                      !q ||
-                      ing.name?.toLowerCase().includes(q) ||
-                      ing.sku?.toLowerCase().includes(q) ||
-                      ing.category?.toLowerCase().includes(q);
-                    const matchesCat =
-                      selectedCategory === 'ALL' || (ing.category || 'General') === selectedCategory;
-                    return matchesSearch && matchesCat;
-                  }).length} of {ingredients.length}
-                </span>
+              {/* Status Filter, Sort By & View Toggle */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {/* Stock Status Filter */}
+                <div className="flex items-center space-x-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-1 rounded-xl">
+                  {[
+                    { id: 'ALL', label: 'All' },
+                    { id: 'IN_STOCK', label: 'In Stock' },
+                    { id: 'LOW_STOCK', label: 'Low Stock' },
+                    { id: 'OUT_OF_STOCK', label: 'Out of Stock' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => setStockStatusFilter(st.id as any)}
+                      className={`px-2.5 py-1 rounded-lg font-bold transition-all text-xs ${
+                        stockStatusFilter === st.id
+                          ? 'bg-brand-500 text-white shadow-2xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Sort By Dropdown */}
+                <div className="flex items-center space-x-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-xl font-semibold text-slate-700 dark:text-slate-300">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="text-[11px] text-slate-400">Sort:</span>
+                  <select
+                    value={`${stockSortField}_${stockSortOrder}`}
+                    onChange={(e) => {
+                      const [field, order] = e.target.value.split('_') as [any, any];
+                      setStockSortField(field);
+                      setStockSortOrder(order);
+                    }}
+                    className="bg-transparent border-none text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                  >
+                    <option value="name_asc">Name (A → Z)</option>
+                    <option value="name_desc">Name (Z → A)</option>
+                    <option value="stock_desc">Available Stock (High → Low)</option>
+                    <option value="stock_asc">Available Stock (Low → High)</option>
+                    <option value="value_desc">Stock Value (High → Low)</option>
+                    <option value="value_asc">Stock Value (Low → High)</option>
+                  </select>
+                </div>
+
+                {/* View Switcher: Grid vs Table (Grid is default) */}
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/70 dark:border-slate-700/60">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleViewMode('grid')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      viewMode === 'grid'
+                        ? 'bg-brand-500 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                    title="Grid View (Visual Cards)"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>Grid</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleViewMode('table')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      viewMode === 'table'
+                        ? 'bg-brand-500 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                    title="Table View (Data List)"
+                  >
+                    <List className="w-3.5 h-3.5" />
+                    <span>Table</span>
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* Category Pills & Category Management Action */}
-            <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 text-xs">
+            <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
               <div className="flex items-center space-x-1.5 shrink-0">
                 <button
                   type="button"
@@ -990,51 +1289,110 @@ export const InventoryManagement: React.FC = () => {
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingCategory(null);
-                  setCategoryForm({ name: '', description: '' });
-                  setIsCategoryModalOpen(true);
-                }}
-                className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-brand-50 dark:bg-brand-950/60 hover:bg-brand-100 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400 font-bold border border-brand-200 dark:border-brand-800 transition-all"
-                title="Create or manage inventory categories"
-              >
-                <FolderPlus className="w-3.5 h-3.5" />
-                <span>Manage Categories</span>
-              </button>
+              <div className="flex items-center space-x-2 shrink-0">
+                <span className="text-[11px] font-bold text-slate-500">
+                  Showing {processedIngredients.length} of {ingredients.length} items
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingCategory(null);
+                    setCategoryForm({ name: '', description: '' });
+                    setIsCategoryModalOpen(true);
+                  }}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-brand-50 dark:bg-brand-950/60 hover:bg-brand-100 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400 font-bold border border-brand-200 dark:border-brand-800 transition-all text-xs"
+                  title="Create or manage inventory categories"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                  <span>Manage Categories</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase font-semibold">
-                  <tr>
-                    <th className="px-5 py-3.5">Raw Ingredient</th>
-                    <th className="px-4 py-3.5">Available Stock</th>
-                    <th className="px-3 py-3.5">Unit</th>
-                    <th className="px-4 py-3.5 text-right">Total Stock Value</th>
-                    <th className="px-4 py-3.5 text-right">Latest Purchase Price</th>
-                    <th className="px-5 py-3.5 text-center">Active FIFO Lots</th>
-                    <th className="px-4 py-3.5 text-center">Stock Status</th>
-                    <th className="px-4 py-3.5 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {ingredients
-                    .filter((ing) => {
-                      const q = stockSearchTerm.toLowerCase().trim();
-                      const matchesSearch =
-                        !q ||
-                        ing.name?.toLowerCase().includes(q) ||
-                        ing.sku?.toLowerCase().includes(q) ||
-                        ing.category?.toLowerCase().includes(q);
-                      const matchesCat =
-                        selectedCategory === 'ALL' || (ing.category || 'General') === selectedCategory;
-                      return matchesSearch && matchesCat;
-                    })
-                    .map((ing) => {
+          {/* Main Content Area: Grid View vs Table View */}
+          {processedIngredients.length === 0 ? (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center space-y-3">
+              <Boxes className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
+              <p className="text-sm font-bold text-slate-800 dark:text-slate-200">No inventory items match your criteria</p>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Try clearing your search query, switching stock status filter to "All", or register a new ingredient.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setStockSearchTerm('');
+                  setSelectedCategory('ALL');
+                  setStockStatusFilter('ALL');
+                }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors inline-block"
+              >
+                Reset All Filters
+              </button>
+            </div>
+          ) : viewMode === 'grid' ? (
+            /* ==================== 1. MODERN INVENTORY GRID VIEW ==================== */
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+              {processedIngredients.map((ing) => (
+                <InventoryItemCard
+                  key={ing.id}
+                  item={ing}
+                  currencySymbol={currencySymbol}
+                  onViewDetails={handleOpenDetails}
+                  onEdit={(item) => {
+                    setEditIngForm({
+                      id: item.id,
+                      name: item.name,
+                      nameUrdu: item.name_urdu || '',
+                      category: item.category || 'General',
+                      sku: item.sku,
+                      unit: item.unit || item.base_unit || 'KG',
+                      costPerUnit: Number(item.cost_per_unit || item.purchase_cost || 0),
+                      minStockAlert: Number(item.min_stock_alert || 5),
+                    });
+                    setIsEditIngredientOpen(true);
+                  }}
+                  onLogWastage={(item) => handleOpenWastage(item.id)}
+                  onAdjust={(item) => {
+                    setAdjForm((prev) => ({
+                      ...prev,
+                      ingredientId: item.id,
+                    }));
+                    setIsAdjustmentOpen(true);
+                  }}
+                  onWhereUsed={handleOpenUsage}
+                  onViewBatches={(item) => {
+                    setBatchIngredientFilter(item.id);
+                    setActiveTab('BATCHES');
+                  }}
+                  onViewLedger={(item) => {
+                    setMovementIngredientFilter(item.id);
+                    setActiveTab('movements');
+                  }}
+                  onDelete={(item) => handleDeleteIngredient(item.id, item.name)}
+                />
+              ))}
+            </div>
+          ) : (
+            /* ==================== 2. DATA TABLE VIEW ==================== */
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase font-semibold">
+                    <tr>
+                      <th className="px-5 py-3.5">Item Name & SKU</th>
+                      <th className="px-4 py-3.5">Category</th>
+                      <th className="px-4 py-3.5 text-right">Available Stock</th>
+                      <th className="px-3 py-3.5 text-center">Unit</th>
+                      <th className="px-4 py-3.5 text-right">Purchase Price</th>
+                      <th className="px-4 py-3.5 text-right">Stock Value</th>
+                      <th className="px-4 py-3.5 text-center">Last Purchase</th>
+                      <th className="px-4 py-3.5 text-center">Stock Status</th>
+                      <th className="px-4 py-3.5 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {processedIngredients.map((ing) => {
                       const stock = Number(ing.current_stock || 0);
                       const alertThreshold = Number(ing.min_stock_alert || 0);
                       const isLow = stock <= alertThreshold && stock > 0;
@@ -1049,20 +1407,19 @@ export const InventoryManagement: React.FC = () => {
                       return (
                         <React.Fragment key={ing.id}>
                           <tr className={`hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors ${isExpanded ? 'bg-brand-50/20 dark:bg-brand-950/20' : ''}`}>
-                            <td className="px-5 py-3.5">
+                            <td className="px-5 py-3.5 cursor-pointer" onClick={() => handleOpenDetails(ing)}>
                               <div className="flex items-center space-x-2">
                                 <div>
-                                  <span className="font-bold text-slate-900 dark:text-white block text-sm">
+                                  <span className="font-bold text-slate-900 dark:text-white block text-sm hover:text-brand-600 transition-colors">
                                     {ing.name}
                                   </span>
-                                  <div className="flex items-center space-x-1.5 mt-0.5">
-                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                                      {ing.category || 'General'}
-                                    </span>
-                                    {ing.sku && (
+                                  <div className="flex items-center space-x-1.5 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                                    {ing.sku ? (
                                       <span className="font-mono text-[10px] text-slate-400">
                                         SKU: {ing.sku}
                                       </span>
+                                    ) : (
+                                      <span className="font-mono text-[10px] text-slate-400">No SKU</span>
                                     )}
                                     <button
                                       type="button"
@@ -1081,18 +1438,36 @@ export const InventoryManagement: React.FC = () => {
                               </div>
                             </td>
 
-                            <td className="px-4 py-3.5 font-mono font-black text-sm text-slate-900 dark:text-white">
-                              {stock.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </td>
-
-                            <td className="px-3 py-3.5">
-                              <span className="px-2 py-0.5 rounded font-extrabold text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                {itemUnit}
+                            <td className="px-4 py-3.5">
+                              <span className="px-2 py-1 rounded text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                {ing.category || 'General'}
                               </span>
                             </td>
 
-                            <td className="px-4 py-3.5 text-right font-mono font-extrabold text-sm text-emerald-600 dark:text-emerald-400">
-                              {currencySymbol} {stockValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <td className="px-4 py-3.5 text-right font-mono font-black text-sm text-slate-900 dark:text-white">
+                              <div>{stock.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                              {activeBatchesList.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedIngBatches((prev) => ({
+                                      ...prev,
+                                      [ing.id]: !prev[ing.id],
+                                    }))
+                                  }
+                                  className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center space-x-0.5 mt-0.5"
+                                  title="Click to view remaining FIFO lots"
+                                >
+                                  <span>{activeBatchCount} lot(s)</span>
+                                  {isExpanded ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
+                                </button>
+                              )}
+                            </td>
+
+                            <td className="px-3 py-3.5 text-center">
+                              <span className="px-2 py-0.5 rounded font-extrabold text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                {itemUnit}
+                              </span>
                             </td>
 
                             <td className="px-4 py-3.5 text-right font-mono text-slate-700 dark:text-slate-300">
@@ -1102,31 +1477,22 @@ export const InventoryManagement: React.FC = () => {
                               <div className="text-[10px] text-slate-400">per {itemUnit}</div>
                             </td>
 
-                            <td className="px-5 py-3.5 text-center">
-                              {activeBatchesList.length > 0 ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setExpandedIngBatches((prev) => ({
-                                      ...prev,
-                                      [ing.id]: !prev[ing.id],
-                                    }))
-                                  }
-                                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all cursor-pointer"
-                                  title="Click to view remaining FIFO lots"
-                                >
-                                  <Layers className="w-3 h-3 text-blue-500" />
-                                  <span>{activeBatchCount} lot(s)</span>
-                                  {isExpanded ? (
-                                    <ChevronUp className="w-3 h-3 text-blue-500" />
-                                  ) : (
-                                    <ChevronDown className="w-3 h-3 text-blue-500" />
-                                  )}
-                                </button>
+                            <td className="px-4 py-3.5 text-right font-mono font-extrabold text-sm text-emerald-600 dark:text-emerald-400">
+                              {currencySymbol} {stockValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+
+                            <td className="px-4 py-3.5 text-center font-mono text-xs text-slate-600 dark:text-slate-400">
+                              {ing.last_purchase_date ? (
+                                <div className="space-y-0.5">
+                                  <span className="font-bold text-slate-800 dark:text-slate-200 block text-[11px]">
+                                    {new Date(ing.last_purchase_date).toLocaleDateString()}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 block">
+                                    {new Date(ing.last_purchase_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-500">
-                                  0 lots
-                                </span>
+                                <span className="text-slate-400 text-[11px] italic">No purchases yet</span>
                               )}
                             </td>
 
@@ -1147,6 +1513,16 @@ export const InventoryManagement: React.FC = () => {
                             <td className="px-4 py-3.5 text-center whitespace-nowrap">
                               <ActionMenu
                                 items={[
+                                  {
+                                    label: 'View Full Details & History',
+                                    icon: Eye,
+                                    onClick: () => handleOpenDetails(ing),
+                                  },
+                                  {
+                                    label: 'Log Wastage',
+                                    icon: Trash2,
+                                    onClick: () => handleOpenWastage(ing.id),
+                                  },
                                   {
                                     label: 'Where Used / Recipe Mapping',
                                     icon: UtensilsCrossed,
@@ -1211,7 +1587,7 @@ export const InventoryManagement: React.FC = () => {
                           {/* Expanded FIFO Lots Sub-table */}
                           {isExpanded && activeBatchesList.length > 0 && (
                             <tr className="bg-slate-50/80 dark:bg-slate-900/80 border-y border-brand-200 dark:border-brand-900/50">
-                              <td colSpan={8} className="p-4 pl-8">
+                              <td colSpan={9} className="p-4 pl-8">
                                 <div className="space-y-2">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center space-x-2">
@@ -1298,10 +1674,206 @@ export const InventoryManagement: React.FC = () => {
                         </React.Fragment>
                       );
                     })}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Dedicated Wastage Management */}
+      {activeTab === 'wastage' && (
+        <div className="space-y-6">
+          {/* Top Wastage KPI Cards */}
+          {(() => {
+            const wastageMovements = movements.filter((m) =>
+              ['WASTAGE', 'DAMAGED', 'EXPIRED'].includes(m.movement_type)
+            );
+            const totalWastageLoss = wastageMovements.reduce(
+              (acc, m) => acc + Math.abs(Number(m.total_cost || 0)),
+              0
+            );
+            const totalWastedUnits = wastageMovements.reduce(
+              (acc, m) => acc + Math.abs(Number(m.quantity || 0)),
+              0
+            );
+
+            return (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                      <Trash2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Wastage Incidents</p>
+                      <p className="text-xl font-extrabold text-slate-900 dark:text-white font-mono">
+                        {wastageMovements.length}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Quantity Wasted</p>
+                      <p className="text-xl font-extrabold text-amber-600 dark:text-amber-400 font-mono">
+                        {totalWastedUnits.toLocaleString(undefined, { maximumFractionDigits: 2 })} units
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                      <DollarSign className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Financial Loss</p>
+                      <p className="text-xl font-extrabold text-rose-600 dark:text-rose-400 font-mono">
+                        {currencySymbol} {totalWastageLoss.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filter and Action Bar */}
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center space-x-1.5">
+                      <span className="font-bold text-slate-500">Filter Item:</span>
+                      <select
+                        value={movementIngredientFilter}
+                        onChange={(e) => setMovementIngredientFilter(e.target.value)}
+                        className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white max-w-xs"
+                      >
+                        <option value="">All Ingredients</option>
+                        {ingredients.map((ing) => (
+                          <option key={ing.id} value={ing.id}>
+                            {ing.name} ({ing.unit || ing.base_unit})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={fetchMovements}
+                      className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-all"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingMovements ? 'animate-spin text-brand-500' : ''}`} />
+                      <span>Refresh</span>
+                    </button>
+                    <button
+                      onClick={() => handleOpenWastage()}
+                      className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold shadow-md transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Log Wastage</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Wastage Log Table */}
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
+                        <tr>
+                          <th className="px-4 py-3.5">Timestamp</th>
+                          <th className="px-4 py-3.5">Ingredient & SKU</th>
+                          <th className="px-4 py-3.5 text-center">Wastage Type</th>
+                          <th className="px-4 py-3.5 text-right">Quantity Wasted</th>
+                          <th className="px-4 py-3.5 text-right">Unit Cost</th>
+                          <th className="px-4 py-3.5 text-right">Estimated Financial Loss</th>
+                          <th className="px-5 py-3.5">Reason & Description</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {wastageMovements.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                              <Trash2 className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-700 mb-2 opacity-50" />
+                              <p className="font-bold text-slate-600 dark:text-slate-300 text-sm">No wastage incidents logged yet</p>
+                              <p className="text-xs text-slate-400 mt-1">
+                                Click &quot;+ Log Wastage&quot; whenever raw material is spoiled, expired, or dropped to deduct it immediately from stock.
+                              </p>
+                            </td>
+                          </tr>
+                        ) : (
+                          wastageMovements.map((m: any) => {
+                            const loss = Math.abs(Number(m.total_cost || 0));
+                            const qty = Math.abs(Number(m.quantity || 0));
+
+                            return (
+                              <tr key={m.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                                <td className="px-4 py-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                                  {new Date(m.created_at).toLocaleString([], {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </td>
+
+                                <td className="px-4 py-3">
+                                  <div className="font-bold text-slate-900 dark:text-white">
+                                    {m.ingredient_name || 'Ingredient'}
+                                  </div>
+                                  {m.ingredient_sku && (
+                                    <div className="text-[10px] text-slate-400 font-mono">
+                                      SKU: {m.ingredient_sku}
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="px-4 py-3 text-center">
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    m.movement_type === 'EXPIRED'
+                                      ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800'
+                                      : m.movement_type === 'DAMAGED'
+                                      ? 'bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-200 border border-orange-300 dark:border-orange-800'
+                                      : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-800'
+                                  }`}>
+                                    {m.movement_type}
+                                  </span>
+                                </td>
+
+                                <td className="px-4 py-3 text-right font-mono font-black text-rose-600 dark:text-rose-400 text-sm">
+                                  -{qty.toLocaleString(undefined, { maximumFractionDigits: 2 })} {m.unit || ''}
+                                </td>
+
+                                <td className="px-4 py-3 text-right font-mono text-slate-600 dark:text-slate-400">
+                                  {currencySymbol} {Number(m.unit_cost || 0).toFixed(2)}
+                                </td>
+
+                                <td className="px-4 py-3 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
+                                  {currencySymbol} {loss.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+
+                                <td className="px-5 py-3 text-slate-700 dark:text-slate-300">
+                                  <div className="font-medium">{m.reason || 'Spoilage / Kitchen write-off'}</div>
+                                  {m.user_name && (
+                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                      By: {m.user_name}
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -2658,13 +3230,15 @@ export const InventoryManagement: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="form-label">SKU / Code <span className="text-rose-500">*</span></label>
+              <label className="form-label flex items-center justify-between">
+                <span>SKU / Code</span>
+                <span className="text-[11px] text-slate-400 font-normal">Optional (auto-generated if empty)</span>
+              </label>
               <input
                 type="text"
-                required
                 value={ingForm.sku}
                 onChange={(e) => setIngForm({ ...ingForm, sku: e.target.value })}
-                placeholder="ING-CHK-01"
+                placeholder="Leave empty to auto-generate"
                 className="form-input uppercase font-mono font-bold"
               />
             </div>
@@ -2812,12 +3386,15 @@ export const InventoryManagement: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="form-label">SKU / Code <span className="text-rose-500">*</span></label>
+              <label className="form-label flex items-center justify-between">
+                <span>SKU / Code</span>
+                <span className="text-[11px] text-slate-400 font-normal">Optional</span>
+              </label>
               <input
                 type="text"
-                required
                 value={editIngForm.sku}
                 onChange={(e) => setEditIngForm({ ...editIngForm, sku: e.target.value })}
+                placeholder="Leave empty to auto-generate"
                 className="form-input uppercase font-mono font-bold"
               />
             </div>
@@ -3178,6 +3755,128 @@ export const InventoryManagement: React.FC = () => {
         </form>
       </Modal>
 
+      {/* Modal: Simple Wastage Management */}
+      <Modal
+        isOpen={isWastageModalOpen}
+        onClose={() => setIsWastageModalOpen(false)}
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-rose-50 dark:bg-rose-950/50 rounded-xl text-rose-600 dark:text-rose-400">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Log Stock Wastage</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Deduct spoiled, expired, damaged, or spilled raw materials directly from stock</p>
+            </div>
+          </div>
+        }
+        maxWidth="lg"
+      >
+        <form onSubmit={handleSaveWastage} className="space-y-4">
+          {(() => {
+            const selectedIng = ingredients.find((i) => i.id === wastageForm.ingredientId) || ingredients[0];
+            const currentStockVal = Number(selectedIng?.current_stock || 0);
+            const unit = selectedIng?.unit || selectedIng?.base_unit || 'UNIT';
+
+            return (
+              <>
+                <div>
+                  <label className="form-label">
+                    Select Inventory Item <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={wastageForm.ingredientId}
+                    onChange={(e) => setWastageForm({ ...wastageForm, ingredientId: e.target.value })}
+                    className="form-select font-bold"
+                    required
+                  >
+                    {ingredients.map((ing) => (
+                      <option key={ing.id} value={ing.id}>
+                        {ing.name} (Available: {Number(ing.current_stock || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} {ing.unit || ing.base_unit || ''})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">Currently Available in Branch:</span>
+                  <span className="font-mono font-black text-slate-900 dark:text-white text-sm">
+                    {currentStockVal.toLocaleString(undefined, { maximumFractionDigits: 2 })} {unit}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label">
+                      Wasted Quantity ({unit}) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.001"
+                      value={wastageForm.quantity || ''}
+                      onChange={(e) => setWastageForm({ ...wastageForm, quantity: parseFloat(e.target.value) || 0 })}
+                      placeholder="e.g. 2.5"
+                      className="form-input font-mono font-bold text-rose-600 dark:text-rose-400"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label">
+                      Wastage Reason <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={wastageForm.reasonCategory}
+                      onChange={(e) => setWastageForm({ ...wastageForm, reasonCategory: e.target.value })}
+                      className="form-select font-semibold"
+                      required
+                    >
+                      <option value="SPOILED">Spoiled / Bad Quality</option>
+                      <option value="EXPIRED">Expired Past Shelf Life</option>
+                      <option value="DAMAGED">Damaged in Storage / Transit</option>
+                      <option value="DROPPED_SPILLED">Dropped / Spilled during Prep</option>
+                      <option value="COOKING_MISTAKE">Cooking / Burning Mistake</option>
+                      <option value="OTHER">Other Reason</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="form-label">
+                    Optional Description / Notes
+                  </label>
+                  <input
+                    type="text"
+                    value={wastageForm.description}
+                    onChange={(e) => setWastageForm({ ...wastageForm, description: e.target.value })}
+                    placeholder="e.g. Discarded during lunch rush prep due to sour smell"
+                    className="form-input"
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsWastageModalOpen(false)}
+                    className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center space-x-1.5"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Deduct & Log Wastage</span>
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+        </form>
+      </Modal>
+
       {/* Modal: Perform Inventory Operation */}
       <Modal
         isOpen={isAdjustmentOpen}
@@ -3495,6 +4194,33 @@ export const InventoryManagement: React.FC = () => {
         ingredientName={usageIngredientName}
         branchId={currentBranchId || undefined}
         currencySymbol={currencySymbol}
+      />
+
+      {/* Complete Item Lifecycle & Stock History Modal */}
+      <InventoryDetailsModal
+        isOpen={detailsModalOpen}
+        onClose={() => setDetailsModalOpen(false)}
+        ingredientId={detailsIngredientId}
+        currencySymbol={currencySymbol}
+        currentBranchId={currentBranchId || undefined}
+        onEdit={(item) => {
+          setEditIngForm({
+            id: item.id,
+            name: item.name,
+            nameUrdu: item.name_urdu || '',
+            category: item.category || 'General',
+            sku: item.sku,
+            unit: item.unit || item.base_unit || 'KG',
+            costPerUnit: Number(item.cost_per_unit || item.purchase_cost || 0),
+            minStockAlert: Number(item.min_stock_alert || 5),
+          });
+          setIsEditIngredientOpen(true);
+        }}
+        onLogWastage={(ingId) => handleOpenWastage(ingId)}
+        onAdjust={(ingId) => {
+          setAdjForm((prev) => ({ ...prev, ingredientId: ingId }));
+          setIsAdjustmentOpen(true);
+        }}
       />
     </div>
   );

@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { Modal } from '../../components/common/Modal.js';
 import { FloorTableManagement } from '../../components/restaurant/FloorTableManagement.js';
+import { BackupRestoreHub } from '../../components/restaurant/BackupRestoreHub.js';
 import {
   Settings,
   Save,
@@ -141,7 +142,6 @@ export const RestaurantSettings: React.FC = () => {
 
   const [settings, setSettings] = useState<any>(null);
   const [devices, setDevices] = useState<any[]>([]);
-  const [backups, setBackups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -158,26 +158,17 @@ export const RestaurantSettings: React.FC = () => {
     setSearchParams({ tab });
   };
 
-  // Backup & Restore states
-  const [generatingBackup, setGeneratingBackup] = useState(false);
-  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
-  const [restorePayload, setRestorePayload] = useState<any | null>(null);
-  const [restoreConfirmationText, setRestoreConfirmationText] = useState('');
-  const [restoring, setRestoring] = useState(false);
-
   const fetchData = async () => {
     try {
-      const [setRes, devRes, backupRes] = await Promise.all([
+      const [setRes, devRes] = await Promise.all([
         api.get('/restaurant/settings'),
         api.get('/restaurant/devices'),
-        api.get('/restaurant/backups'),
       ]);
       setSettings(setRes.settings);
       if (setRes.settings?.receipt_settings?.defaultTemplate) {
         localStorage.setItem('pos_default_receipt_template', setRes.settings.receipt_settings.defaultTemplate);
       }
       setDevices(devRes.devices || []);
-      setBackups(backupRes.backups || []);
     } catch (err: any) {
       console.error('Failed to load settings:', err);
       error(err.message || 'Failed to load restaurant settings');
@@ -316,74 +307,6 @@ export const RestaurantSettings: React.FC = () => {
       fetchData();
     } catch (err: any) {
       error(err.message || 'Failed to deactivate device');
-    }
-  };
-
-  // 1. Generate and Download Backup
-  const handleGenerateBackup = async () => {
-    setGeneratingBackup(true);
-    try {
-      const res = await api.post('/restaurant/backups/generate', {});
-      const backupData = res.backup;
-
-      // Trigger client-side file download
-      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `backup_${tenant?.name?.replace(/\s+/g, '_') || 'restaurant'}_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      success('Backup snapshot generated and downloaded successfully!');
-      fetchData();
-    } catch (err: any) {
-      error(err.message || 'Failed to generate backup');
-    } finally {
-      setGeneratingBackup(false);
-    }
-  };
-
-  // 2. Select file for restore
-  const handleFileSelectForRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        if (!json.version || !json.data) {
-          throw new Error('Invalid backup file format. Missing version or data block.');
-        }
-        setRestorePayload(json);
-        setRestoreConfirmationText('');
-        setIsRestoreModalOpen(true);
-      } catch (err: any) {
-        error(`Failed to parse backup file: ${err.message}`);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  // 3. Execute Restore
-  const handleExecuteRestore = async () => {
-    if (!restorePayload) return;
-    setRestoring(true);
-    try {
-      const res = await api.post('/restaurant/backups/restore', restorePayload);
-      success(res.message || 'Database snapshot restored successfully!');
-      setIsRestoreModalOpen(false);
-      setRestorePayload(null);
-      await fetchData();
-      await refreshProfile();
-    } catch (err: any) {
-      error(err.message || 'Failed to restore database from backup');
-    } finally {
-      setRestoring(false);
     }
   };
 
@@ -1231,155 +1154,8 @@ export const RestaurantSettings: React.FC = () => {
 
       {/* TAB 4: BACKUP & RESTORE SECTION */}
       {activeTab === 'backups' && (
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-5 text-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div className="flex items-center space-x-2.5">
-            <Database className="w-5 h-5 text-brand-600 dark:text-brand-400" />
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Database Backup & Disaster Recovery</h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Generate complete cryptographic snapshot backups or restore your restaurant database
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={handleGenerateBackup}
-              disabled={generatingBackup}
-              className="flex items-center space-x-1.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 px-4 py-2 rounded-xl font-bold text-xs shadow-md transition-all disabled:opacity-50"
-            >
-              <Download className="w-4 h-4" />
-              <span>{generatingBackup ? 'Generating Backup...' : 'Create & Download Backup Now'}</span>
-            </button>
-
-            <label className="flex items-center space-x-1.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-300 hover:bg-amber-100 px-4 py-2 rounded-xl font-bold text-xs cursor-pointer transition-all">
-              <Upload className="w-4 h-4" />
-              <span>Restore from Backup File</span>
-              <input
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={handleFileSelectForRestore}
-              />
-            </label>
-          </div>
-        </div>
-
-        {/* Backup History Table */}
-        <div>
-          <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-2">Previous Backup History</h4>
-          <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold uppercase">
-                <tr>
-                  <th className="px-4 py-2.5">Date & Time</th>
-                  <th className="px-4 py-2.5">File / Type</th>
-                  <th className="px-4 py-2.5">SHA-256 Checksum</th>
-                  <th className="px-4 py-2.5 text-right">Size</th>
-                  <th className="px-4 py-2.5">Triggered By</th>
-                  <th className="px-4 py-2.5 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {backups.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-slate-400">
-                      No backups generated yet. Click "Create & Download Backup Now" to safeguard your data.
-                    </td>
-                  </tr>
-                ) : (
-                  backups.map((b) => (
-                    <tr key={b.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
-                      <td className="px-4 py-2.5 text-slate-800 dark:text-slate-200 font-medium">
-                        {new Date(b.created_at).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-2.5 font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                        {b.filename || b.backup_type}
-                      </td>
-                      <td className="px-4 py-2.5 font-mono text-[10px] text-slate-400 truncate max-w-[140px]">
-                        {b.checksum || '-'}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-slate-700 dark:text-slate-300">
-                        {Math.round((b.size_bytes || 0) / 1024)} KB
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-500">
-                        {b.triggered_by_email || 'Owner'}
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">
-                          {b.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+        <BackupRestoreHub tenant={tenant} onRefresh={fetchData} />
       )}
-
-      {/* Restore Confirmation Safety Modal */}
-      <Modal
-        isOpen={isRestoreModalOpen}
-        onClose={() => setIsRestoreModalOpen(false)}
-        title="Confirm Database Restore"
-        maxWidth="md"
-      >
-        <div className="space-y-4 text-xs">
-          <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl flex items-start space-x-3 text-rose-800 dark:text-rose-200">
-            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">CRITICAL WARNING: Overwrite Existing Data</p>
-              <p className="text-[11px] mt-1 text-rose-700 dark:text-rose-300">
-                Restoring will replace all current menu products, categories, ingredients, FIFO batches, and orders with the records from this backup file.
-              </p>
-            </div>
-          </div>
-
-          {restorePayload && (
-            <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1 font-mono text-[11px]">
-              <p><span className="text-slate-500">Backup Schema Version:</span> {restorePayload.version}</p>
-              <p><span className="text-slate-500">Created At:</span> {new Date(restorePayload.createdAt).toLocaleString()}</p>
-              <p><span className="text-slate-500">Checksum:</span> {restorePayload.checksum?.substring(0, 16)}...</p>
-              <p><span className="text-slate-500">Tables in Snapshot:</span> {Object.keys(restorePayload.data || {}).length}</p>
-            </div>
-          )}
-
-          <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-              To proceed, please type <span className="font-mono text-rose-600">CONFIRM</span> below:
-            </label>
-            <input
-              type="text"
-              value={restoreConfirmationText}
-              onChange={(e) => setRestoreConfirmationText(e.target.value)}
-              placeholder="CONFIRM"
-              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-900 dark:text-white"
-            />
-          </div>
-
-          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-            <button
-              type="button"
-              onClick={() => setIsRestoreModalOpen(false)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-400"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleExecuteRestore}
-              disabled={restoring || restoreConfirmationText.trim().toUpperCase() !== 'CONFIRM'}
-              className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg shadow-md transition-all disabled:opacity-40"
-            >
-              {restoring ? 'Restoring Database...' : 'Restore Database Now'}
-            </button>
-          </div>
-        </div>
-      </Modal>
 
       {/* TAB 5: Registered Multi-Device Terminals Management */}
       {activeTab === 'devices' && (

@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import multipart from '@fastify/multipart';
 
 import { authRoutes } from './routes/auth.routes.js';
 import { platformRoutes } from './routes/platform.routes.js';
@@ -17,6 +18,7 @@ import { customerRoutes } from './routes/customer.routes.js';
 import { syncRoutes } from './routes/sync.routes.js';
 import { costingRoutes } from './routes/costing.routes.js';
 import { reservationRoutes } from './routes/reservation.routes.js';
+import { backupRoutes } from './routes/backup.routes.js';
 import { pool } from './db/connection.js';
 
 export function buildApp(): FastifyInstance {
@@ -49,6 +51,13 @@ export function buildApp(): FastifyInstance {
   app.register(rateLimit, {
     max: 1000,
     timeWindow: '1 minute',
+  });
+
+  // Multipart File Upload Support
+  app.register(multipart, {
+    limits: {
+      fileSize: 50 * 1024 * 1024, // 50MB
+    },
   });
 
   // OpenAPI / Swagger Documentation
@@ -107,6 +116,7 @@ export function buildApp(): FastifyInstance {
   app.register(syncRoutes);
   app.register(costingRoutes);
   app.register(reservationRoutes);
+  app.register(backupRoutes);
 
   // Global Error Handler
   app.setErrorHandler((error: any, request, reply) => {

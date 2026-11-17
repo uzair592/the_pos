@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext.js';
 import { StatCard } from '../../components/common/StatCard.js';
 import { Daybook } from './Daybook.js';
 import { CashAndBank } from '../financial/CashAndBank.js';
+import { RecipeCostingDashboard } from './RecipeCostingDashboard.js';
 import {
   BarChart3,
   Download,
@@ -28,6 +29,7 @@ import {
   UtensilsCrossed,
   Layers,
   Building2,
+  Calculator,
 } from 'lucide-react';
 import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import { getLocalYMD, getLocalDayRangeISO } from '../../utils/dateUtils.js';
@@ -56,7 +58,8 @@ export type ReportTab =
   | 'BRANCH_FINANCIAL'
   | 'PURCHASES'
   | 'DAYBOOK'
-  | 'CASH_BANK';
+  | 'CASH_BANK'
+  | 'RECIPE_COSTING';
 
 interface FinancialReportsProps {
   defaultTab?: ReportTab;
@@ -70,6 +73,7 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
   const queryTab = searchParams.get('tab') as ReportTab;
 
   const getInitialTab = (): ReportTab => {
+    if (location.pathname.includes('recipe-costing')) return 'RECIPE_COSTING';
     if (location.pathname.includes('bill-profit-loss')) return 'BILL_PROFIT_LOSS';
     if (queryTab) return queryTab;
     return defaultTab;
@@ -79,7 +83,9 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
 
   // Synchronize route and query changes whenever URL or props update
   useEffect(() => {
-    if (location.pathname.includes('bill-profit-loss')) {
+    if (location.pathname.includes('recipe-costing')) {
+      setActiveTab('RECIPE_COSTING');
+    } else if (location.pathname.includes('bill-profit-loss')) {
       setActiveTab('BILL_PROFIT_LOSS');
     } else if (queryTab) {
       setActiveTab(queryTab);
@@ -90,7 +96,9 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
 
   const handleTabChange = (tab: ReportTab) => {
     setActiveTab(tab);
-    if (tab === 'BILL_PROFIT_LOSS') {
+    if (tab === 'RECIPE_COSTING') {
+      navigate('/app/reports/recipe-costing');
+    } else if (tab === 'BILL_PROFIT_LOSS') {
       navigate('/app/reports/bill-profit-loss');
     } else {
       navigate(`/app/reports?tab=${tab}`);
@@ -290,33 +298,35 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center space-x-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm">
-            <Calendar className="w-4 h-4 text-slate-400" />
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="bg-transparent border-none text-slate-800 dark:text-slate-200 focus:outline-none"
-            />
-            <span className="text-slate-400">to</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="bg-transparent border-none text-slate-800 dark:text-slate-200 focus:outline-none"
-            />
-          </div>
+        {activeTab !== 'RECIPE_COSTING' && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center space-x-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm">
+              <Calendar className="w-4 h-4 text-slate-400" />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-transparent border-none text-slate-800 dark:text-slate-200 focus:outline-none"
+              />
+              <span className="text-slate-400">to</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-transparent border-none text-slate-800 dark:text-slate-200 focus:outline-none"
+              />
+            </div>
 
-          <button
-            onClick={handleExportCsv}
-            className="flex items-center space-x-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 px-3.5 py-2 rounded-xl font-bold text-xs shadow-sm transition-all"
-            title="Export full orders dump to CSV"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span>Export CSV</span>
-          </button>
-        </div>
+            <button
+              onClick={handleExportCsv}
+              className="flex items-center space-x-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 px-3.5 py-2 rounded-xl font-bold text-xs shadow-sm transition-all"
+              title="Export full orders dump to CSV"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>Export CSV</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Report Sub-Sections Navigation Tabs */}
@@ -404,7 +414,26 @@ export const FinancialReports: React.FC<FinancialReportsProps> = ({ defaultTab =
           <Building2 className="w-4 h-4 text-cyan-500" />
           <span>7. Branch-wise Financial Reports</span>
         </button>
+
+        <button
+          onClick={() => handleTabChange('RECIPE_COSTING')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
+            activeTab === 'RECIPE_COSTING'
+              ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Calculator className="w-4 h-4 text-emerald-500" />
+          <span>8. Recipe Costing & Margins</span>
+        </button>
       </div>
+
+      {/* ==================== SUB-SECTION: RECIPE COSTING ==================== */}
+      {activeTab === 'RECIPE_COSTING' && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2 sm:p-4 shadow-sm">
+          <RecipeCostingDashboard />
+        </div>
+      )}
 
       {/* ==================== SUB-SECTION: DAILY DAYBOOK ==================== */}
       {activeTab === 'DAYBOOK' && (

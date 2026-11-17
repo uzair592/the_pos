@@ -74,6 +74,21 @@ export const FloorTableManagement: React.FC = () => {
     posY: 0,
   });
 
+  const getNextAvailableTableNumber = (existingTables: any[], prefix = 'T-'): string => {
+    const existingNumbers = new Set(
+      existingTables.map((t) => String(t.table_number || '').trim().toUpperCase())
+    );
+    let n = 1;
+    while (
+      existingNumbers.has(`${prefix}${n}`.toUpperCase()) ||
+      existingNumbers.has(`TABLE ${n}`.toUpperCase()) ||
+      existingNumbers.has(`TABLE-${n}`.toUpperCase())
+    ) {
+      n++;
+    }
+    return `${prefix}${n}`;
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -81,17 +96,21 @@ export const FloorTableManagement: React.FC = () => {
       const bParam = bId ? `?branchId=${bId}` : '';
 
       const [floorsRes, tablesRes, staffRes] = await Promise.all([
-        api.get(`/restaurant/floors${bParam}`),
-        api.get(`/restaurant/tables${bParam}`),
-        api.get('/restaurant/staff'),
+        api.get(`/restaurant/floors${bParam}`).catch(() => ({ floors: [] })),
+        api.get(`/restaurant/tables${bParam}`).catch(() => ({ tables: [] })),
+        api.get('/restaurant/staff').catch(() => api.get('/restaurant/users').catch(() => ({ staff: [], users: [] }))),
       ]);
 
-      setFloors(floorsRes.floors || []);
-      setTables(tablesRes.tables || []);
-      setStaffList(staffRes.staff || []);
+      const loadedFloors = floorsRes.floors || [];
+      const loadedTables = tablesRes.tables || [];
+      const loadedStaff = staffRes.staff || staffRes.users || [];
 
-      if (floorsRes.floors?.length > 0 && selectedFloorId === 'ALL') {
-        setSelectedFloorId(floorsRes.floors[0].id);
+      setFloors(loadedFloors);
+      setTables(loadedTables);
+      setStaffList(loadedStaff);
+
+      if (loadedFloors.length > 0 && selectedFloorId === 'ALL') {
+        setSelectedFloorId(loadedFloors[0].id);
       }
     } catch (err: any) {
       error(err.message || 'Failed to load floors and tables');
@@ -167,6 +186,17 @@ export const FloorTableManagement: React.FC = () => {
       error('Floor / Dining Section name cannot be empty');
       return null;
     }
+
+    // Check if floor with same name already exists in current state
+    const existing = floors.find((f) => f.name.trim().toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setTableForm((prev) => ({ ...prev, floorId: existing.id }));
+      setSelectedFloorId(existing.id);
+      setIsCreatingFloorInline(false);
+      setInlineFloorName('');
+      return existing;
+    }
+
     const bId = branchFilter || currentBranchId || branches[0]?.id || undefined;
     try {
       setCreatingFloorLoading(true);
@@ -176,7 +206,7 @@ export const FloorTableManagement: React.FC = () => {
         sortOrder: floors.length + 1,
       });
       const newFloor = res.floor;
-      success(`Floor "${newFloor.name}" created successfully!`);
+      success(`Floor "${newFloor.name}" ready!`);
       await fetchData();
       setTableForm((prev) => ({ ...prev, floorId: newFloor.id }));
       setSelectedFloorId(newFloor.id);
@@ -194,15 +224,28 @@ export const FloorTableManagement: React.FC = () => {
   // Table CRUD
   const handleSaveTable = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tableForm.tableNumber.trim()) {
+    const cleanTableNum = tableForm.tableNumber.trim();
+    if (!cleanTableNum) {
       error('Table number is required');
+      return;
+    }
+
+    // Client-side duplicate table number check
+    const isDuplicate = tables.some(
+      (t) =>
+        t.id !== tableForm.id &&
+        String(t.table_number).trim().toLowerCase() === cleanTableNum.toLowerCase()
+    );
+    if (isDuplicate) {
+      const suggested = getNextAvailableTableNumber(tables);
+      error(`Table "${cleanTableNum}" already exists! Suggested next table number: ${suggested}`);
       return;
     }
 
     const bId = branchFilter || currentBranchId || branches[0]?.id || undefined;
     let effectiveFloorId = tableForm.floorId;
 
-    // 1. If user typed a new floor name inline, create it immediately
+    // 1. If user typed a new floor name inline, resolve it
     if (inlineFloorName.trim()) {
       const created = await handleQuickCreateFloor(inlineFloorName.trim());
       if (created) effectiveFloorId = created.id;
@@ -223,26 +266,25 @@ export const FloorTableManagement: React.FC = () => {
       if (tableForm.id) {
         await api.put(`/restaurant/tables/${tableForm.id}`, {
           floorId: effectiveFloorId,
-          tableNumber: tableForm.tableNumber,
+          tableNumber: cleanTableNum,
           capacity: Number(tableForm.capacity),
           shape: tableForm.shape,
           status: tableForm.status,
           assignedWaiterId: tableForm.assignedWaiterId || null,
           assignedWaiterName: waiter ? waiter.full_name : null,
         });
-        success(`Table ${tableForm.tableNumber} updated successfully`);
+        success(`Table ${cleanTableNum} updated successfully`);
       } else {
         await api.post('/restaurant/tables', {
           branchId: bId || undefined,
           floorId: effectiveFloorId || undefined,
-          floorName: inlineFloorName.trim() || undefined,
-          tableNumber: tableForm.tableNumber,
+          tableNumber: cleanTableNum,
           capacity: Number(tableForm.capacity),
           shape: tableForm.shape,
           assignedWaiterId: tableForm.assignedWaiterId || null,
           assignedWaiterName: waiter ? waiter.full_name : null,
         });
-        success(`Table ${tableForm.tableNumber} added successfully!`);
+        success(`Table ${cleanTableNum} created successfully!`);
       }
       setIsAddTableOpen(false);
       setIsEditTableOpen(false);
@@ -414,11 +456,12 @@ export const FloorTableManagement: React.FC = () => {
             type="button"
             onClick={() => {
               const bId = branchFilter || currentBranchId || branches[0]?.id;
+              const nextNumber = getNextAvailableTableNumber(tables);
               setTableForm({
                 id: '',
                 floorId: selectedFloorId !== 'ALL' ? selectedFloorId : (floors[0]?.id || ''),
                 branchId: bId,
-                tableNumber: `T-${tables.length + 1}`,
+                tableNumber: nextNumber,
                 capacity: 4,
                 shape: 'RECTANGLE',
                 assignedWaiterId: '',
@@ -427,6 +470,8 @@ export const FloorTableManagement: React.FC = () => {
                 posX: 0,
                 posY: 0,
               });
+              setIsCreatingFloorInline(false);
+              setInlineFloorName('');
               setIsAddTableOpen(true);
             }}
             className="flex items-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold rounded-xl shadow-md transition-all"

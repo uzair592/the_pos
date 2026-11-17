@@ -8,7 +8,9 @@ import {
   ProcessRefundSchema,
   Permission,
   OrderStatus,
+  OrderType,
   TableStatus,
+  PrepStatus,
 } from '@pos/shared';
 import { createOrder, completeOrderCheckout, processOrderRefund } from '../services/orderService.js';
 import { deductInventoryForOrder } from '../services/inventoryService.js';
@@ -62,7 +64,7 @@ export async function orderRoutes(fastify: FastifyInstance) {
     try {
       const result = await createOrder({
         tenantId,
-        branchId,
+        branchId: (branchId || effectiveBranchId) as string,
         cashierId: req.user!.id,
         cashierName: req.user!.fullName,
         orderType,

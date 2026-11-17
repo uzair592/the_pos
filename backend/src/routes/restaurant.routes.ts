@@ -17,7 +17,6 @@ import {
   DEFAULT_ROLE_PERMISSIONS,
 } from '@pos/shared';
 import { checkBranchLimit, checkStaffLimit } from '../services/subscriptionService.js';
-import { generateTenantBackup, restoreTenantBackup, getBackupHistory } from '../services/backupService.js';
 import { logAuditEvent } from '../services/auditService.js';
 
 export async function restaurantRoutes(fastify: FastifyInstance) {
@@ -318,7 +317,29 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
       [tenantId],
       { tenantId }
     );
-    return reply.send({ users: rows });
+    return reply.send({ users: rows, staff: rows });
+  });
+
+  fastify.get('/api/restaurant/staff', async (req, reply) => {
+    const tenantId = req.user!.tenantId!;
+    const { branchId } = req.query as { branchId?: string };
+
+    let sql = `
+      SELECT u.id, u.email, u.full_name, u.role, u.branch_id, u.is_active,
+             b.name as branch_name
+      FROM users u
+      LEFT JOIN branches b ON b.id = u.branch_id
+      WHERE u.tenant_id = $1 AND u.is_active = true
+    `;
+    const params: any[] = [tenantId];
+    if (branchId) {
+      params.push(branchId);
+      sql += ` AND (u.branch_id = $${params.length} OR u.branch_id IS NULL)`;
+    }
+    sql += ' ORDER BY u.full_name ASC';
+
+    const { rows } = await query(sql, params, { tenantId });
+    return reply.send({ staff: rows, users: rows });
   });
 
   fastify.post('/api/restaurant/users', {
@@ -499,9 +520,20 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
       }
     }
 
+    const cleanName = name.trim();
+    // Check if a floor with the same name already exists in this branch
+    const existingFloor = await query(
+      'SELECT * FROM floors WHERE tenant_id = $1 AND branch_id = $2 AND LOWER(TRIM(name)) = LOWER(TRIM($3))',
+      [tenantId, branchId, cleanName],
+      { tenantId }
+    );
+    if (existingFloor.rows.length > 0) {
+      return reply.status(200).send({ floor: existingFloor.rows[0], message: 'Floor already exists' });
+    }
+
     const { rows } = await query(
       'INSERT INTO floors (tenant_id, branch_id, name, sort_order) VALUES ($1, $2, $3, $4) RETURNING *',
-      [tenantId, branchId, name, sortOrder],
+      [tenantId, branchId, cleanName, sortOrder],
       { tenantId }
     );
     return reply.status(201).send({ floor: rows[0] });
@@ -653,31 +685,56 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const { rows } = await query(
-      `
-      INSERT INTO restaurant_tables (
-        tenant_id, branch_id, floor_id, table_number, capacity,
-        shape, pos_x, pos_y, assigned_waiter_id, assigned_waiter_name,
-        status, is_active
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'AVAILABLE', true)
-      RETURNING *
-      `,
-      [
-        tenantId,
-        branchId,
-        resolvedFloorId,
-        tableNumber,
-        capacity,
-        shape || 'RECTANGLE',
-        posX || 0,
-        posY || 0,
-        assignedWaiterId || null,
-        assignedWaiterName || null,
-      ],
+    const cleanTableNumber = tableNumber.trim();
+
+    // Check if table number already exists in this branch
+    const existingTable = await query(
+      'SELECT id, table_number FROM restaurant_tables WHERE tenant_id = $1 AND branch_id = $2 AND LOWER(TRIM(table_number)) = LOWER(TRIM($3)) AND is_active = true',
+      [tenantId, branchId, cleanTableNumber],
       { tenantId }
     );
-    return reply.status(201).send({ table: rows[0] });
+    if (existingTable.rows.length > 0) {
+      return reply.status(400).send({
+        error: `Table "${cleanTableNumber}" already exists in this branch. Please choose a different table number.`,
+        code: 'DUPLICATE_TABLE_NUMBER',
+      });
+    }
+
+    try {
+      const { rows } = await query(
+        `
+        INSERT INTO restaurant_tables (
+          tenant_id, branch_id, floor_id, table_number, capacity,
+          shape, pos_x, pos_y, assigned_waiter_id, assigned_waiter_name,
+          status, is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'AVAILABLE', true)
+        RETURNING *
+        `,
+        [
+          tenantId,
+          branchId,
+          resolvedFloorId,
+          cleanTableNumber,
+          capacity,
+          shape || 'RECTANGLE',
+          posX || 0,
+          posY || 0,
+          assignedWaiterId || null,
+          assignedWaiterName || null,
+        ],
+        { tenantId }
+      );
+      return reply.status(201).send({ table: rows[0] });
+    } catch (err: any) {
+      if (err.code === '23505' || err.message?.includes('uq_branch_table_number')) {
+        return reply.status(400).send({
+          error: `Table "${cleanTableNumber}" already exists in this branch. Please choose a different table number.`,
+          code: 'DUPLICATE_TABLE_NUMBER',
+        });
+      }
+      throw err;
+    }
   });
 
   fastify.put('/api/restaurant/tables/:id', {
@@ -703,44 +760,73 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
       isActive,
     } = parsed.data;
 
-    const { rows } = await query(
-      `
-      UPDATE restaurant_tables
-      SET floor_id = COALESCE($1, floor_id),
-          table_number = COALESCE($2, table_number),
-          capacity = COALESCE($3, capacity),
-          status = COALESCE($4, status),
-          shape = COALESCE($5, shape),
-          pos_x = COALESCE($6, pos_x),
-          pos_y = COALESCE($7, pos_y),
-          assigned_waiter_id = COALESCE($8, assigned_waiter_id),
-          assigned_waiter_name = COALESCE($9, assigned_waiter_name),
-          current_order_id = COALESCE($10, current_order_id),
-          is_active = COALESCE($11, is_active),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $12 AND tenant_id = $13
-      RETURNING *
-      `,
-      [
-        floorId || null,
-        tableNumber || null,
-        capacity || null,
-        status || null,
-        shape || null,
-        posX !== undefined ? posX : null,
-        posY !== undefined ? posY : null,
-        assignedWaiterId !== undefined ? assignedWaiterId : null,
-        assignedWaiterName !== undefined ? assignedWaiterName : null,
-        currentOrderId !== undefined ? currentOrderId : null,
-        isActive !== undefined ? isActive : null,
-        id,
-        tenantId,
-      ],
-      { tenantId }
-    );
+    const cleanTableNumber = tableNumber ? tableNumber.trim() : undefined;
 
-    if (rows.length === 0) return reply.status(404).send({ error: 'Table not found' });
-    return reply.send({ table: rows[0] });
+    if (cleanTableNumber) {
+      const currentTable = await query('SELECT branch_id FROM restaurant_tables WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
+      const bId = currentTable.rows[0]?.branch_id;
+      if (bId) {
+        const existingTable = await query(
+          'SELECT id FROM restaurant_tables WHERE tenant_id = $1 AND branch_id = $2 AND LOWER(TRIM(table_number)) = LOWER(TRIM($3)) AND id != $4 AND is_active = true',
+          [tenantId, bId, cleanTableNumber, id],
+          { tenantId }
+        );
+        if (existingTable.rows.length > 0) {
+          return reply.status(400).send({
+            error: `Table "${cleanTableNumber}" already exists in this branch. Please choose a different table number.`,
+            code: 'DUPLICATE_TABLE_NUMBER',
+          });
+        }
+      }
+    }
+
+    try {
+      const { rows } = await query(
+        `
+        UPDATE restaurant_tables
+        SET floor_id = COALESCE($1, floor_id),
+            table_number = COALESCE($2, table_number),
+            capacity = COALESCE($3, capacity),
+            status = COALESCE($4, status),
+            shape = COALESCE($5, shape),
+            pos_x = COALESCE($6, pos_x),
+            pos_y = COALESCE($7, pos_y),
+            assigned_waiter_id = COALESCE($8, assigned_waiter_id),
+            assigned_waiter_name = COALESCE($9, assigned_waiter_name),
+            current_order_id = COALESCE($10, current_order_id),
+            is_active = COALESCE($11, is_active),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $12 AND tenant_id = $13
+        RETURNING *
+        `,
+        [
+          floorId || null,
+          cleanTableNumber || null,
+          capacity !== undefined ? capacity : null,
+          status || null,
+          shape || null,
+          posX !== undefined ? posX : null,
+          posY !== undefined ? posY : null,
+          assignedWaiterId !== undefined ? (assignedWaiterId || null) : null,
+          assignedWaiterName !== undefined ? (assignedWaiterName || null) : null,
+          currentOrderId !== undefined ? (currentOrderId || null) : null,
+          isActive !== undefined ? isActive : null,
+          id,
+          tenantId,
+        ],
+        { tenantId }
+      );
+      if (rows.length === 0) return reply.status(404).send({ error: 'Table not found' });
+      return reply.send({ table: rows[0] });
+    } catch (err: any) {
+      if (err.code === '23505' || err.message?.includes('uq_branch_table_number')) {
+        return reply.status(400).send({
+          error: `Table "${cleanTableNumber || 'number'}" already exists in this branch. Please choose a different table number.`,
+          code: 'DUPLICATE_TABLE_NUMBER',
+        });
+      }
+      throw err;
+    }
   });
 
   fastify.delete('/api/restaurant/tables/:id', {
@@ -975,45 +1061,5 @@ export async function restaurantRoutes(fastify: FastifyInstance) {
 
     await query('DELETE FROM registered_devices WHERE id = $1 AND tenant_id = $2', [id, tenantId], { tenantId });
     return reply.send({ message: 'Device removed successfully' });
-  });
-
-  /**
-   * Backup & Restore Endpoints for Tenant
-   */
-  fastify.post('/api/restaurant/backups/generate', async (req, reply) => {
-    const tenantId = req.user!.tenantId!;
-    try {
-      const result = await generateTenantBackup(tenantId, req.user!.id, req.user!.fullName);
-      return reply.send(result);
-    } catch (err: any) {
-      return reply.status(500).send({ error: err.message || 'Failed to generate backup' });
-    }
-  });
-
-  fastify.post('/api/restaurant/backups/restore', async (req, reply) => {
-    const tenantId = req.user!.tenantId!;
-    const backupPackage = req.body as any;
-
-    if (!backupPackage || !backupPackage.metadata || !backupPackage.data) {
-      return reply.status(400).send({ error: 'Invalid backup package payload' });
-    }
-
-    try {
-      const result = await restoreTenantBackup(
-        tenantId,
-        backupPackage,
-        req.user!.id,
-        (req.user as any)?.fullName || 'Restaurant Staff'
-      );
-      return reply.send(result);
-    } catch (err: any) {
-      return reply.status(400).send({ error: err.message || 'Failed to restore backup' });
-    }
-  });
-
-  fastify.get('/api/restaurant/backups', async (req, reply) => {
-    const tenantId = req.user!.tenantId!;
-    const history = await getBackupHistory(tenantId);
-    return reply.send({ backups: history });
   });
 }

@@ -120,8 +120,11 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       { tenantId }
     );
 
-    if (existing.length > 0 || isStandard) {
-      return reply.status(409).send({ error: `Category "${trimmedName}" already exists` });
+    if (existing.length > 0) {
+      return reply.status(200).send({ category: existing[0], message: `Category "${trimmedName}" already exists` });
+    }
+    if (isStandard) {
+      return reply.status(200).send({ category: { id: trimmedName, name: trimmedName, isStandard: true }, message: `Standard category "${trimmedName}" selected` });
     }
 
     const { rows } = await query(
@@ -139,7 +142,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       action: 'CREATE_INVENTORY_CATEGORY',
       resourceType: 'INVENTORY_CATEGORY',
       resourceId: rows[0].id,
-      details: { name: trimmedName },
+      metadata: { name: trimmedName },
       ipAddress: req.ip,
     });
 
@@ -252,6 +255,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
              COALESCE(bs_agg.current_stock, 0)::numeric as current_stock,
              COALESCE(bs_agg.cost_per_unit, i.cost_per_unit)::numeric as branch_cost_per_unit,
              COALESCE(latest_b.unit_cost, i.purchase_cost, i.cost_per_unit, 0)::numeric as latest_purchase_price,
+             latest_b.last_purchase_date,
              COALESCE(fifo_agg.total_value, (COALESCE(bs_agg.current_stock, 0) * COALESCE(latest_b.unit_cost, i.cost_per_unit, 0)))::numeric as total_stock_value,
              COALESCE(fifo_agg.active_batches_count, 0)::int as active_batches_count,
              COALESCE(fifo_agg.active_batches, '[]'::json) as active_batches
@@ -264,7 +268,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
           ${branchId ? 'AND bs.branch_id = $2' : ''}
       ) bs_agg ON true
       LEFT JOIN LATERAL (
-        SELECT ib.unit_cost
+        SELECT ib.unit_cost, ib.received_at as last_purchase_date
         FROM inventory_batches ib
         WHERE ib.ingredient_id = i.id AND ib.tenant_id = i.tenant_id
           ${branchId ? 'AND ib.branch_id = $2' : ''}
@@ -472,8 +476,14 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       branchId,
     } = parsed.data;
 
-    const existing = await query('SELECT id FROM ingredients WHERE tenant_id = $1 AND sku = $2', [tenantId, sku], { tenantId });
-    if (existing.rows.length > 0) return reply.status(400).send({ error: 'Ingredient SKU already exists' });
+    let resolvedSku = (sku && sku.trim()) ? sku.trim() : '';
+    if (!resolvedSku) {
+      const cleanPrefix = name.trim().slice(0, 4).toUpperCase().replace(/[^A-Z0-9]/g, '') || 'ITEM';
+      resolvedSku = `ING-${cleanPrefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    } else {
+      const existing = await query('SELECT id FROM ingredients WHERE tenant_id = $1 AND LOWER(sku) = LOWER($2)', [tenantId, resolvedSku], { tenantId });
+      if (existing.rows.length > 0) return reply.status(400).send({ error: `An ingredient with SKU "${resolvedSku}" already exists` });
+    }
 
     const resolvedUnit = unit || baseUnit || 'UNIT';
     const resolvedBaseUnit = baseUnit || unit || resolvedUnit;
@@ -512,7 +522,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
           name,
           nameUrdu || null,
           category || 'General',
-          sku,
+          resolvedSku,
           resolvedBaseUnit,
           resolvedBaseUnit,
           resolvedPurchaseUnit,
@@ -675,6 +685,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     const ingSql = `
       SELECT i.*,
              COALESCE(latest_b.unit_cost, i.purchase_cost, i.cost_per_unit, 0)::numeric as latest_purchase_price,
+             latest_b.last_purchase_date,
              COALESCE(bs_agg.current_stock, 0)::numeric as available_stock,
              COALESCE(fifo_agg.total_value, (COALESCE(bs_agg.current_stock, 0) * COALESCE(latest_b.unit_cost, i.cost_per_unit, 0)))::numeric as total_stock_value
       FROM ingredients i
@@ -891,6 +902,176 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
         totalConsumed: Number(b.total_consumed || 0),
         totalCost: Number(b.total_cost || 0),
       })),
+    });
+  });
+
+  /**
+   * Complete Inventory Item Details & Lifecycle Statistics
+   * Sourced directly from stock ledger, inward purchases, FIFO lots, and recipe consumption
+   */
+  fastify.get('/api/inventory/ingredients/:id/details', {
+    preHandler: [requirePermission(Permission.INVENTORY_VIEW)],
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const tenantId = req.user!.tenantId!;
+    const { branchId } = req.query as { branchId?: string };
+
+    const ingParams: any[] = [id, tenantId];
+    if (branchId) ingParams.push(branchId);
+
+    // 1. Fetch ingredient with stock & valuation
+    const ingSql = `
+      SELECT i.*,
+             COALESCE(i.base_unit, i.unit, 'UNIT') as base_unit,
+             COALESCE(i.purchase_unit, i.unit, 'UNIT') as purchase_unit,
+             COALESCE(i.conversion_factor, 1.0000)::numeric as conversion_factor,
+             COALESCE(i.purchase_cost, i.cost_per_unit)::numeric as purchase_cost,
+             COALESCE(i.category, 'General') as category,
+             COALESCE(bs_agg.current_stock, 0)::numeric as available_stock,
+             COALESCE(latest_b.unit_cost, i.purchase_cost, i.cost_per_unit, 0)::numeric as latest_purchase_price,
+             latest_b.last_purchase_date,
+             COALESCE(fifo_agg.total_value, (COALESCE(bs_agg.current_stock, 0) * COALESCE(latest_b.unit_cost, i.cost_per_unit, 0)))::numeric as total_stock_value,
+             COALESCE(fifo_agg.active_batches_count, 0)::int as active_batches_count
+      FROM ingredients i
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(bs.current_stock), 0) as current_stock,
+               COALESCE(AVG(bs.cost_per_unit), 0) as cost_per_unit
+        FROM branch_stocks bs
+        WHERE bs.ingredient_id = i.id
+          ${branchId ? 'AND bs.branch_id = $3' : ''}
+      ) bs_agg ON true
+      LEFT JOIN LATERAL (
+        SELECT ib.unit_cost, ib.received_at as last_purchase_date
+        FROM inventory_batches ib
+        WHERE ib.ingredient_id = i.id AND ib.tenant_id = i.tenant_id
+          ${branchId ? 'AND ib.branch_id = $3' : ''}
+        ORDER BY ib.received_at DESC, ib.created_at DESC
+        LIMIT 1
+      ) latest_b ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(ib.id)::int as active_batches_count,
+          SUM(ib.quantity_remaining * ib.unit_cost)::numeric as total_value
+        FROM inventory_batches ib
+        WHERE ib.ingredient_id = i.id AND ib.tenant_id = i.tenant_id AND ib.status = 'ACTIVE'
+          ${branchId ? 'AND ib.branch_id = $3' : ''}
+      ) fifo_agg ON true
+      WHERE i.id = $1 AND i.tenant_id = $2
+    `;
+
+    const { rows: ingRows } = await query(ingSql, ingParams, { tenantId });
+    if (ingRows.length === 0) return reply.status(404).send({ error: 'Ingredient not found' });
+    const ing = ingRows[0];
+
+    // 2. Fetch Stock Movements Aggregation (Opening, Purchased, Consumed, Wasted, Adjusted)
+    const movAggSql = `
+      SELECT
+        COALESCE(SUM(CASE WHEN movement_type IN ('OPENING_STOCK', 'OPENING_BALANCE') THEN quantity ELSE 0 END), 0)::numeric as opening_stock,
+        COALESCE(SUM(CASE WHEN movement_type IN ('PURCHASE_RECEIVE', 'PURCHASE') THEN quantity ELSE 0 END), 0)::numeric as total_purchased,
+        COALESCE(SUM(CASE WHEN movement_type IN ('SALE_CONSUMPTION', 'RECIPE_CONSUMPTION', 'SALE') THEN ABS(quantity) ELSE 0 END), 0)::numeric as total_consumed,
+        COALESCE(SUM(CASE WHEN movement_type IN ('WASTAGE', 'EXPIRED', 'DAMAGED') THEN ABS(quantity) ELSE 0 END), 0)::numeric as total_wasted,
+        COALESCE(SUM(CASE WHEN movement_type IN ('ADJUSTMENT_ADD', 'ADJUSTMENT_SUBTRACT', 'ADJUSTMENT') THEN quantity ELSE 0 END), 0)::numeric as total_adjusted
+      FROM stock_movements
+      WHERE ingredient_id = $1 AND tenant_id = $2
+        ${branchId ? 'AND branch_id = $3' : ''}
+    `;
+    const { rows: movAggRows } = await query(movAggSql, ingParams, { tenantId });
+    const lifecycle = movAggRows[0] || {
+      opening_stock: 0,
+      total_purchased: 0,
+      total_consumed: 0,
+      total_wasted: 0,
+      total_adjusted: 0,
+    };
+
+    // 3. Recent 20 stock movements
+    const recentMovSql = `
+      SELECT sm.id, sm.movement_type, sm.quantity, sm.stock_before, sm.stock_after,
+             sm.unit_cost, sm.total_cost, sm.reason, sm.reference_type, sm.created_at,
+             u.full_name as recorded_by_name
+      FROM stock_movements sm
+      LEFT JOIN users u ON u.id = sm.recorded_by_user_id
+      WHERE sm.ingredient_id = $1 AND sm.tenant_id = $2
+        ${branchId ? 'AND sm.branch_id = $3' : ''}
+      ORDER BY sm.created_at DESC
+      LIMIT 20
+    `;
+    const { rows: recentMovements } = await query(recentMovSql, ingParams, { tenantId });
+
+    // 4. Active FIFO batches
+    const batchesSql = `
+      SELECT ib.id, ib.batch_code, ib.received_at, ib.quantity_received, ib.quantity_remaining,
+             ib.unit_cost, ib.status, ib.supplier_name, ib.unit,
+             (ib.quantity_remaining * ib.unit_cost)::numeric as remaining_value
+      FROM inventory_batches ib
+      WHERE ib.ingredient_id = $1 AND ib.tenant_id = $2 AND ib.status = 'ACTIVE'
+        ${branchId ? 'AND ib.branch_id = $3' : ''}
+      ORDER BY ib.received_at ASC, ib.created_at ASC
+    `;
+    const { rows: activeBatches } = await query(batchesSql, ingParams, { tenantId });
+
+    // 5. Recent inward purchases
+    const purchasesSql = `
+      SELECT pi.id as purchase_item_id, p.invoice_number, p.received_at,
+             s.name as supplier_name, pi.quantity, pi.unit, pi.unit_price, pi.total_price
+      FROM purchase_items pi
+      JOIN purchase_invoices p ON p.id = pi.purchase_id
+      LEFT JOIN suppliers s ON s.id = p.supplier_id
+      WHERE pi.ingredient_id = $1 AND pi.tenant_id = $2
+        ${branchId ? 'AND p.branch_id = $3' : ''}
+      ORDER BY p.received_at DESC, p.created_at DESC
+      LIMIT 10
+    `;
+    const { rows: purchaseHistory } = await query(purchasesSql, ingParams, { tenantId });
+
+    // 6. Menu items / recipes using this ingredient
+    const recipesSql = `
+      SELECT p.id as product_id, p.name as product_name, p.sku as product_sku,
+             c.name as category_name, p.base_price,
+             COALESCE(ri.entered_quantity, ri.quantity)::numeric as usage_per_item,
+             COALESCE(ri.recipe_unit, ri.unit, i.base_unit) as usage_unit
+      FROM recipe_ingredients ri
+      JOIN recipes r ON r.id = ri.recipe_id
+      JOIN products p ON p.id = r.product_id
+      LEFT JOIN categories c ON c.id = p.category_id
+      JOIN ingredients i ON i.id = ri.ingredient_id
+      WHERE ri.ingredient_id = $1 AND ri.tenant_id = $2
+      ORDER BY p.name ASC
+    `;
+    const { rows: recipes } = await query(recipesSql, [id, tenantId], { tenantId });
+
+    return reply.send({
+      ingredient: {
+        id: ing.id,
+        name: ing.name,
+        nameUrdu: ing.name_urdu,
+        sku: ing.sku,
+        category: ing.category,
+        unit: ing.unit || ing.base_unit || 'UNIT',
+        baseUnit: ing.base_unit,
+        purchaseUnit: ing.purchase_unit,
+        conversionFactor: Number(ing.conversion_factor),
+        costPerUnit: Number(ing.cost_per_unit || 0),
+        purchaseCost: Number(ing.purchase_cost || 0),
+        latestPurchasePrice: Number(ing.latest_purchase_price || 0),
+        lastPurchaseDate: ing.last_purchase_date,
+        availableStock: Number(ing.available_stock || 0),
+        minStockAlert: Number(ing.min_stock_alert || 0),
+        stockValue: Number(ing.total_stock_value || 0),
+        activeBatchesCount: Number(ing.active_batches_count || 0),
+      },
+      stockLifecycle: {
+        openingStock: Number(lifecycle.opening_stock || 0),
+        totalPurchased: Number(lifecycle.total_purchased || 0),
+        totalConsumed: Number(lifecycle.total_consumed || 0),
+        totalWasted: Number(lifecycle.total_wasted || 0),
+        totalAdjusted: Number(lifecycle.total_adjusted || 0),
+        currentStock: Number(ing.available_stock || 0),
+      },
+      recentMovements,
+      activeBatches,
+      purchaseHistory,
+      recipes,
     });
   });
 
@@ -1479,7 +1660,8 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
             resolvedIngredientId = existingIng.rows[0].id;
           } else {
             // Automatically create new ingredient
-            const autoSku = `ING-${rawName.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, 'X')}-${Date.now().toString().slice(-4)}`;
+            const cleanPrefix = rawName.slice(0, 4).toUpperCase().replace(/[^A-Z0-9]/g, '') || 'ITEM';
+            const autoSku = `ING-${cleanPrefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
             const newIngRes = await client.query(
               `
               INSERT INTO ingredients (

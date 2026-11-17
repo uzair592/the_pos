@@ -356,7 +356,7 @@ export const CreateIngredientSchema = z.object({
   name: z.string().min(1),
   nameUrdu: z.string().optional(),
   category: z.string().default('General'),
-  sku: z.string().min(1),
+  sku: z.string().optional(),
   unit: z.string().min(1).optional(), // base unit compatibility
   baseUnit: z.string().min(1).optional(),
   purchaseUnit: z.string().min(1).optional(),

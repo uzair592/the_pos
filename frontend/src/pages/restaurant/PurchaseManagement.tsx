@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Boxes,
   Users,
+  FolderPlus,
 } from 'lucide-react';
 import {
   StockUnit,
@@ -50,6 +51,18 @@ export const PurchaseManagement: React.FC = () => {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [ingredients, setIngredients] = useState<any[]>([]);
+  const [categories, setCategories] = useState<string[]>([
+    'Meat & Poultry',
+    'Dairy & Cheese',
+    'Vegetables & Fresh Produce',
+    'Bakery & Grains',
+    'Spices & Condiments',
+    'Beverages & Syrups',
+    'Packaging & Disposables',
+    'General',
+  ]);
+  const [isQuickAddCategoryOpen, setIsQuickAddCategoryOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -115,15 +128,21 @@ export const PurchaseManagement: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [purchasesRes, suppliersRes, ingredientsRes] = await Promise.all([
+      const [purchasesRes, suppliersRes, ingredientsRes, categoriesRes] = await Promise.all([
         api.get('/inventory/purchases'),
         api.get('/inventory/suppliers'),
         api.get('/inventory/ingredients'),
+        api.get('/inventory/categories').catch(() => ({ categories: [] })),
       ]);
 
       setPurchases(purchasesRes.purchases || []);
       setSuppliers(suppliersRes.suppliers || []);
       setIngredients(ingredientsRes.ingredients || []);
+
+      if (categoriesRes?.categories?.length > 0) {
+        const catNames = categoriesRes.categories.map((c: any) => typeof c === 'string' ? c : c.name);
+        setCategories((prev) => Array.from(new Set([...prev, ...catNames])));
+      }
 
       if (suppliersRes.suppliers?.length > 0 && !invoiceForm.supplierId) {
         setInvoiceForm((prev) => ({ ...prev, supplierId: suppliersRes.suppliers[0].id }));
@@ -369,6 +388,7 @@ export const PurchaseManagement: React.FC = () => {
   const [quickItemForm, setQuickItemForm] = useState({
     name: '',
     category: 'General',
+    sku: '',
     unit: 'KG',
     costPerUnit: 0,
     minStockAlert: 5,
@@ -378,12 +398,33 @@ export const PurchaseManagement: React.FC = () => {
     setTargetItemIndex(rowIndex);
     setQuickItemForm({
       name: invoiceForm.items[rowIndex]?.name || '',
-      category: 'General',
+      category: categories[0] || 'General',
+      sku: '',
       unit: invoiceForm.items[rowIndex]?.unit || 'KG',
       costPerUnit: invoiceForm.items[rowIndex]?.unitPrice || 0,
       minStockAlert: 5,
     });
     setIsQuickAddItemOpen(true);
+  };
+
+  const handleSaveQuickCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) {
+      error('Category name is required');
+      return;
+    }
+
+    try {
+      const res = await api.post('/inventory/categories', { name: newCategoryName.trim() });
+      const createdName = res.category?.name || newCategoryName.trim();
+      setCategories((prev) => Array.from(new Set([...prev, createdName])));
+      setQuickItemForm((prev) => ({ ...prev, category: createdName }));
+      success(`Category "${createdName}" ready for use!`);
+      setNewCategoryName('');
+      setIsQuickAddCategoryOpen(false);
+    } catch (err: any) {
+      error(err.message || 'Failed to create category');
+    }
   };
 
   const handleSaveQuickItem = async (e: React.FormEvent) => {
@@ -399,6 +440,7 @@ export const PurchaseManagement: React.FC = () => {
       const res = await api.post('/inventory/ingredients', {
         name: quickItemForm.name.trim(),
         category: quickItemForm.category || 'General',
+        sku: quickItemForm.sku?.trim() || undefined,
         unit: selectedUnit,
         baseUnit: selectedUnit,
         purchaseUnit: selectedUnit,
@@ -413,8 +455,14 @@ export const PurchaseManagement: React.FC = () => {
       const createdIngredient = res.ingredient;
       success(`New item "${createdIngredient.name}" created and added to line items!`);
 
-      // Refresh ingredients in background
+      // Refresh ingredients and categories in background
       api.get('/inventory/ingredients').then((r) => setIngredients(r.ingredients || []));
+      api.get('/inventory/categories').then((r) => {
+        if (r.categories) {
+          const catNames = r.categories.map((c: any) => typeof c === 'string' ? c : c.name);
+          setCategories((prev) => Array.from(new Set([...prev, ...catNames])));
+        }
+      }).catch(() => {});
 
       // Put into target row
       if (targetItemIndex !== null && invoiceForm.items[targetItemIndex]) {
@@ -427,7 +475,8 @@ export const PurchaseManagement: React.FC = () => {
       setIsQuickAddItemOpen(false);
       setQuickItemForm({
         name: '',
-        category: 'General',
+        category: categories[0] || 'General',
+        sku: '',
         unit: 'KG',
         costPerUnit: 0,
         minStockAlert: 5,
@@ -580,6 +629,17 @@ export const PurchaseManagement: React.FC = () => {
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${reconciling ? 'animate-spin text-brand-500' : ''}`} />
                 <span>{reconciling ? 'Reconciling...' : 'Reconcile Stock'}</span>
+              </button>
+              <button
+                onClick={() => {
+                  setNewCategoryName('');
+                  setIsQuickAddCategoryOpen(true);
+                }}
+                className="flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all"
+                title="Create a new inventory category"
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
+                <span>+ Category</span>
               </button>
               <button
                 onClick={() => setIsCreateInvoiceOpen(true)}
@@ -1711,37 +1771,65 @@ export const PurchaseManagement: React.FC = () => {
         maxWidth="lg"
       >
         <form onSubmit={handleSaveQuickItem} className="space-y-4">
-          <div>
-            <label className="form-label">
-              Item / Ingredient Name <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={quickItemForm.name}
-              onChange={(e) => setQuickItemForm({ ...quickItemForm, name: e.target.value })}
-              placeholder="e.g. Dough, Mozzarella Cheese, Oregano..."
-              className="form-input font-bold"
-              required
-              autoFocus
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="form-label">
+                Item / Ingredient Name <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={quickItemForm.name}
+                onChange={(e) => setQuickItemForm({ ...quickItemForm, name: e.target.value })}
+                placeholder="e.g. Dough, Mozzarella Cheese, Oregano..."
+                className="form-input font-bold"
+                required
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <label className="form-label flex items-center justify-between">
+                <span>SKU / Code</span>
+                <span className="text-[10px] text-slate-400 font-normal">Optional (auto-generated if blank)</span>
+              </label>
+              <input
+                type="text"
+                value={quickItemForm.sku}
+                onChange={(e) => setQuickItemForm({ ...quickItemForm, sku: e.target.value })}
+                placeholder="Auto-generated (e.g. ING-CHE-xxx)"
+                className="form-input font-mono"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="form-label">Category</label>
-              <input
-                type="text"
-                list="quick-item-cats"
-                value={quickItemForm.category}
-                onChange={(e) => setQuickItemForm({ ...quickItemForm, category: e.target.value })}
-                placeholder="e.g. Dairy, Meat, Spices, Bakery..."
-                className="form-input"
-              />
-              <datalist id="quick-item-cats">
-                {['Meat & Poultry', 'Dairy & Cheese', 'Vegetables & Fresh Produce', 'Bakery & Grains', 'Spices & Condiments', 'Beverages & Syrups', 'Packaging & Disposables', 'General'].map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="form-label mb-0">Category</label>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAddCategoryOpen(true)}
+                  className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline flex items-center space-x-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>+ New Category</span>
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  list="quick-item-cats"
+                  value={quickItemForm.category}
+                  onChange={(e) => setQuickItemForm({ ...quickItemForm, category: e.target.value })}
+                  placeholder="Select or type category..."
+                  className="form-input font-semibold"
+                />
+                <datalist id="quick-item-cats">
+                  {categories.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </div>
             </div>
 
             <div>
@@ -1800,6 +1888,58 @@ export const PurchaseManagement: React.FC = () => {
             >
               <Plus className="w-4 h-4" />
               <span>Create & Add to Purchase</span>
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal 5: Quick Add Category */}
+      <Modal
+        isOpen={isQuickAddCategoryOpen}
+        onClose={() => setIsQuickAddCategoryOpen(false)}
+        title={
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-brand-50 dark:bg-brand-950/50 rounded-xl text-brand-600 dark:text-brand-400">
+              <FolderPlus className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Create Inventory Category</h3>
+              <p className="text-xs text-slate-500 font-normal mt-0.5">Add a new category for organizing raw ingredients</p>
+            </div>
+          </div>
+        }
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveQuickCategory} className="space-y-4">
+          <div>
+            <label className="form-label">
+              Category Name <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              placeholder="e.g. Seafood, Sauces, Oils, Desserts..."
+              className="form-input font-bold"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setIsQuickAddCategoryOpen(false)}
+              className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center space-x-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Save Category</span>
             </button>
           </div>
         </form>
